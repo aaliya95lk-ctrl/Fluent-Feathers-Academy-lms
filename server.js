@@ -10120,7 +10120,8 @@ app.post('/api/challenges', async (req, res) => {
       </div>
     </div>
     <div style="background:#f7fafc;padding:15px;text-align:center;color:#718096;font-size:0.8rem;">
-      Fluent Feathers Academy &nbsp;|&nbsp; This is an automated notification
+      Fluent Feathers Academy &nbsp;|&nbsp; This is an automated notification<br>
+      <span style="font-size:0.75rem;">Made with ❤️ By Aaliya</span>
     </div>
   </div>
 </body>
@@ -10316,6 +10317,7 @@ app.put('/api/challenges/:challengeId/student/:studentId/complete', async (req, 
     </div>
     <div style="background:linear-gradient(135deg,#f6d365 0%,#fda085 100%);padding:15px;text-align:center;">
       <p style="color:white;margin:0;font-size:0.85rem;">With pride &amp; joy 💛 — Fluent Feathers Academy</p>
+      <p style="color:rgba(255,255,255,0.85);margin:6px 0 0;font-size:0.75rem;">Made with ❤️ By Aaliya</p>
     </div>
   </div>
 </body>
