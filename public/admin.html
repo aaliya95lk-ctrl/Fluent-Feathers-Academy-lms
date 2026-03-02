@@ -8625,7 +8625,7 @@ async function saveEditedPayment() {
       const weekOpts  = genCurrentAndPastWeeks(17);
       const monthOpts = genCurrentAndPastMonths(25);
       const yearOpts  = genCurrentAndPastYears(6);
-      const makeSelOpts = (opts) => opts.map((o,i)=>`<option value="${o.start}|${o.end}"${i===0?' selected':''}>${o.label}</option>`).join('');
+      const makeSelOpts = (opts) => opts.map((o,i)=>`<option value="${o.start}|${o.end}"${i===0?' selected':''} style="color:#2d3748;background:#fff;">${o.label}</option>`).join('');
 
       const wSel = document.getElementById('upcomingCard_week_select');
       const mSel = document.getElementById('upcomingCard_month_select');
