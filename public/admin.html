@@ -767,6 +767,13 @@
    <div class="section">
   <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
     <h2 style="margin:0;">📅 Schedule Classes</h2>
+    <div style="display:flex; align-items:center; gap:10px;">
+      <label style="font-weight:600; color:#4a5568; margin:0;">Class Type:</label>
+      <select id="scheduleType" onchange="handleScheduleTypeChange()" style="padding:8px 14px; border:2px solid #B05D9E; border-radius:8px; font-size:1rem; font-weight:600; color:#2d3748; background:white; cursor:pointer;">
+        <option value="private">👤 Private</option>
+        <option value="group">👥 Group</option>
+      </select>
+    </div>
   </div>
         <!-- Private Class Scheduling -->
         <form id="schedulePrivateForm">
@@ -5472,7 +5479,7 @@ if (dueEl) {
       try {
         const res = await fetch('/api/groups');
         allGroups = await res.json();
-        document.getElementById('groupsBody').innerHTML = allGroups.map(g => `<tr><td><strong>${g.group_name}</strong></td><td>${g.program_name}</td><td>${g.duration}</td><td>${g.enrolled_students||0}</td><td>${g.max_students}</td><td><button onclick="viewGroupDetails(${g.id})" class="btn btn-sm btn-primary">View</button> <button onclick="editGroup(${g.id})" class="btn btn-sm btn-warning">Edit</button> <button onclick="openEnrollModal(${g.id})" class="btn btn-sm btn-success">Enroll</button> <button onclick="deleteGroup(${g.id})" class="btn btn-sm btn-danger">Delete</button></td></tr>`).join('');
+        document.getElementById('groupsBody').innerHTML = allGroups.map(g => `<tr><td><strong>${g.group_name}</strong></td><td>${g.program_name}</td><td>${g.duration}</td><td>${g.enrolled_students||0}</td><td>${g.max_students}</td><td><button onclick="viewGroupDetails(${g.id})" class="btn btn-sm btn-primary">View</button> <button onclick="editGroup(${g.id})" class="btn btn-sm btn-warning">Edit</button> <button onclick="openEnrollModal(${g.id})" class="btn btn-sm btn-success">Enroll</button> <button onclick="goToGroupSchedule(${g.id})" class="btn btn-sm" style="background:#9f7aea;color:white;">📆 Schedule</button> <button onclick="deleteGroup(${g.id})" class="btn btn-sm btn-danger">Delete</button></td></tr>`).join('');
         document.getElementById('scheduleGroup').innerHTML = '<option value="">Select group...</option>' + allGroups.map(g => `<option value="${g.id}">${g.group_name}</option>`).join('');
       } catch(e) {
         console.error(e);
@@ -5817,6 +5824,21 @@ async function saveEditedPayment() {
 }
 
     
+
+    function goToGroupSchedule(groupId) {
+      showTab('schedule');
+      const typeSelect = document.getElementById('scheduleType');
+      typeSelect.value = 'group';
+      handleScheduleTypeChange();
+      // Pre-select the group after the dropdown is populated
+      setTimeout(() => {
+        const groupSelect = document.getElementById('scheduleGroup');
+        if (groupSelect) {
+          groupSelect.value = groupId;
+          groupSelect.dispatchEvent(new Event('change'));
+        }
+      }, 300);
+    }
 
     function handleScheduleTypeChange() {
       const type = document.getElementById('scheduleType').value;
