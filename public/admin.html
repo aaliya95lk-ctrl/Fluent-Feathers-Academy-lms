@@ -4520,7 +4520,8 @@ if (dueEl) {
         filtered = filtered.filter(s =>
           (s.student_name && s.student_name.toLowerCase().includes(searchTerm)) ||
           (s.group_name && s.group_name.toLowerCase().includes(searchTerm)) ||
-          (s.session_type && s.session_type.toLowerCase().includes(searchTerm))
+          (s.session_type && s.session_type.toLowerCase().includes(searchTerm)) ||
+          (s.session_topic && s.session_topic.toLowerCase().includes(searchTerm))
         );
       }
 
@@ -4572,7 +4573,7 @@ if (dueEl) {
           <td>${formatSessionTime(s)}</td>
           <td><strong>${s.student_name}</strong></td>
           <td><span class="type-badge ${typeClass}">${s.session_type}</span></td>
-          <td>#${sessionDisplayNumber}</td>
+          <td>#${sessionDisplayNumber}${s.session_topic ? `<br><small style="color:#718096;font-size:0.78rem;">📌 ${s.session_topic}</small>` : ''}</td>
           <td>${attendanceBtn}</td>
           <td>${materials || '-'}</td>
           <td><button onclick="viewFeedback(${s.id})" class="btn btn-sm" style="background:#fbbf24; color:white;">⭐</button></td>

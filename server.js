@@ -7385,7 +7385,7 @@ app.get('/api/sessions/past/all', async (req, res) => {
       WITH numbered_sessions AS (
         SELECT s.id, s.session_date, s.session_time, s.session_number, s.status, s.session_type,
                s.ppt_file_path, s.recording_file_path, s.homework_file_path,
-               s.teacher_notes, s.student_id, s.group_id,
+               s.teacher_notes, s.session_topic, s.student_id, s.group_id,
                COALESCE(st.name, g.group_name, 'Unknown') as student_name,
                COALESCE(st.timezone, g.timezone, 'Asia/Kolkata') as timezone,
                g.group_name,
