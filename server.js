@@ -9952,7 +9952,7 @@ app.get('/api/homework/all', async (req, res) => {
   try {
     const studentId = req.query.student_id;
     let query = `
-      SELECT m.*, s.session_number, st.name as student_name
+      SELECT m.*, s.session_number, s.session_topic, st.name as student_name
       FROM materials m
       LEFT JOIN sessions s ON m.session_id = s.id
       LEFT JOIN students st ON m.student_id = st.id

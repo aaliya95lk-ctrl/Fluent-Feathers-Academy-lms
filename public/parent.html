@@ -2774,6 +2774,9 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
           if (s.homework_submission_path) {
             const submittedOn = fmtTz(s.homework_submitted_at);
             hwStatus = `<span style="color: #38a169; font-weight: 600;">✅ Submitted</span>`;
+            if (s.session_topic) {
+              hwStatus += `<br><small style="color:#5a67d8; font-weight:600;">📌 ${s.session_topic}</small>`;
+            }
             if (submittedOn) {
               hwStatus += `<br><small style="color:#718096;">📅 ${submittedOn}</small>`;
             }

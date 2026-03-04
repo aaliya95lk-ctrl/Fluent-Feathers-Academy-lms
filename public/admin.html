@@ -4739,7 +4739,7 @@ if (dueEl) {
 
           return `<tr>
             <td><strong>${hw.student_name || 'Unknown'}</strong></td>
-            <td>#${hw.session_number || 'N/A'}</td>
+            <td>#${hw.session_number || 'N/A'}${hw.session_topic ? `<br><small style="color:#718096;font-size:0.78rem;">📌 ${hw.session_topic}</small>` : ''}</td>
             <td>
               ${fileUrl ? `<a href="${fileUrl}" target="_blank" style="color: #B05D9E; text-decoration: none;">
                 ${fileIcon} ${hw.file_name || (isLink ? 'External Link' : 'Download')}
