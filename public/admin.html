@@ -5185,6 +5185,16 @@ if (dueEl) {
           ${canReschedule ? `<button onclick="openRescheduleModal()" class="btn btn-sm" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white; font-weight: 600;">📅 Reschedule</button>` : `<span style="background: #718096; color: white; padding: 4px 12px; border-radius: 6px; font-size: 0.8rem;">${session.status}</span>`}
         </div>
 
+        <!-- Session Topic -->
+        <div style="background: #f0f4ff; border: 1px solid #c3d3f7; border-radius: 10px; padding: 14px 16px; margin-bottom: 18px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+          <span style="font-size: 1.1rem;">📌</span>
+          <label style="font-weight: 700; color: #3b4a6b; white-space: nowrap;">Session Topic:</label>
+          <input type="text" id="sessionTopicInput" value="${(session.session_topic || '').replace(/"/g, '&quot;')}"
+            placeholder="e.g. Phonics – Short Vowels, Sight Words, Story Telling..."
+            style="flex: 1; min-width: 200px; padding: 7px 12px; border: 1px solid #c3d3f7; border-radius: 7px; font-size: 0.95rem;">
+          <button onclick="saveSessionTopic(${sessionId})" class="btn btn-sm" style="background: #3b82f6; color: white; white-space: nowrap;">💾 Save Topic</button>
+        </div>
+
         ${(pptUrl || recUrl || hwUrl) ? `
         <h3>📂 Uploaded Materials</h3>
         <div style="background:#e6fffa; padding:15px; border-radius:8px; margin-bottom:20px; display:flex; gap:10px; flex-wrap:wrap;">
@@ -5296,6 +5306,33 @@ if (dueEl) {
 
     function closeSessionModal() {
       document.getElementById('sessionModal').classList.remove('active');
+    }
+
+    async function saveSessionTopic(sessionId) {
+      const topic = document.getElementById('sessionTopicInput').value.trim();
+      try {
+        const res = await fetch(`/api/sessions/${sessionId}/topic`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ topic })
+        });
+        if (res.ok) {
+          // Update button briefly to show success
+          const btn = document.querySelector('#sessionDetailsContent button[onclick^="saveSessionTopic"]') ||
+                      event.target;
+          const orig = btn.textContent;
+          btn.textContent = '✅ Saved!';
+          btn.style.background = '#38a169';
+          setTimeout(() => { btn.textContent = orig; btn.style.background = '#3b82f6'; }, 1800);
+          // Refresh past sessions list in background
+          pastSessionsLoadedAt = 0;
+          loadPastSessions(false);
+        } else {
+          alert('Failed to save topic');
+        }
+      } catch (err) {
+        alert('Error: ' + err.message);
+      }
     }
 
     // ==================== RESCHEDULE FUNCTIONS ====================

@@ -1651,6 +1651,14 @@ async function runMigrations() {
       console.log('Migration 39 note:', err.message);
     }
 
+    // Migration 40: Add session_topic column to sessions table
+    try {
+      await client.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS session_topic TEXT`);
+      console.log('✅ Migration 40: Added session_topic column to sessions');
+    } catch (err) {
+      console.log('Migration 40 note:', err.message);
+    }
+
     console.log('✅ All database migrations completed successfully!');
 
     // Auto-sync badges for students who should have them
@@ -6251,6 +6259,17 @@ app.get('/api/sessions/:sessionId/details', async (req, res) => {
     }
 
     res.json(session);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Update session topic
+app.put('/api/sessions/:sessionId/topic', async (req, res) => {
+  try {
+    const { topic } = req.body;
+    await pool.query('UPDATE sessions SET session_topic = $1 WHERE id = $2', [topic || null, req.params.sessionId]);
+    res.json({ message: 'Session topic saved successfully!' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
