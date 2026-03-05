@@ -110,6 +110,11 @@
       .btn { padding: 10px 16px; font-size: 0.9rem; }
       .btn-sm { padding: 5px 10px; font-size: 0.8rem; }
       #calendarGrid > div, #calendarDays > div { padding: 4px !important; font-size: 0.75rem !important; }
+      .calendar-scroll-wrapper { overflow-x: auto; -webkit-overflow-scrolling: touch; width: 100%; }
+      #calendarGrid, #calendarDays { min-width: 420px; }
+      .calendar-nav { flex-wrap: nowrap; gap: 6px; }
+      .calendar-nav h3 { font-size: 0.95rem !important; text-align: center; }
+      .calendar-nav .btn { padding: 8px 10px !important; font-size: 0.8rem !important; white-space: nowrap; flex-shrink: 0; }
       input[style*="width: 250px"], input[style*="width: 300px"] { width: 100% !important; max-width: 100% !important; }
       #awardsShowcase { grid-template-columns: 1fr !important; }
       #leaderboardPodium { gap: 10px; flex-wrap: nowrap; justify-content: center; align-items: flex-end; }
@@ -1027,24 +1032,26 @@
         <p style="color: #718096; margin-bottom: 20px;">View all scheduled sessions at a glance. <span style="background: #38a169; color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem;">Paid</span> <span style="background: #f6ad55; color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem;">Demo</span> <span style="background: #667eea; color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem;">Group</span></p>
 
         <!-- Calendar Navigation -->
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-          <button onclick="changeCalendarMonth(-1)" class="btn" style="background: #B05D9E; color: white;">← Previous</button>
+        <div class="calendar-nav" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+          <button onclick="changeCalendarMonth(-1)" class="btn" style="background: #B05D9E; color: white;">← Prev</button>
           <h3 id="calendarMonthYear" style="margin: 0; color: #2d3748;"></h3>
           <button onclick="changeCalendarMonth(1)" class="btn" style="background: #B05D9E; color: white;">Next →</button>
         </div>
 
         <!-- Calendar Grid -->
-        <div id="calendarGrid" style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; background: #e2e8f0; border-radius: 10px; overflow: hidden;">
-          <!-- Days header -->
-          <div style="background: #B05D9E; color: white; padding: 10px; text-align: center; font-weight: bold;">Sun</div>
-          <div style="background: #B05D9E; color: white; padding: 10px; text-align: center; font-weight: bold;">Mon</div>
-          <div style="background: #B05D9E; color: white; padding: 10px; text-align: center; font-weight: bold;">Tue</div>
-          <div style="background: #B05D9E; color: white; padding: 10px; text-align: center; font-weight: bold;">Wed</div>
-          <div style="background: #B05D9E; color: white; padding: 10px; text-align: center; font-weight: bold;">Thu</div>
-          <div style="background: #B05D9E; color: white; padding: 10px; text-align: center; font-weight: bold;">Fri</div>
-          <div style="background: #B05D9E; color: white; padding: 10px; text-align: center; font-weight: bold;">Sat</div>
+        <div class="calendar-scroll-wrapper">
+          <div id="calendarGrid" style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; background: #e2e8f0; border-radius: 10px; overflow: hidden;">
+            <!-- Days header -->
+            <div style="background: #B05D9E; color: white; padding: 10px; text-align: center; font-weight: bold;">Sun</div>
+            <div style="background: #B05D9E; color: white; padding: 10px; text-align: center; font-weight: bold;">Mon</div>
+            <div style="background: #B05D9E; color: white; padding: 10px; text-align: center; font-weight: bold;">Tue</div>
+            <div style="background: #B05D9E; color: white; padding: 10px; text-align: center; font-weight: bold;">Wed</div>
+            <div style="background: #B05D9E; color: white; padding: 10px; text-align: center; font-weight: bold;">Thu</div>
+            <div style="background: #B05D9E; color: white; padding: 10px; text-align: center; font-weight: bold;">Fri</div>
+            <div style="background: #B05D9E; color: white; padding: 10px; text-align: center; font-weight: bold;">Sat</div>
+          </div>
+          <div id="calendarDays" style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; background: #e2e8f0;"></div>
         </div>
-        <div id="calendarDays" style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; background: #e2e8f0;"></div>
 
         <!-- Day Details Modal -->
         <div id="dayDetailsModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center;">
