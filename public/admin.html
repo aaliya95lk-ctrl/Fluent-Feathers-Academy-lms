@@ -109,9 +109,10 @@
       .session-item { flex-direction: column; gap: 10px; align-items: flex-start; }
       .btn { padding: 10px 16px; font-size: 0.9rem; }
       .btn-sm { padding: 5px 10px; font-size: 0.8rem; }
-      #calendarGrid > div, #calendarDays > div { padding: 4px !important; font-size: 0.75rem !important; }
+      #calendarGrid > div { padding: 4px !important; font-size: 0.75rem !important; }
+      #calendarGrid > div.cal-header { padding: 6px 2px !important; font-size: 0.7rem !important; }
       .calendar-scroll-wrapper { overflow-x: auto; -webkit-overflow-scrolling: touch; width: 100%; }
-      #calendarGrid, #calendarDays { min-width: 420px; }
+      #calendarGrid { min-width: 560px; }
       .calendar-nav { flex-wrap: nowrap; gap: 6px; }
       .calendar-nav h3 { font-size: 0.95rem !important; text-align: center; }
       .calendar-nav .btn { padding: 8px 10px !important; font-size: 0.8rem !important; white-space: nowrap; flex-shrink: 0; }
@@ -1041,16 +1042,8 @@
         <!-- Calendar Grid -->
         <div class="calendar-scroll-wrapper">
           <div id="calendarGrid" style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; background: #e2e8f0; border-radius: 10px; overflow: hidden;">
-            <!-- Days header -->
-            <div style="background: #B05D9E; color: white; padding: 10px; text-align: center; font-weight: bold;">Sun</div>
-            <div style="background: #B05D9E; color: white; padding: 10px; text-align: center; font-weight: bold;">Mon</div>
-            <div style="background: #B05D9E; color: white; padding: 10px; text-align: center; font-weight: bold;">Tue</div>
-            <div style="background: #B05D9E; color: white; padding: 10px; text-align: center; font-weight: bold;">Wed</div>
-            <div style="background: #B05D9E; color: white; padding: 10px; text-align: center; font-weight: bold;">Thu</div>
-            <div style="background: #B05D9E; color: white; padding: 10px; text-align: center; font-weight: bold;">Fri</div>
-            <div style="background: #B05D9E; color: white; padding: 10px; text-align: center; font-weight: bold;">Sat</div>
+            <!-- Headers and day cells rendered by renderCalendar() -->
           </div>
-          <div id="calendarDays" style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; background: #e2e8f0;"></div>
         </div>
 
         <!-- Day Details Modal -->
@@ -6229,14 +6222,21 @@ async function saveEditedPayment() {
       const month = calendarDate.getMonth();
       const firstDay = new Date(year, month, 1).getDay();
       const daysInMonth = new Date(year, month + 1, 0).getDate();
-      const today = new Date().toISOString().split('T')[0];
+      // Use local date to avoid UTC timezone mismatch (e.g. IST = UTC+5:30)
+      const now = new Date();
+      const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
-      const container = document.getElementById('calendarDays');
+      const container = document.getElementById('calendarGrid');
       container.innerHTML = '';
+
+      // Day headers
+      ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].forEach(day => {
+        container.innerHTML += `<div class="cal-header" style="background: #B05D9E; color: white; padding: 10px; text-align: center; font-weight: bold;">${day}</div>`;
+      });
 
       // Empty cells for days before first day
       for (let i = 0; i < firstDay; i++) {
-        container.innerHTML += '<div style="background: #f7fafc; padding: 10px; min-height: 100px;"></div>';
+        container.innerHTML += '<div style="background: #f7fafc; padding: 10px; min-height: 90px;"></div>';
       }
 
       // Days of the month
@@ -6283,7 +6283,7 @@ async function saveEditedPayment() {
         const hasSessionsStyle = daySessions.length > 0 ? 'cursor: pointer;' : '';
 
         container.innerHTML += `
-          <div onclick="${daySessions.length > 0 ? `showDayDetails('${dateStr}')` : ''}" style="background: white; padding: 8px; min-height: 100px; ${todayStyle} ${hasSessionsStyle}">
+          <div onclick="${daySessions.length > 0 ? `showDayDetails('${dateStr}')` : ''}" style="background: white; padding: 8px; min-height: 90px; ${todayStyle} ${hasSessionsStyle}">
             <div style="font-weight: ${isToday ? 'bold' : 'normal'}; color: ${isToday ? '#B05D9E' : '#2d3748'}; margin-bottom: 5px;">${day}</div>
             ${sessionsHtml}
           </div>
