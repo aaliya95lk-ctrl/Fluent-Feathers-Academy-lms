@@ -63,6 +63,12 @@
     .stat-card h3 { color: #718096; font-size: 0.72rem; margin-bottom: 4px; line-height: 1.3; }
     .stat-card .value { font-size: 1.4rem; font-weight: bold; color: #2d3748; }
 
+    /* Calendar corner cell rounding (keeps visual look after overflow:hidden was removed from the grid) */
+    #calendarGrid > div:nth-child(1) { border-top-left-radius: 8px; }
+    #calendarGrid > div:nth-child(7) { border-top-right-radius: 8px; }
+    #calendarGrid > div:last-child { border-bottom-right-radius: 8px; }
+    #calendarGrid > div:nth-last-child(7) { border-bottom-left-radius: 8px; }
+
     /* Hide old tabs - now using sidebar */
     .tabs { display: none; }
     .tab-btn { padding: 12px 24px; background: white; border: 2px solid #e2e8f0; border-radius: 8px; cursor: pointer; font-weight: 600; transition: all 0.2s; }
@@ -112,7 +118,7 @@
       #calendarGrid > div { padding: 4px !important; font-size: 0.75rem !important; }
       #calendarGrid > div.cal-header { padding: 6px 2px !important; font-size: 0.7rem !important; }
       .calendar-scroll-wrapper { overflow-x: auto; -webkit-overflow-scrolling: touch; width: 100%; }
-      #calendarGrid { min-width: 560px; }
+      #calendarGrid { min-width: 640px; }
       .calendar-nav { flex-wrap: nowrap; gap: 6px; }
       .calendar-nav h3 { font-size: 0.95rem !important; text-align: center; }
       .calendar-nav .btn { padding: 8px 10px !important; font-size: 0.8rem !important; white-space: nowrap; flex-shrink: 0; }
@@ -1041,7 +1047,7 @@
 
         <!-- Calendar Grid -->
         <div class="calendar-scroll-wrapper">
-          <div id="calendarGrid" style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; background: #e2e8f0; border-radius: 10px; overflow: hidden;">
+          <div id="calendarGrid" style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; background: #e2e8f0; border-radius: 10px;">
             <!-- Headers and day cells rendered by renderCalendar() -->
           </div>
         </div>
@@ -6288,6 +6294,13 @@ async function saveEditedPayment() {
             ${sessionsHtml}
           </div>
         `;
+      }
+
+      // Trailing empty cells to always complete the last row
+      const totalCells = firstDay + daysInMonth;
+      const trailingCells = (7 - (totalCells % 7)) % 7;
+      for (let i = 0; i < trailingCells; i++) {
+        container.innerHTML += '<div style="background: #f7fafc; padding: 10px; min-height: 90px;"></div>';
       }
     }
 
