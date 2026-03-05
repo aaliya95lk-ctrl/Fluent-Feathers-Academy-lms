@@ -120,6 +120,11 @@
       #leaderboardPodium > div > div:nth-child(2) { min-width: 90px !important; padding: 10px 10px !important; }
       #leaderboardPodium > div > div:nth-child(3) { width: 80px !important; }
       div[style*="min-width: 200px"], div[style*="min-width: 150px"], div[style*="min-width: 120px"] { min-width: 0 !important; width: 100%; }
+      /* Leaderboard: stack upcoming awards cards, make table scrollable */
+      #upcomingAwardsGrid { grid-template-columns: 1fr !important; }
+      #leaderboardTab .section { overflow-x: visible; }
+      #leaderboardTab .table-responsive { overflow-x: auto; -webkit-overflow-scrolling: touch; width: 100%; }
+      #leaderboardTab table { min-width: 480px; }
     }
     @media (max-width: 480px) {
       .main-content { padding: 10px; }
@@ -1230,7 +1235,7 @@
         <div style="margin-bottom: 30px;">
           <h3 style="color: #2d3748; margin-bottom: 6px;">🚀 Upcoming Awards — Current Period Leaders</h3>
           <p style="color: #718096; font-size: 0.85rem; margin-bottom: 15px;">These students are currently in the lead and may win the award at the end of the period. Use this to motivate others!</p>
-          <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px;">
+          <div id="upcomingAwardsGrid" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px;">
             <!-- Week -->
             <div id="upcomingCard_week" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 14px; padding: 20px; text-align: center; color: white; box-shadow: 0 4px 18px rgba(102,126,234,0.35); position: relative; overflow: hidden;">
               <div style="position:absolute;top:-18px;right:-18px;font-size:70px;opacity:0.08;">🌟</div>
