@@ -418,13 +418,14 @@
   const sWish    = (params.get('w') || 'Happy Birthday! 🎂').slice(0, 500);
 
   /* ── State ── */
-  let litCount   = sAge;
-  let audioCtx   = null;
-  let analyser   = null;
-  let micStream  = null;
-  let detectLoop = false;
-  let consecHigh = 0;
-  let lastBlow   = 0;
+  let litCount        = sAge;
+  let audioCtx        = null;
+  let analyser        = null;
+  let micStream       = null;
+  let detectLoop      = false;
+  let consecHigh      = 0;
+  let lastBlow        = 0;
+  let confettiInterval = null;
 
   /* ── Candle color palette ── */
   const CC = [
@@ -458,7 +459,7 @@
 
   /* ── Balloons ── */
   function makeBalloons() {
-    const emojis = ['🎈','🎈','�','🎀','🎈','🎊','🎈','🎈'];
+    const emojis = ['🎈','🎈','🎉','🎀','🎈','🎊','🎈','🎈'];
     for (let i = 0; i < 8; i++) {
       const b = document.createElement('div');
       b.className = 'balloon';
@@ -617,7 +618,7 @@
   /* ── Confetti ── */
   function launchConfetti() {
     const cols = ['#ff6b9d','#ffd700','#48dbfb','#a29bfe','#55efc4','#fd79a8','#fdcb6e','#6c5ce7'];
-    for (let i = 0; i < 90; i++) {
+    for (let i = 0; i < 50; i++) {
       setTimeout(() => {
         const p = document.createElement('div');
         p.className = 'confetti';
@@ -648,6 +649,8 @@
     document.getElementById('hbText').textContent = `Happy Birthday, ${sName}! 🎂`;
     document.getElementById('wishCard').textContent = sWish;
     launchConfetti();
+    confettiInterval = setInterval(launchConfetti, 3000);
+    window.addEventListener('beforeunload', () => clearInterval(confettiInterval));
   }
 
   /* ── Start handler ── */
