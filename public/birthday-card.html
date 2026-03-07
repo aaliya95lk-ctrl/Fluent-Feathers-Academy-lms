@@ -148,7 +148,7 @@
     /* ── The Cake ── */
     .cake {
       display: flex; flex-direction: column; align-items: center;
-      filter: drop-shadow(0 14px 28px rgba(200,80,140,0.22));
+      filter: drop-shadow(0 20px 40px rgba(180,60,130,0.32));
       margin: 0 0 10px;
     }
 
@@ -157,7 +157,7 @@
       display: flex; flex-wrap: wrap; justify-content: center;
       align-items: flex-end; gap: 4px;
       padding: 0 12px; z-index: 5; position: relative;
-      max-width: 320px; margin-bottom: -4px;
+      max-width: 380px; margin-bottom: -4px;
     }
 
     .candle-wrap {
@@ -218,63 +218,71 @@
 
     /* Tiers */
     .top-tier {
-      width: 220px; height: 66px; position: relative; z-index: 3;
-      background: linear-gradient(175deg, #f8a5c2 0%, #c44569 100%);
+      width: 264px; height: 84px; position: relative; z-index: 3;
+      background: linear-gradient(175deg, #ffbdd6 0%, #ff5599 55%, #c44569 100%);
       border-radius: 8px 8px 0 0;
-      box-shadow: inset 0 -4px 10px rgba(0,0,0,0.25), 0 3px 0 #a03158;
+      box-shadow: inset 0 -6px 14px rgba(0,0,0,0.22), inset 3px 0 10px rgba(255,255,255,0.15), 0 3px 0 #a03158;
     }
     /* frosting top */
     .top-tier::before {
-      content: ''; position: absolute; top: -10px; left: 0; right: 0;
-      height: 22px; background: white;
-      border-radius: 30px 30px 0 0;
+      content: ''; position: absolute; top: -15px; left: 0; right: 0;
+      height: 30px;
+      background: linear-gradient(180deg, #fff 55%, #ffe6f2 100%);
+      border-radius: 50px 50px 0 0;
     }
     /* frosting drips */
     .top-tier::after {
-      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 12px;
-      background: white;
-      -webkit-mask-image: radial-gradient(circle at 50% 0%, transparent 7px, white 7px) -20px 0/40px 12px,
-                          radial-gradient(circle at 50% 0%, transparent 7px, white 7px) 0 0/40px 12px;
-              mask-image: radial-gradient(circle at 50% 0%, transparent 7px, white 7px) -20px 0/40px 12px,
-                          radial-gradient(circle at 50% 0%, transparent 7px, white 7px) 0 0/40px 12px;
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 20px;
+      background: linear-gradient(180deg, #fff 65%, #ffe6f2 100%);
+      -webkit-mask-image: radial-gradient(circle at 50% 0%, transparent 11px, white 11px) -17px 0/34px 20px,
+                          radial-gradient(circle at 50% 0%, transparent 11px, white 11px) 0 0/34px 20px;
+              mask-image: radial-gradient(circle at 50% 0%, transparent 11px, white 11px) -17px 0/34px 20px,
+                          radial-gradient(circle at 50% 0%, transparent 11px, white 11px) 0 0/34px 20px;
     }
 
     .band {
-      width: 235px; height: 13px; background: white; z-index: 4; position: relative;
-      box-shadow: 0 2px 0 rgba(0,0,0,0.1);
+      width: 280px; height: 18px;
+      background: linear-gradient(180deg, #fff8f0, #ffeedd);
+      z-index: 4; position: relative;
+      box-shadow: 0 2px 0 rgba(0,0,0,0.08);
     }
 
     .bottom-tier {
-      width: 290px; height: 82px; position: relative; z-index: 2;
-      background: linear-gradient(175deg, #c3b1e1 0%, #6c5ce7 100%);
-      border-radius: 4px 4px 6px 6px;
-      box-shadow: inset 0 -4px 10px rgba(0,0,0,0.25), 0 4px 0 #5441cc;
+      width: 346px; height: 104px; position: relative; z-index: 2;
+      background: linear-gradient(175deg, #d8c2f5 0%, #b07ee8 45%, #6c5ce7 100%);
+      border-radius: 4px 4px 10px 10px;
+      box-shadow: inset 0 -6px 14px rgba(0,0,0,0.22), inset 3px 0 10px rgba(255,255,255,0.12), 0 4px 0 #5441cc;
     }
     .bottom-tier::before {
-      content: ''; position: absolute; top: -10px; left: 0; right: 0;
-      height: 22px; background: white; border-radius: 30px 30px 0 0;
+      content: ''; position: absolute; top: -15px; left: 0; right: 0;
+      height: 30px;
+      background: linear-gradient(180deg, #fff 55%, #ede0ff 100%);
+      border-radius: 50px 50px 0 0;
     }
     .bottom-tier::after {
-      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 12px;
-      background: white;
-      -webkit-mask-image: radial-gradient(circle at 50% 0%, transparent 8px, white 8px) -20px 0/40px 12px,
-                          radial-gradient(circle at 50% 0%, transparent 8px, white 8px) 0 0/40px 12px;
-              mask-image: radial-gradient(circle at 50% 0%, transparent 8px, white 8px) -20px 0/40px 12px,
-                          radial-gradient(circle at 50% 0%, transparent 8px, white 8px) 0 0/40px 12px;
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 20px;
+      background: linear-gradient(180deg, #fff 65%, #ede0ff 100%);
+      -webkit-mask-image: radial-gradient(circle at 50% 0%, transparent 12px, white 12px) -17px 0/34px 20px,
+                          radial-gradient(circle at 50% 0%, transparent 12px, white 12px) 0 0/34px 20px;
+              mask-image: radial-gradient(circle at 50% 0%, transparent 12px, white 12px) -17px 0/34px 20px,
+                          radial-gradient(circle at 50% 0%, transparent 12px, white 12px) 0 0/34px 20px;
     }
 
     /* sprinkle dots */
     .tier-dots {
       position: absolute; top: 50%; transform: translateY(calc(-50% + 6px));
-      left: 0; right: 0; display: flex; justify-content: space-around; padding: 0 18px;
+      left: 0; right: 0; display: flex; justify-content: space-around; padding: 0 16px;
     }
-    .dot { width: 9px; height: 9px; background: rgba(255,255,255,0.65); border-radius: 50%; }
-    .dot:nth-child(even) { background: rgba(255,220,150,0.7); }
+    .dot { width: 10px; height: 10px; background: rgba(255,255,255,0.85); border-radius: 50%; }
+    .dot:nth-child(even)  { background: rgba(255,235,100,0.95); width: 8px; height: 8px; }
+    .dot:nth-child(3n)    { background: rgba(255,110,110,0.9);  width: 9px; height: 9px; }
+    .dot:nth-child(4n)    { background: rgba(110,225,255,0.9);  width: 9px; height: 9px; }
+    .dot:nth-child(5n)    { background: rgba(140,255,175,0.9); }
 
     .plate {
-      width: 320px; height: 22px;
-      background: linear-gradient(180deg, #e0e0e0, #bdbdbd);
-      border-radius: 50%; box-shadow: 0 6px 18px rgba(0,0,0,0.4);
+      width: 384px; height: 28px;
+      background: linear-gradient(180deg, #f5f2ee 0%, #e8e0d0 50%, #c8bfb0 100%);
+      border-radius: 50%; box-shadow: 0 8px 22px rgba(0,0,0,0.32), inset 0 2px 4px rgba(255,255,255,0.6);
     }
 
     /* candles counter */
@@ -491,10 +499,10 @@
 
     /* candle sizing based on age */
     let cW, cH, fW, fH, wH;
-    if (sAge <= 10)      { cW=15; cH=48; fW=12; fH=20; wH=5; }
-    else if (sAge <= 20) { cW=13; cH=40; fW=10; fH=16; wH=4; }
-    else if (sAge <= 35) { cW=11; cH=32; fW= 8; fH=13; wH=3; }
-    else                 { cW= 9; cH=25; fW= 7; fH=11; wH=3; }
+    if (sAge <= 10)      { cW=17; cH=56; fW=14; fH=24; wH=6; }
+    else if (sAge <= 20) { cW=14; cH=46; fW=11; fH=18; wH=5; }
+    else if (sAge <= 35) { cW=12; cH=36; fW= 9; fH=15; wH=4; }
+    else                 { cW=10; cH=28; fW= 8; fH=12; wH=3; }
 
     for (let i = 0; i < sAge; i++) {
       const col = CC[i % CC.length];
