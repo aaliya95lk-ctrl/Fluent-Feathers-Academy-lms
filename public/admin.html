@@ -3746,10 +3746,13 @@ I'm passionate about helping children develop confidence in communication!"></te
         showTab(savedTab);
       }
 
-      // Load only lightweight secondary data in background (non-blocking)
-      // Keep initial load fast; heavy tabs load on click.
+      // Preload past sessions quickly right after initial render
       setTimeout(async () => {
         safePreload(() => loadPastSessions(false), 'past sessions');
+      }, 400);
+
+      // Load remaining secondary data in background (non-blocking)
+      setTimeout(async () => {
         safePreload(() => loadStudents(), 'students');
         safePreload(() => loadGroups(), 'groups');
         safePreload(() => loadEmailLogs(), 'email logs');

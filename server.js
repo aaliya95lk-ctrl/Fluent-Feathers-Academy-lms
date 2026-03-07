@@ -4477,6 +4477,17 @@ function convertToINR(amount, currency) {
   return amount * rate;
 }
 
+// ==================== ADMIN DASHBOARD CACHE ====================
+let adminUpcomingCache = { data: null, ts: 0 };
+let adminPastCache = { data: null, ts: 0 };
+const ADMIN_UPCOMING_TTL_MS = 60 * 1000;      // 1 minute (refreshes quickly)
+const ADMIN_PAST_TTL_MS = 3 * 60 * 1000;     // 3 minutes
+
+function clearAdminDashboardCache() {
+  adminUpcomingCache = { data: null, ts: 0 };
+  adminPastCache = { data: null, ts: 0 };
+}
+
 app.get('/api/dashboard/stats', async (req, res) => {
   try {
     // Fire all independent queries in parallel for fast load
@@ -4624,6 +4635,11 @@ app.get('/api/calendar/sessions', async (req, res) => {
 });
 
 app.get('/api/dashboard/upcoming-classes', async (req, res) => {
+  // Serve from cache if fresh
+  if (adminUpcomingCache.data && (Date.now() - adminUpcomingCache.ts) < ADMIN_UPCOMING_TTL_MS) {
+    res.set('X-Cache', 'HIT');
+    return res.json(adminUpcomingCache.data);
+  }
   try {
     // Fire all 4 independent queries in parallel
     const [priv, grp, events, demos] = await Promise.all([
@@ -4770,18 +4786,16 @@ app.get('/api/dashboard/upcoming-classes', async (req, res) => {
    }
 
    // SUCCESS
-res.json({
-  success: true,
-  classes: upcoming
-});
+  const upcomingResp = { success: true, classes: upcoming };
+  adminUpcomingCache = { data: upcomingResp, ts: Date.now() };
+res.json(upcomingResp);
 
   } catch (err) {
     console.error('Error loading upcoming classes:', err);
     // ERROR
-res.status(500).json({
-  success: false,
-  classes: []   // 🔑 CRITICAL
-});
+  const errResp = { success: false, classes: [] };
+  adminUpcomingCache = { data: errResp, ts: Date.now() - ADMIN_UPCOMING_TTL_MS + 10000 }; // retry in 10s
+res.status(500).json(errResp);
 
   }
 });
@@ -5922,11 +5936,27 @@ app.post('/api/groups/:groupId/convert-private-sessions', async (req, res) => {
 });
 
 // Get all sessions for a student (including group sessions)
+// In-memory sessions cache — serves instant response on repeat loads / cold-start
+const sessionsResponseCache = new Map(); // key: `${studentId}:${light}`, value: { data, ts }
+const SESSIONS_CACHE_TTL_MS = 3 * 60 * 1000; // 3 minutes
+function clearStudentSessionsCache(studentId) {
+  sessionsResponseCache.delete(`${studentId}:true`);
+  sessionsResponseCache.delete(`${studentId}:false`);
+}
+
 app.get('/api/sessions/:studentId', async (req, res) => {
   const id = req.adminStudentId || req.params.studentId;
   const lightMode = String(req.query.light || '') === '1';
   if(req.adminStudentId && req.adminStudentId != req.params.studentId) {
     return res.status(403).json({ error: 'Access denied' });
+  }
+
+  // Serve from server-side cache if fresh (avoids DB hit on rapid reloads / cold starts)
+  const cacheKey = `${id}:${lightMode}`;
+  const cached = sessionsResponseCache.get(cacheKey);
+  if (cached && (Date.now() - cached.ts) < SESSIONS_CACHE_TTL_MS) {
+    res.set('X-Cache', 'HIT');
+    return res.json(cached.data);
   }
 
   try {
@@ -6040,9 +6070,19 @@ app.get('/api/sessions/:studentId', async (req, res) => {
       return session;
     });
 
-    res.json(lightMode ? allSessions : fixedSessions);
+    const responseData = lightMode ? allSessions : fixedSessions;
+    // Cache this response so the next request within 3 min is instant
+    sessionsResponseCache.set(cacheKey, { data: responseData, ts: Date.now() });
+    res.json(responseData);
   } catch (err) {
     console.error('Error fetching sessions:', err);
+    // If DB failed but we have stale cache, serve it rather than an error
+    const staleCached = sessionsResponseCache.get(cacheKey);
+    if (staleCached) {
+      console.log(`⚡ Serving stale sessions cache for student ${id} due to DB error`);
+      res.set('X-Cache', 'STALE');
+      return res.json(staleCached.data);
+    }
     res.status(500).json({ error: err.message });
   }
 });
@@ -6097,6 +6137,7 @@ app.delete('/api/sessions/:sessionId', async (req, res) => {
     }
 
     await client.query('COMMIT');
+    clearAdminDashboardCache();
     res.json({ success: true, message: 'Session deleted successfully' });
   } catch (err) {
     await client.query('ROLLBACK');
@@ -6184,6 +6225,7 @@ app.put('/api/sessions/:sessionId', async (req, res) => {
       }
     }
 
+    clearAdminDashboardCache();
     res.json({ success: true, message: `Session updated successfully! ${emailsSent > 0 ? `(${emailsSent} notification${emailsSent > 1 ? 's' : ''} sent)` : ''}` });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -6272,6 +6314,7 @@ app.post('/api/sessions/:sessionId/cancel', async (req, res) => {
       }
     }
 
+    clearAdminDashboardCache();
     res.json({
       success: true,
       message: `Class cancelled successfully${grant_makeup_credit ? ' (makeup credit granted)' : ''}`
@@ -6558,6 +6601,11 @@ app.post('/api/sessions/:sessionId/group-attendance', async (req, res) => {
   const client = await pool.connect();
   try {
     const { attendanceData } = req.body;
+    // Invalidate sessions cache for all affected students so next load is fresh
+    if (Array.isArray(attendanceData)) {
+      attendanceData.forEach(r => { if (r.student_id) clearStudentSessionsCache(r.student_id); });
+    }
+    clearAdminDashboardCache();
     const sessionId = req.params.sessionId;
 
     await client.query('BEGIN');
@@ -6724,6 +6772,7 @@ app.post('/api/sessions/:sessionId/reschedule', async (req, res) => {
       }
     }
 
+    clearAdminDashboardCache();
     res.json({
       message: 'Session rescheduled successfully!',
       new_date: converted.date,
@@ -7498,6 +7547,12 @@ app.get('/api/email-logs', async (req, res) => {
 });
 
 app.get('/api/sessions/past/all', async (req, res) => {
+  // Only cache the default admin view (limit=120, no other params)
+  const isDefaultQuery = !req.query.limit || req.query.limit === '120';
+  if (isDefaultQuery && adminPastCache.data && (Date.now() - adminPastCache.ts) < ADMIN_PAST_TTL_MS) {
+    res.set('X-Cache', 'HIT');
+    return res.json(adminPastCache.data);
+  }
   try {
     const today = new Date().toISOString().split('T')[0];
     const requestedLimit = Math.min(Math.max(parseInt(req.query.limit) || 50, 10), 300);
@@ -7543,8 +7598,16 @@ app.get('/api/sessions/past/all', async (req, res) => {
       return session;
     });
 
+    if (isDefaultQuery) {
+      adminPastCache = { data: fixed, ts: Date.now() };
+    }
     res.json(fixed);
   } catch (err) {
+    // Serve stale cache if DB fails
+    if (isDefaultQuery && adminPastCache.data) {
+      res.set('X-Cache', 'STALE');
+      return res.json(adminPastCache.data);
+    }
     res.status(500).json({ error: err.message });
   }
 });
@@ -11694,14 +11757,9 @@ let selfPingUrl = null;
 let selfPingInFlight = false;
 
 // Database health check - tries to reconnect if disconnected
+// Always runs so Supabase never goes cold during active deployment
 async function checkDatabaseHealth() {
   if (dbHealthCheckInFlight) return;
-
-  const msSinceActivity = Date.now() - lastDbActivityAt;
-  if (msSinceActivity > DB_ACTIVE_WINDOW_MS) {
-    dbReconnectScheduled = false;
-    return;
-  }
 
   dbHealthCheckInFlight = true;
   try {

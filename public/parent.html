@@ -2922,7 +2922,7 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
 
           // Feedback button - show if completed, attended, and not already given feedback
           let feedbackBtn = '-';
-          const wasAbsent = (s.source_type === 'Group' && s.student_attendance && s.student_attendance.toLowerCase() === 'absent') ||
+          const wasAbsent = (s.source_type === 'Group' && s.student_attendance && ['absent', 'excused', 'unexcused'].includes(s.student_attendance.toLowerCase())) ||
                            s.status === 'Missed' || s.status === 'Absent' || s.status === 'Cancelled';
           if (s.status === 'Completed' && !wasAbsent) {
             if (s.has_feedback) {
@@ -2942,7 +2942,11 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
             if (s.student_attendance === 'Present') {
               attendanceDisplay = `<span style="color:#38a169; font-weight:600;">✓ Present</span>`;
             } else if (s.student_attendance === 'Absent') {
-              attendanceDisplay = `<span style="color:#e53e3e; font-weight:600;">✗ Absent</span><br><small style="color:#718096;">(Materials available)</small>`;
+              attendanceDisplay = `<span style="color:#e53e3e; font-weight:600;">✗ Absent</span><br><small style="color:#718096;">(Recording available to catch up)</small>`;
+            } else if (s.student_attendance === 'Excused') {
+              attendanceDisplay = `<span style="color:#e53e3e; font-weight:600;">✗ Absent</span><br><small style="color:#718096;">📹 Recording available to catch up</small><br><span style="background:#f6ad55; color:#744210; padding:2px 8px; border-radius:10px; font-size:0.75rem; font-weight:600;">🎫 Makeup credit added</span>`;
+            } else if (s.student_attendance === 'Unexcused') {
+              attendanceDisplay = `<span style="color:#e53e3e; font-weight:600;">✗ Absent</span><br><small style="color:#718096;">📹 Recording available to catch up</small>`;
             } else if (s.status === 'Completed') {
               attendanceDisplay = `<span style="color:#718096;">Pending</span>`;
             } else {
@@ -3335,7 +3339,7 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
           // Skip if already has feedback
           if (s.has_feedback === true) return false;
           // For group sessions, check student_attendance - skip if absent
-          if (s.source_type === 'Group' && s.student_attendance && s.student_attendance.toLowerCase() === 'absent') return false;
+          if (s.source_type === 'Group' && s.student_attendance && ['absent', 'excused', 'unexcused'].includes(s.student_attendance.toLowerCase())) return false;
           // For private sessions, status would be 'Missed' not 'Completed' if absent, but double check
           if (s.status === 'Missed' || s.status === 'Absent' || s.status === 'Cancelled') return false;
           return true;
