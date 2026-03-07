@@ -2888,10 +2888,15 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
           materials += getMaterialLink(s.ppt_file_path, '📊', 'PPT', true);  // PPT is protected - view only
           materials += getMaterialLink(s.recording_file_path, '🎥', 'Recording', false);  // Recording - downloadable
           materials += getMaterialLink(s.homework_file_path, '📝', 'HW', false);  // HW - downloadable
-          // Add Submit HW button next to HW download
+          // Add Submit HW / Resubmit button next to HW download
           const canSubmitHw = s.status === 'Completed' || (s.source_type === 'Group' && s.student_attendance !== 'Pending') || s.status === 'Missed';
           if (canSubmitHw) {
-            materials += `<button onclick="openHwSubmitModal(${s.id}, '${getSerial(s)}')" style="cursor:pointer; border:none; background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color:white; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 500; display: inline-flex; align-items: center; gap: 4px; margin: 2px;">📤 Submit HW</button>`;
+            const alreadySubmitted = !!s.homework_submission_path;
+            if (alreadySubmitted) {
+              materials += `<button onclick="openHwSubmitModal(${s.id}, '${getSerial(s)}')" style="cursor:pointer; border:none; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color:white; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 500; display: inline-flex; align-items: center; gap: 4px; margin: 2px;">🔄 Resubmit HW</button>`;
+            } else {
+              materials += `<button onclick="openHwSubmitModal(${s.id}, '${getSerial(s)}')" style="cursor:pointer; border:none; background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color:white; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 500; display: inline-flex; align-items: center; gap: 4px; margin: 2px;">📤 Submit HW</button>`;
+            }
           }
           if (!materials) materials = '-';
 
@@ -2910,7 +2915,11 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
           let hwStatus = '-';
           if (s.homework_submission_path) {
             const submittedOn = fmtTz(s.homework_submitted_at);
+            const hwCount = parseInt(s.hw_submission_count) || 1;
             hwStatus = `<span style="color: #38a169; font-weight: 600;">✅ Submitted</span>`;
+            if (hwCount > 1) {
+              hwStatus += `<br><span style="background:#9f7aea; color:white; padding:1px 7px; border-radius:10px; font-size:0.72rem;">🔄 Resubmission #${hwCount}</span>`;
+            }
             if (s.session_topic) {
               hwStatus += `<br><small style="color:#5a67d8; font-weight:600;">📌 ${s.session_topic}</small>`;
             }

@@ -5980,6 +5980,7 @@ app.get('/api/sessions/:studentId', async (req, res) => {
             m.corrected_file_path as homework_corrected_path,
             m.uploaded_at as homework_submitted_at,
             m.feedback_date as homework_checked_at,
+            COALESCE(mc.hw_count, 0) as hw_submission_count,
             CASE WHEN cf.id IS NOT NULL THEN true ELSE false END as has_feedback
           FROM sessions s
           LEFT JOIN LATERAL (
@@ -5989,6 +5990,11 @@ app.get('/api/sessions/:studentId', async (req, res) => {
             ORDER BY uploaded_at DESC NULLS LAST
             LIMIT 1
           ) m ON true
+          LEFT JOIN LATERAL (
+            SELECT COUNT(*) as hw_count
+            FROM materials
+            WHERE session_id = s.id AND student_id = $1 AND file_type = 'Homework' AND uploaded_by = 'Parent'
+          ) mc ON true
           LEFT JOIN class_feedback cf ON cf.session_id = s.id AND cf.student_id = $1
           WHERE s.student_id = $1 AND s.session_type = 'Private'
         `, [id]);
@@ -6024,6 +6030,7 @@ app.get('/api/sessions/:studentId', async (req, res) => {
               m.corrected_file_path as homework_corrected_path,
               m.uploaded_at as homework_submitted_at,
               m.feedback_date as homework_checked_at,
+              COALESCE(mc.hw_count, 0) as hw_submission_count,
               CASE WHEN cf.id IS NOT NULL THEN true ELSE false END as has_feedback,
               COALESCE(sa.attendance, 'Pending') as student_attendance
             FROM sessions s
@@ -6035,6 +6042,11 @@ app.get('/api/sessions/:studentId', async (req, res) => {
               ORDER BY uploaded_at DESC NULLS LAST
               LIMIT 1
             ) m ON true
+            LEFT JOIN LATERAL (
+              SELECT COUNT(*) as hw_count
+              FROM materials
+              WHERE session_id = s.id AND student_id = $1 AND file_type = 'Homework' AND uploaded_by = 'Parent'
+            ) mc ON true
             LEFT JOIN class_feedback cf ON cf.session_id = s.id AND cf.student_id = $1
             WHERE s.group_id = $2 AND s.session_type = 'Group'
           `, [id, groupId]);
