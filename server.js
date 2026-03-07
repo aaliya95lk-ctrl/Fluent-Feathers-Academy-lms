@@ -5982,7 +5982,13 @@ app.get('/api/sessions/:studentId', async (req, res) => {
             m.feedback_date as homework_checked_at,
             CASE WHEN cf.id IS NOT NULL THEN true ELSE false END as has_feedback
           FROM sessions s
-          LEFT JOIN materials m ON m.session_id = s.id AND m.student_id = $1 AND m.file_type = 'Homework' AND m.uploaded_by = 'Parent'
+          LEFT JOIN LATERAL (
+            SELECT file_path, feedback_grade, feedback_comments, corrected_file_path, uploaded_at, feedback_date
+            FROM materials
+            WHERE session_id = s.id AND student_id = $1 AND file_type = 'Homework' AND uploaded_by = 'Parent'
+            ORDER BY uploaded_at DESC NULLS LAST
+            LIMIT 1
+          ) m ON true
           LEFT JOIN class_feedback cf ON cf.session_id = s.id AND cf.student_id = $1
           WHERE s.student_id = $1 AND s.session_type = 'Private'
         `, [id]);
@@ -6022,7 +6028,13 @@ app.get('/api/sessions/:studentId', async (req, res) => {
               COALESCE(sa.attendance, 'Pending') as student_attendance
             FROM sessions s
             INNER JOIN session_attendance sa ON sa.session_id = s.id AND sa.student_id = $1
-            LEFT JOIN materials m ON m.session_id = s.id AND m.student_id = $1 AND m.file_type = 'Homework' AND m.uploaded_by = 'Parent'
+            LEFT JOIN LATERAL (
+              SELECT file_path, feedback_grade, feedback_comments, corrected_file_path, uploaded_at, feedback_date
+              FROM materials
+              WHERE session_id = s.id AND student_id = $1 AND file_type = 'Homework' AND uploaded_by = 'Parent'
+              ORDER BY uploaded_at DESC NULLS LAST
+              LIMIT 1
+            ) m ON true
             LEFT JOIN class_feedback cf ON cf.session_id = s.id AND cf.student_id = $1
             WHERE s.group_id = $2 AND s.session_type = 'Group'
           `, [id, groupId]);
