@@ -2447,8 +2447,16 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
                 statusText = 'Available';
               } else if (statusLower === 'scheduled') {
                 statusBadge = 'background: #805ad5; color: white;';
-                const schedDate = (c.scheduled_session_date || c.scheduled_date) ? new Date(c.scheduled_session_date || c.scheduled_date).toLocaleDateString() : '';
-                statusText = 'Scheduled' + (schedDate ? ' - ' + schedDate : '');
+                const rawSchedDate = c.scheduled_session_date || c.scheduled_date;
+                const rawSchedTime = c.scheduled_session_time || c.scheduled_time;
+                let schedBadgeDate = '';
+                if (rawSchedDate && rawSchedTime) {
+                  const localDt = new Date(rawSchedDate.split('T')[0] + 'T' + rawSchedTime + 'Z');
+                  schedBadgeDate = localDt.toLocaleDateString();
+                } else if (rawSchedDate) {
+                  schedBadgeDate = new Date(rawSchedDate).toLocaleDateString();
+                }
+                statusText = 'Scheduled' + (schedBadgeDate ? ' - ' + schedBadgeDate : '');
               } else if (statusLower === 'used') {
                 statusBadge = 'background: #718096; color: white;';
                 statusText = 'Used';
@@ -2464,9 +2472,17 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
 
               let scheduledDiv = '';
               if (statusLower === 'scheduled' && (c.scheduled_session_date || c.scheduled_date)) {
-                const schedDateStr = new Date(c.scheduled_session_date || c.scheduled_date).toLocaleDateString();
-                const rawTime = c.scheduled_session_time || c.scheduled_time;
-                const schedTimeStr = rawTime ? ' at ' + rawTime : '';
+                const rawDate2 = (c.scheduled_session_date || c.scheduled_date).split('T')[0];
+                const rawTime2 = c.scheduled_session_time || c.scheduled_time;
+                let schedDateStr, schedTimeStr;
+                if (rawDate2 && rawTime2) {
+                  const localDt2 = new Date(rawDate2 + 'T' + rawTime2 + 'Z');
+                  schedDateStr = localDt2.toLocaleDateString();
+                  schedTimeStr = ' at ' + localDt2.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                } else {
+                  schedDateStr = new Date(rawDate2).toLocaleDateString();
+                  schedTimeStr = '';
+                }
                 scheduledDiv = '<div style="margin-top: 8px; background: #805ad5; color: white; padding: 6px 12px; border-radius: 6px; font-size: 0.85rem; word-break: break-word;">Makeup Class: ' + schedDateStr + schedTimeStr + '</div>';
               }
 
