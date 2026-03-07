@@ -2,7 +2,7 @@
 console.log("🚀 Starting Advanced LMS Server v2.0 - Full Feature Update...");
 
 const express = require('express');
-const { Pool } = require('pg');
+const { Pool, Client } = require('pg');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -11637,43 +11637,22 @@ app.post('/api/admin/reconnect-db', async (req, res) => {
 });
 
 // Lightweight health endpoint for keepalive and uptime checks
-app.get('/api/health/light', async (req, res) => {
-  const now = new Date();
-  const dbStart = Date.now();
-
-  try {
-    await executeQuery('SELECT 1', [], 1);
-    const dbLatency = Date.now() - dbStart;
-    return res.json({
-      status: 'healthy',
-      server_time_utc: now.toISOString(),
-      database: {
-        status: 'connected',
-        latency_ms: dbLatency,
-        pool: {
-          totalCount: pool.totalCount,
-          idleCount: pool.idleCount,
-          waitingCount: pool.waitingCount
-        },
-        ready: dbReady
-      }
-    });
-  } catch (err) {
-    return res.status(503).json({
-      status: 'degraded',
-      server_time_utc: now.toISOString(),
-      error: err.message,
-      database: {
-        status: 'disconnected',
-        pool: {
-          totalCount: pool.totalCount,
-          idleCount: pool.idleCount,
-          waitingCount: pool.waitingCount
-        },
-        ready: dbReady
-      }
-    });
-  }
+// Lightweight health check — responds INSTANTLY without querying DB.
+// Used by Render self-ping to keep the service alive. Must never block on DB.
+app.get('/api/health/light', (req, res) => {
+  res.json({
+    status: 'healthy',
+    server_time_utc: new Date().toISOString(),
+    database: {
+      status: dbReady ? 'connected' : 'disconnected',
+      pool: {
+        totalCount: pool.totalCount,
+        idleCount: pool.idleCount,
+        waitingCount: pool.waitingCount
+      },
+      ready: dbReady
+    }
+  });
 });
 
 // Endpoint to check server health and upcoming reminders
@@ -11768,36 +11747,81 @@ const DB_CHECK_INTERVAL = 30 * 1000;        // Check DB every 30 seconds
 let selfPingUrl = null;
 let selfPingInFlight = false;
 
-// Database health check - tries to reconnect if disconnected
-// Always runs so Supabase never goes cold during active deployment
+// ─── Dedicated persistent ping client ───────────────────────────────────────
+// Completely separate from the pool — never competes with user requests.
+// Keeps a permanent TCP connection to the DB and pings every 15 seconds.
+let _pingClient = null;
+let _pingConnecting = false;
+
+async function _connectPingClient() {
+  if (_pingConnecting) return;
+  _pingConnecting = true;
+  try {
+    if (_pingClient) { try { _pingClient.end(); } catch {} _pingClient = null; }
+    const c = new Client({
+      connectionString: dbUrl,
+      ssl: { rejectUnauthorized: false },
+      keepAlive: true,
+      keepAliveInitialDelayMillis: 0,
+      statement_timeout: 4000,
+      query_timeout: 4000,
+      connectionTimeoutMillis: 8000
+    });
+    c.on('error', () => { _pingClient = null; });
+    await c.connect();
+    _pingClient = c;
+    console.log('⚡ Persistent DB ping client connected');
+    // Mark DB ready as soon as ping client connects
+    if (!dbReady) { dbReady = true; console.log('✅ Database ready (via ping client)'); }
+  } catch (err) {
+    console.warn('⚡ Ping client connect failed:', err.message);
+    _pingClient = null;
+  } finally {
+    _pingConnecting = false;
+  }
+}
+
+async function _sendDbPing() {
+  if (!_pingClient) {
+    await _connectPingClient();
+    return;
+  }
+  try {
+    await _pingClient.query('SELECT 1');
+    if (!dbReady) { dbReady = true; console.log('✅ Database ready (ping ok)'); }
+  } catch (err) {
+    console.warn('⚡ DB ping failed, will reconnect:', err.message);
+    _pingClient = null;
+    dbReady = false;
+    setTimeout(_connectPingClient, 2000);
+  }
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Pool-based health check — used for reconnect detection and pool validation
 async function checkDatabaseHealth() {
   if (dbHealthCheckInFlight) return;
-
   dbHealthCheckInFlight = true;
   try {
-    // Keep DB warm only during rolling activity window
-    await executeQuery('SELECT 1', [], 1);
+    // Use pool.query directly — no retry delay, doesn't hold connection long
+    await pool.query('SELECT 1');
     if (!dbReady) {
-      console.log('✅ Database reconnected successfully');
+      console.log('✅ Database reconnected (pool check)');
       dbReady = true;
     }
     dbReconnectScheduled = false;
   } catch (err) {
     const now = Date.now();
     if (now - lastDbFailureLogAt > 60 * 1000) {
-      console.error('❌ Database health check failed:', err.message);
+      console.error('❌ Pool health check failed:', err.message);
       lastDbFailureLogAt = now;
     }
     dbReady = false;
-
     if (!dbReconnectScheduled) {
       dbReconnectScheduled = true;
       setTimeout(async () => {
-        try {
-          await initializeDatabaseConnection();
-        } finally {
-          dbReconnectScheduled = false;
-        }
+        try { await initializeDatabaseConnection(); }
+        finally { dbReconnectScheduled = false; }
       }, 10000);
     }
   } finally {
@@ -11809,10 +11833,13 @@ function startKeepAlive() {
   if (keepAliveStarted) return;
   keepAliveStarted = true;
 
-  // Run immediately so DB is warm from the first second (don't wait 30s for interval)
-  checkDatabaseHealth();
+  // Start persistent ping client immediately (separate from pool)
+  _connectPingClient();
+  // Ping DB every 15 seconds via dedicated client — keeps DB warm without touching pool
+  setInterval(_sendDbPing, 15 * 1000);
 
-  // Database health check - runs every 30 seconds
+  // Pool health check every 30 seconds — detects pool-level issues
+  checkDatabaseHealth();
   setInterval(async () => {
     await checkDatabaseHealth();
   }, DB_CHECK_INTERVAL);
