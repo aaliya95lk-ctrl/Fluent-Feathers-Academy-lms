@@ -116,10 +116,10 @@ const pool = new Pool({
   keepAliveInitialDelayMillis: 10000,
   // Pool configuration optimized for free-tier hosting (Supabase)
   max: 2,                          // Reduce to 2 connections (Supabase pooler limit)
-  min: 0,                          // Let pool fully drain when idle (avoids stale connections)
-  idleTimeoutMillis: 240000,       // Close idle connections after 4 mins (before PgBouncer's ~5 min drop)
+  min: 1,                          // Always keep 1 warm connection (prevents cold TCP setup on every request)
+  idleTimeoutMillis: 240000,       // Close EXTRA connections after 4 mins (min:1 is exempt)
   connectionTimeoutMillis: DB_CONNECT_TIMEOUT_MS,
-  allowExitOnIdle: true,           // Allow process to exit when pool is empty
+  // allowExitOnIdle removed — keep pool alive so process never idles out
   statement_timeout: DB_STATEMENT_TIMEOUT_MS,
   query_timeout: DB_QUERY_TIMEOUT_MS
 });
@@ -11750,9 +11750,9 @@ app.get('/api/health', async (req, res) => {
 });
 
 // ==================== KEEPALIVE PING ====================
-// Self-ping every 1 minute to keep free-tier service awake during active hours
-const SELF_PING_INTERVAL = Math.max(60 * 1000, Number(process.env.SELF_PING_INTERVAL_MS) || 60 * 1000);
-const DB_CHECK_INTERVAL = 60 * 1000;        // Check DB every 1 minute
+// Self-ping every 30 seconds to keep free-tier service and DB awake
+const SELF_PING_INTERVAL = Math.max(30 * 1000, Number(process.env.SELF_PING_INTERVAL_MS) || 30 * 1000);
+const DB_CHECK_INTERVAL = 30 * 1000;        // Check DB every 30 seconds
 let selfPingUrl = null;
 let selfPingInFlight = false;
 
@@ -11797,13 +11797,16 @@ function startKeepAlive() {
   if (keepAliveStarted) return;
   keepAliveStarted = true;
 
-  // Database health check - runs every minute
+  // Run immediately so DB is warm from the first second (don't wait 30s for interval)
+  checkDatabaseHealth();
+
+  // Database health check - runs every 30 seconds
   setInterval(async () => {
     await checkDatabaseHealth();
   }, DB_CHECK_INTERVAL);
 
-  // Only start external keepalive in production
-  if (process.env.NODE_ENV === 'production' && process.env.RENDER_EXTERNAL_URL) {
+  // Start external keepalive whenever RENDER_EXTERNAL_URL is set (don't require NODE_ENV)
+  if (process.env.RENDER_EXTERNAL_URL) {
     selfPingUrl = process.env.RENDER_EXTERNAL_URL;
     console.log(`🏓 Keepalive ping enabled for: ${selfPingUrl} every ${Math.round(SELF_PING_INTERVAL / 1000)}s`);
 
