@@ -4479,93 +4479,84 @@ function convertToINR(amount, currency) {
 
 app.get('/api/dashboard/stats', async (req, res) => {
   try {
-    // Get student count
-    const countResult = await executeQuery('SELECT COUNT(*) as total FROM students WHERE is_active = true');
-
-    // Build revenue from actual payment transactions (payment_history + renewal records not yet synced)
-    const paymentsResult = await executeQuery(`
-      SELECT payment_date, amount, currency FROM payment_history
-      UNION ALL
-      SELECT pr.renewal_date as payment_date, pr.amount, pr.currency
-      FROM payment_renewals pr
-      WHERE NOT EXISTS (
-        SELECT 1 FROM payment_history ph2
-        WHERE ph2.student_id = pr.student_id
-          AND ph2.payment_date = pr.renewal_date
-          AND ph2.amount = pr.amount
-          AND ph2.notes LIKE '%Renewal%'
-      )
-    `);
+    // Fire all independent queries in parallel for fast load
+    const [
+      countResult,
+      paymentsResult,
+      sess,
+      g,
+      e,
+      hw
+    ] = await Promise.all([
+      executeQuery('SELECT COUNT(*) as total FROM students WHERE is_active = true'),
+      executeQuery(`
+        SELECT payment_date, amount, currency FROM payment_history
+        UNION ALL
+        SELECT pr.renewal_date as payment_date, pr.amount, pr.currency
+        FROM payment_renewals pr
+        WHERE NOT EXISTS (
+          SELECT 1 FROM payment_history ph2
+          WHERE ph2.student_id = pr.student_id
+            AND ph2.payment_date = pr.renewal_date
+            AND ph2.amount = pr.amount
+            AND ph2.notes LIKE '%Renewal%'
+        )
+      `),
+      executeQuery(`SELECT COUNT(*) as upcoming FROM sessions WHERE status IN ('Pending', 'Scheduled') AND session_date >= CURRENT_DATE`),
+      executeQuery('SELECT COUNT(*) as total FROM groups'),
+      executeQuery(`SELECT COUNT(*) as total FROM events WHERE status = 'Active'`),
+      executeQuery(`SELECT COUNT(*) as pending FROM materials WHERE uploaded_by = 'Parent' AND file_type = 'Homework' AND (feedback_grade IS NULL OR feedback_grade = '')`)
+    ]);
 
     const monthlyRevenue = {};
     let totalRevenueINR = 0;
-    
     for (const payment of paymentsResult.rows) {
       const amount = parseFloat(payment.amount) || 0;
       const currency = payment.currency || 'INR';
       const inrAmount = convertToINR(amount, currency);
       totalRevenueINR += inrAmount;
-      
-      // Group by month (YYYY-MM format)
       try {
         const paidDate = payment.payment_date ? new Date(payment.payment_date) : new Date();
         const monthKey = `${paidDate.getFullYear()}-${String(paidDate.getMonth() + 1).padStart(2, '0')}`;
-        if (!monthlyRevenue[monthKey]) {
-          monthlyRevenue[monthKey] = 0;
-        }
+        if (!monthlyRevenue[monthKey]) monthlyRevenue[monthKey] = 0;
         monthlyRevenue[monthKey] += inrAmount;
-      } catch (e) {
-        // skip invalid dates
-      }
+      } catch (e) { /* skip invalid dates */ }
     }
 
-    const sess = await executeQuery(`SELECT COUNT(*) as upcoming FROM sessions WHERE status IN ('Pending', 'Scheduled') AND session_date >= CURRENT_DATE`);
-    const g = await executeQuery('SELECT COUNT(*) as total FROM groups');
-    const e = await executeQuery('SELECT COUNT(*) as total FROM events WHERE status = \'Active\'');
-
-    // Count ungraded homework submissions (uploaded by parent, no grade yet)
-    const hw = await executeQuery(`SELECT COUNT(*) as pending FROM materials WHERE uploaded_by = 'Parent' AND file_type = 'Homework' AND (feedback_grade IS NULL OR feedback_grade = '')`);
-
-    // Count submitted challenges awaiting review
+    // These two may fail on tables not yet created — run after main parallel batch
     let pendingChallenges = 0;
-    try {
-      const ch = await executeQuery(`SELECT COUNT(*) as pending FROM student_challenges WHERE status = 'Submitted'`);
-      pendingChallenges = parseInt(ch.rows[0].pending) || 0;
-    } catch (e) { /* table may not exist */ }
-    
     let pendingAssessments = 0;
-    try {
-      const assessRes = await executeQuery(`
+    await Promise.all([
+      executeQuery(`SELECT COUNT(*) as pending FROM student_challenges WHERE status = 'Submitted'`)
+        .then(ch => { pendingChallenges = parseInt(ch.rows[0].pending) || 0; })
+        .catch(() => {}),
+      executeQuery(`
         SELECT COUNT(*) as count FROM (
           SELECT s.id,
             COALESCE(s.completed_sessions, 0) as completed,
             COALESCE(s.remaining_sessions, 0) as remaining,
             COALESCE((SELECT COUNT(*) FROM monthly_assessments ma WHERE ma.student_id = s.id AND ma.assessment_type = 'monthly'), 0) as total_assessments
-          FROM students s
-          WHERE s.is_active = true
+          FROM students s WHERE s.is_active = true
         ) sub
-        WHERE 
-          (sub.completed - (sub.total_assessments * 7)) >= 7
+        WHERE (sub.completed - (sub.total_assessments * 7)) >= 7
           OR (sub.remaining <= 2 AND (sub.completed - (sub.total_assessments * 7)) >= 3)
-      `);
-      pendingAssessments = parseInt(assessRes.rows[0].count) || 0;
-    } catch(e) { console.error('Assessment count error:', e.message); }
-    
+      `)
+        .then(ar => { pendingAssessments = parseInt(ar.rows[0].count) || 0; })
+        .catch(e => { console.error('Assessment count error:', e.message); })
+    ]);
+
     res.json({
       totalStudents: parseInt(countResult.rows[0].total)||0,
       totalRevenue: Math.round(totalRevenueINR),
       monthlyRevenue: Object.entries(monthlyRevenue)
         .sort()
-        .reduce((acc, [month, revenue]) => {
-          acc[month] = Math.round(revenue);
-          return acc;
-        }, {}),
+        .reduce((acc, [month, revenue]) => { acc[month] = Math.round(revenue); return acc; }, {}),
       upcomingSessions: parseInt(sess.rows[0].upcoming)||0,
       totalGroups: parseInt(g.rows[0].total)||0,
       activeEvents: parseInt(e.rows[0].total)||0,
       pendingHomework: parseInt(hw.rows[0].pending)||0,
-      pendingChallenges: pendingChallenges,
-      pendingAssessments: pendingAssessments
+      pendingChallenges,
+      pendingAssessments
     });
   } catch (err) {
     console.error('Dashboard stats error:', err.message);
@@ -4634,68 +4625,64 @@ app.get('/api/calendar/sessions', async (req, res) => {
 
 app.get('/api/dashboard/upcoming-classes', async (req, res) => {
   try {
-    // Get private sessions (only for active students) - using retry-enabled query
-    const priv = await executeQuery(`
-      SELECT s.*, st.name as student_name, st.timezone, s.session_number,
-      CONCAT(st.program_name, ' - ', st.duration) as class_info,
-      'Private' as display_type,
-      COALESCE(s.class_link, $1) as class_link
-      FROM sessions s
-      JOIN students st ON s.student_id = st.id
-      WHERE s.status IN ('Pending', 'Scheduled') AND s.session_type = 'Private'
-        AND st.is_active = true
-        AND s.session_date >= CURRENT_DATE - INTERVAL '1 day'
-      ORDER BY s.session_date ASC, s.session_time ASC
-    `, [DEFAULT_CLASS]);
-
-    // Get group sessions
-    const grp = await executeQuery(`
-      SELECT s.*, g.group_name as student_name, g.timezone, s.session_number,
-      CONCAT(g.program_name, ' - ', g.duration) as class_info,
-      'Group' as display_type,
-      COALESCE(s.class_link, $1) as class_link
-      FROM sessions s
-      JOIN groups g ON s.group_id = g.id
-      WHERE s.status IN ('Pending', 'Scheduled') AND s.session_type = 'Group'
-        AND s.session_date >= CURRENT_DATE - INTERVAL '1 day'
-      ORDER BY s.session_date ASC, s.session_time ASC
-    `, [DEFAULT_CLASS]);
-
-    // Get upcoming events as well
-    const events = await executeQuery(`
-  SELECT id,
-    event_name as student_name,
-    event_date as session_date,
-    event_time as session_time,
-    event_duration as class_info,
-    'Asia/Kolkata' as timezone,
-    0 as session_number,
-    'Event' as display_type,
-    'Event' as session_type,
-    COALESCE(e.class_link, '') as class_link
-  FROM events e
-  WHERE status = 'Active'
-    AND event_date >= CURRENT_DATE - INTERVAL '1 day'
-  ORDER BY event_date ASC, event_time ASC
-`);
-
-    // Get scheduled demo classes
-    const demos = await executeQuery(`
-      SELECT id,
-        child_name || ' (DEMO)' as student_name,
-        demo_date as session_date,
-        demo_time as session_time,
-        COALESCE(program_interest, 'Demo Class') as class_info,
-        'Asia/Kolkata' as timezone,
-        0 as session_number,
-        'Demo' as display_type,
-        'Demo' as session_type,
-        $1 as class_link
-      FROM demo_leads
-      WHERE status = 'Scheduled' AND demo_date IS NOT NULL
-        AND demo_date >= CURRENT_DATE - INTERVAL '1 day'
-      ORDER BY demo_date ASC, demo_time ASC
-    `, [DEFAULT_CLASS]);
+    // Fire all 4 independent queries in parallel
+    const [priv, grp, events, demos] = await Promise.all([
+      executeQuery(`
+        SELECT s.*, st.name as student_name, st.timezone, s.session_number,
+        CONCAT(st.program_name, ' - ', st.duration) as class_info,
+        'Private' as display_type,
+        COALESCE(s.class_link, $1) as class_link
+        FROM sessions s
+        JOIN students st ON s.student_id = st.id
+        WHERE s.status IN ('Pending', 'Scheduled') AND s.session_type = 'Private'
+          AND st.is_active = true
+          AND s.session_date >= CURRENT_DATE - INTERVAL '1 day'
+        ORDER BY s.session_date ASC, s.session_time ASC
+      `, [DEFAULT_CLASS]),
+      executeQuery(`
+        SELECT s.*, g.group_name as student_name, g.timezone, s.session_number,
+        CONCAT(g.program_name, ' - ', g.duration) as class_info,
+        'Group' as display_type,
+        COALESCE(s.class_link, $1) as class_link
+        FROM sessions s
+        JOIN groups g ON s.group_id = g.id
+        WHERE s.status IN ('Pending', 'Scheduled') AND s.session_type = 'Group'
+          AND s.session_date >= CURRENT_DATE - INTERVAL '1 day'
+        ORDER BY s.session_date ASC, s.session_time ASC
+      `, [DEFAULT_CLASS]),
+      executeQuery(`
+        SELECT id,
+          event_name as student_name,
+          event_date as session_date,
+          event_time as session_time,
+          event_duration as class_info,
+          'Asia/Kolkata' as timezone,
+          0 as session_number,
+          'Event' as display_type,
+          'Event' as session_type,
+          COALESCE(e.class_link, '') as class_link
+        FROM events e
+        WHERE status = 'Active'
+          AND event_date >= CURRENT_DATE - INTERVAL '1 day'
+        ORDER BY event_date ASC, event_time ASC
+      `),
+      executeQuery(`
+        SELECT id,
+          child_name || ' (DEMO)' as student_name,
+          demo_date as session_date,
+          demo_time as session_time,
+          COALESCE(program_interest, 'Demo Class') as class_info,
+          'Asia/Kolkata' as timezone,
+          0 as session_number,
+          'Demo' as display_type,
+          'Demo' as session_type,
+          $1 as class_link
+        FROM demo_leads
+        WHERE status = 'Scheduled' AND demo_date IS NOT NULL
+          AND demo_date >= CURRENT_DATE - INTERVAL '1 day'
+        ORDER BY demo_date ASC, demo_time ASC
+      `, [DEFAULT_CLASS])
+    ]);
 
     // Combine all
     const all = [...priv.rows, ...grp.rows, ...events.rows, ...demos.rows];
@@ -5943,38 +5930,38 @@ app.get('/api/sessions/:studentId', async (req, res) => {
   }
 
   try {
-    let privateSessions;
-    if (lightMode) {
-      privateSessions = await executeQuery(`
-        SELECT s.*, 'Private' as source_type,
-          NULL::text as homework_submission_path,
-          NULL::text as homework_grade,
-          NULL::text as homework_feedback,
-          false as has_feedback,
-          COALESCE(s.class_link, $2) as class_link
-        FROM sessions s
-        WHERE s.student_id = $1 AND s.session_type = 'Private'
-      `, [id, DEFAULT_CLASS]);
-    } else {
-      // Get private sessions with homework info and feedback status - using retry-enabled query
-      privateSessions = await executeQuery(`
-        SELECT s.*, 'Private' as source_type,
-          m.file_path as homework_submission_path,
-          m.feedback_grade as homework_grade,
-          m.feedback_comments as homework_feedback,
-          m.corrected_file_path as homework_corrected_path,
-          m.uploaded_at as homework_submitted_at,
-          m.feedback_date as homework_checked_at,
-          CASE WHEN cf.id IS NOT NULL THEN true ELSE false END as has_feedback
-        FROM sessions s
-        LEFT JOIN materials m ON m.session_id = s.id AND m.student_id = $1 AND m.file_type = 'Homework' AND m.uploaded_by = 'Parent'
-        LEFT JOIN class_feedback cf ON cf.session_id = s.id AND cf.student_id = $1
-        WHERE s.student_id = $1 AND s.session_type = 'Private'
-      `, [id]);
-    }
+    // Fire private sessions query and student lookup in parallel (both independent)
+    const privateQuery = lightMode
+      ? executeQuery(`
+          SELECT s.*, 'Private' as source_type,
+            NULL::text as homework_submission_path,
+            NULL::text as homework_grade,
+            NULL::text as homework_feedback,
+            false as has_feedback,
+            COALESCE(s.class_link, $2) as class_link
+          FROM sessions s
+          WHERE s.student_id = $1 AND s.session_type = 'Private'
+        `, [id, DEFAULT_CLASS])
+      : executeQuery(`
+          SELECT s.*, 'Private' as source_type,
+            m.file_path as homework_submission_path,
+            m.feedback_grade as homework_grade,
+            m.feedback_comments as homework_feedback,
+            m.corrected_file_path as homework_corrected_path,
+            m.uploaded_at as homework_submitted_at,
+            m.feedback_date as homework_checked_at,
+            CASE WHEN cf.id IS NOT NULL THEN true ELSE false END as has_feedback
+          FROM sessions s
+          LEFT JOIN materials m ON m.session_id = s.id AND m.student_id = $1 AND m.file_type = 'Homework' AND m.uploaded_by = 'Parent'
+          LEFT JOIN class_feedback cf ON cf.session_id = s.id AND cf.student_id = $1
+          WHERE s.student_id = $1 AND s.session_type = 'Private'
+        `, [id]);
 
-    // Get group sessions for this student (only sessions they're enrolled in via session_attendance)
-    const student = await executeQuery('SELECT group_id, created_at FROM students WHERE id = $1', [id]);
+    const [privateSessions, student] = await Promise.all([
+      privateQuery,
+      executeQuery('SELECT group_id, created_at FROM students WHERE id = $1', [id])
+    ]);
+
     let groupSessions = [];
 
     if (student.rows[0] && student.rows[0].group_id) {
