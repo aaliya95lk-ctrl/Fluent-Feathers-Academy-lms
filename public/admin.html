@@ -423,6 +423,37 @@
   <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
     <h2 style="margin:0;">📅 Upcoming Classes</h2>
   </div>
+  <!-- Next Class Countdown Timer -->
+  <div id="adminNextClassTimer" style="display:none; background: linear-gradient(135deg, #B05D9E 0%, #764ba2 100%); color: white; border-radius: 14px; padding: 22px 26px; margin-bottom: 20px; box-shadow: 0 6px 24px rgba(176,93,158,0.35);">
+    <p style="margin:0 0 10px 0; font-size:0.78rem; opacity:0.9; letter-spacing:0.8px; text-transform:uppercase; font-weight:600;">⏱ Next session will start in</p>
+    <div style="display:flex; gap:10px; align-items:flex-end; margin-bottom:16px;">
+      <div style="text-align:center;">
+        <div id="adminTimerHH" style="background:rgba(0,0,0,0.25); border-radius:8px; padding:8px 14px; font-size:2rem; font-weight:800; min-width:56px; text-align:center; letter-spacing:2px; font-family:monospace;">00</div>
+        <div style="font-size:0.62rem; opacity:0.85; margin-top:4px; letter-spacing:1px;">HRS</div>
+      </div>
+      <div style="font-size:1.8rem; font-weight:800; margin-bottom:12px; opacity:0.6;">:</div>
+      <div style="text-align:center;">
+        <div id="adminTimerMM" style="background:rgba(0,0,0,0.25); border-radius:8px; padding:8px 14px; font-size:2rem; font-weight:800; min-width:56px; text-align:center; letter-spacing:2px; font-family:monospace;">00</div>
+        <div style="font-size:0.62rem; opacity:0.85; margin-top:4px; letter-spacing:1px;">MIN</div>
+      </div>
+      <div style="font-size:1.8rem; font-weight:800; margin-bottom:12px; opacity:0.6;">:</div>
+      <div style="text-align:center;">
+        <div id="adminTimerSS" style="background:rgba(0,0,0,0.25); border-radius:8px; padding:8px 14px; font-size:2rem; font-weight:800; min-width:56px; text-align:center; letter-spacing:2px; font-family:monospace;">00</div>
+        <div style="font-size:0.62rem; opacity:0.85; margin-top:4px; letter-spacing:1px;">SEC</div>
+      </div>
+      <span id="adminTimerLive" style="display:none; background:rgba(255,255,255,0.25); border-radius:20px; padding:4px 12px; font-size:0.8rem; font-weight:700; margin-bottom:12px;">🟢 Class is Live!</span>
+    </div>
+    <div style="display:flex; justify-content:space-between; align-items:flex-end; flex-wrap:wrap; gap:10px;">
+      <div>
+        <div style="font-weight:700; font-size:1rem; margin-bottom:2px;" id="adminTimerStudentName">—</div>
+        <div style="opacity:0.85; font-size:0.82rem; margin-top:2px;" id="adminTimerClassInfo">—</div>
+        <div style="opacity:0.85; font-size:0.82rem; margin-top:2px;" id="adminTimerDateTime">—</div>
+      </div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <a id="adminTimerJoinBtn" href="#" target="_blank" style="background:white; color:#B05D9E; padding:8px 18px; border-radius:8px; font-weight:700; font-size:0.82rem; text-decoration:none; display:inline-block;">🎥 Join Class</a>
+      </div>
+    </div>
+  </div>
   <div id="upcomingClassesGrid" class="upcoming-classes-grid">Loading...</div>
       </div>
     </div>
@@ -3726,6 +3757,11 @@ I'm passionate about helping children develop confidence in communication!"></te
         safePreload(() => checkOrphanedCount(), 'orphaned count');
       }, 2000);
 
+      // Auto-refresh upcoming classes every 5 minutes
+      setInterval(() => {
+        if (document.visibilityState !== 'hidden') loadUpcomingClasses(false);
+      }, 5 * 60 * 1000);
+
       // Warm remaining tab data in staged batches for instant tab switching
       setTimeout(() => {
         safePreload(() => loadTabCached('homework', () => loadHomeworkSubmissions()), 'homework');
@@ -3939,7 +3975,11 @@ I'm passionate about helping children develop confidence in communication!"></te
           console.error('❌ upcomingClassesGrid element not found');
           return;
         }
-        if (classes.length === 0) return grid.innerHTML = '<p style="color:#a0aec0; padding:20px; text-align:center;">No upcoming classes scheduled 📅</p>';
+        if (classes.length === 0) {
+          startAdminNextClassTimer(null);
+          return grid.innerHTML = '<p style="color:#a0aec0; padding:20px; text-align:center;">No upcoming classes scheduled 📅</p>';
+        }
+        startAdminNextClassTimer(classes[0]);
         grid.innerHTML = classes.map(cls => {
           // Get day name
           const dateStr = cls.session_date.includes('T') ? cls.session_date.split('T')[0] : cls.session_date;
@@ -4000,6 +4040,60 @@ I'm passionate about helping children develop confidence in communication!"></te
         if (showLoadingOverlay) setDbLoading(false);
       }
     }
+
+    // ── Next-Class Countdown Timer (Admin Panel) ───────────────────────────
+    let adminTimerInterval = null;
+
+    function startAdminNextClassTimer(cls) {
+      if (adminTimerInterval) { clearInterval(adminTimerInterval); adminTimerInterval = null; }
+      const card = document.getElementById('adminNextClassTimer');
+      if (!card) return;
+      if (!cls) { card.style.display = 'none'; return; }
+
+      card.style.display = 'block';
+      document.getElementById('adminTimerStudentName').textContent = cls.student_name || '—';
+      document.getElementById('adminTimerClassInfo').textContent = '📚 ' + (cls.class_info || 'N/A');
+      document.getElementById('adminTimerDateTime').textContent = '📅 ' + formatSessionTime(cls);
+      const joinBtn = document.getElementById('adminTimerJoinBtn');
+      if (joinBtn) joinBtn.href = cls.class_link || 'https://us04web.zoom.us/j/7288533155?pwd=Nng5N2l0aU12L0FQK245c0VVVHJBUT09';
+
+      let dateStr = cls.session_date;
+      if (dateStr instanceof Date) dateStr = dateStr.toISOString().split('T')[0];
+      else if (typeof dateStr === 'string' && dateStr.includes('T')) dateStr = dateStr.split('T')[0];
+      let timeStr = (cls.session_time || '00:00:00').toString().substring(0, 8);
+      if (timeStr.length === 5) timeStr += ':00';
+      const target = new Date(`${dateStr}T${timeStr}Z`);
+
+      function tick() {
+        const diff = target - new Date();
+        const diffMins = diff / 60000;
+        const liveEl = document.getElementById('adminTimerLive');
+        const hhEl = document.getElementById('adminTimerHH');
+        const mmEl = document.getElementById('adminTimerMM');
+        const ssEl = document.getElementById('adminTimerSS');
+        if (!hhEl) return;
+        if (diffMins < -40) {
+          if (card) card.style.display = 'none';
+          clearInterval(adminTimerInterval); adminTimerInterval = null;
+          return;
+        }
+        if (diff <= 0) {
+          hhEl.textContent = '00'; mmEl.textContent = '00'; ssEl.textContent = '00';
+          if (liveEl) liveEl.style.display = 'inline-block';
+        } else {
+          if (liveEl) liveEl.style.display = 'none';
+          const h = Math.floor(diff / 3600000);
+          const m = Math.floor((diff % 3600000) / 60000);
+          const s = Math.floor((diff % 60000) / 1000);
+          hhEl.textContent = String(h).padStart(2, '0');
+          mmEl.textContent = String(m).padStart(2, '0');
+          ssEl.textContent = String(s).padStart(2, '0');
+        }
+      }
+      tick();
+      adminTimerInterval = setInterval(tick, 1000);
+    }
+    // ────────────────────────────────────────────────────────────────────
 
     // Populate leaderboard resend student dropdown whenever allStudents is loaded
     function populateResendAwardDropdown() {

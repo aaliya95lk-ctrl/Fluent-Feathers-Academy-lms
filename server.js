@@ -4750,7 +4750,7 @@ app.get('/api/dashboard/upcoming-classes', async (req, res) => {
         console.error('Error sorting sessions:', e);
         return 0;
       }
-    }).slice(0, 10); // Show 10 upcoming classes
+    }).slice(0, 9); // Show 9 upcoming classes
 
    // For group sessions, fetch enrolled students with their attendance/cancellation status
    const groupSessionIds = upcoming.filter(s => s.display_type === 'Group').map(s => s.id);
