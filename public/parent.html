@@ -653,20 +653,13 @@
 
       <div id="upcomingTab" class="tab-content active">
         <div class="section">
-          <h2>🚫 Cancel Class</h2>
-          <p style="color: #718096; margin-bottom: 20px;">Note: Cannot cancel less than 1 hour before class.</p>
-          <form id="cancelClassForm">
-            <div class="form-group"><label>Select Class</label><select id="cancelClassSelect" required></select></div>
-            <button type="submit" class="btn btn-danger">Cancel Class</button>
-          </form>
-        </div>
-        <div class="section">
-          <h2>📅 Schedule</h2>
+          <h2>� Schedule</h2>
           <p id="upcomingTimezoneLabel" style="color: #4a5568; font-size: 0.85rem; margin-bottom: 10px;">🕒 Times shown in: Detecting timezone...</p>
+          <p style="color: #718096; font-size: 0.82rem; margin-bottom: 14px;">⚠️ Classes cannot be cancelled less than 1 hour before start.</p>
           <div class="table-responsive">
             <table id="upcomingTable">
-              <thead><tr><th>#</th><th>Date</th><th>Time</th><th>Join</th></tr></thead>
-              <tbody id="upcomingBody"><tr><td colspan="4">Loading...</td></tr></tbody>
+              <thead><tr><th>#</th><th>Date</th><th>Time</th><th colspan="2">Actions</th></tr></thead>
+              <tbody id="upcomingBody"><tr><td colspan="5">Loading...</td></tr></tbody>
             </table>
           </div>
         </div>
@@ -1724,7 +1717,6 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
       loadBadges(); // Also updates badge summary strip
       loadChallengeSummary(); // Updates challenge strip on front page
       loadUpcoming();
-      loadCancelDropdown();
       checkForFeedback();
 
       // Pre-load ALL tabs in background after 1.5 seconds
@@ -2427,7 +2419,7 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
                 statusText = 'Available';
               } else if (statusLower === 'scheduled') {
                 statusBadge = 'background: #805ad5; color: white;';
-                const schedDate = c.scheduled_date ? new Date(c.scheduled_date).toLocaleDateString() : '';
+                const schedDate = (c.scheduled_session_date || c.scheduled_date) ? new Date(c.scheduled_session_date || c.scheduled_date).toLocaleDateString() : '';
                 statusText = 'Scheduled' + (schedDate ? ' - ' + schedDate : '');
               } else if (statusLower === 'used') {
                 statusBadge = 'background: #718096; color: white;';
@@ -2443,9 +2435,10 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
               const borderColor = statusLower === 'available' ? '#38a169' : statusLower === 'scheduled' ? '#805ad5' : '#718096';
 
               let scheduledDiv = '';
-              if (statusLower === 'scheduled' && c.scheduled_date) {
-                const schedDateStr = new Date(c.scheduled_date).toLocaleDateString();
-                const schedTimeStr = c.scheduled_time ? ' at ' + c.scheduled_time : '';
+              if (statusLower === 'scheduled' && (c.scheduled_session_date || c.scheduled_date)) {
+                const schedDateStr = new Date(c.scheduled_session_date || c.scheduled_date).toLocaleDateString();
+                const rawTime = c.scheduled_session_time || c.scheduled_time;
+                const schedTimeStr = rawTime ? ' at ' + rawTime : '';
                 scheduledDiv = '<div style="margin-top: 8px; background: #805ad5; color: white; padding: 6px 12px; border-radius: 6px; font-size: 0.85rem; word-break: break-word;">Makeup Class: ' + schedDateStr + schedTimeStr + '</div>';
               }
 
@@ -2587,16 +2580,25 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
   ? `<a href="${ClassLink}" target="_blank" class="btn-Class">🎥 Join Class</a>`
   : `<button onclick="alert('You can join from 5 minutes before class starts until the end of class (${classDurationMins} minutes). Please wait until then.')" class="btn-Class" style="background: #a0aec0; cursor: not-allowed;">🔒 Join Class</button>`;
 
+          const canCancel = diffMinutes > 60;
+          const sessionLabel = `Class #${getSerial(s)} — ${dayName}, ${t.date} at ${t.time}`;
+          const CancelButton = canCancel
+            ? `<button onclick="openCancelModal(${s.id}, '${sessionLabel.replace(/'/g, "&apos;")}')"
+                style="background:#fff0f0; color:#c53030; border:2px solid #fed7d7; border-radius:6px; padding:6px 12px; cursor:pointer; font-size:0.8rem; font-weight:600;">🚫 Cancel</button>`
+            : `<button disabled title="Cannot cancel less than 1 hr before class"
+                style="background:#f7fafc; color:#a0aec0; border:2px solid #e2e8f0; border-radius:6px; padding:6px 12px; cursor:not-allowed; font-size:0.8rem; font-weight:600;">🔒 Cancel</button>`;
+
           return `<tr>
             <td>#${getSerial(s)}</td>
             <td>${dayName}, ${t.date}</td>
             <td><strong style="color:#B05D9E">${t.time}</strong></td>
             <td>${ClassButton}</td>
+            <td>${CancelButton}</td>
           </tr>`;
         }).join('');
       } catch(e) {
         console.error('Error loading upcoming:', e);
-        document.getElementById('upcomingBody').innerHTML = '<tr><td colspan="4">Error loading sessions</td></tr>';
+        document.getElementById('upcomingBody').innerHTML = '<tr><td colspan="5">Error loading sessions</td></tr>';
       } finally {
         if (showLoadingOverlay) setPortalDbLoading(false);
       }
@@ -3291,26 +3293,63 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
       }
     });
 
-    document.getElementById('cancelClassForm').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const sid = document.getElementById('cancelClassSelect').value;
-      if(!sid) return alert('Please select a class to cancel');
+    function openCancelModal(sessionId, sessionLabel) {
+      const existing = document.getElementById('cancelReasonModal');
+      if (existing) existing.remove();
 
-      if (!confirm('Are you sure you want to cancel this class? You will receive a makeup credit.')) return;
+      const modal = document.createElement('div');
+      modal.id = 'cancelReasonModal';
+      modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.65);z-index:9999;display:flex;justify-content:center;align-items:center;padding:20px;box-sizing:border-box;';
+      modal.innerHTML = `
+        <div style="background:white;border-radius:16px;padding:30px;max-width:460px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;">
+            <h2 style="margin:0;color:#c53030;font-size:1.2rem;">🚫 Cancel Class</h2>
+            <button onclick="document.getElementById('cancelReasonModal').remove()" style="background:#e53e3e;color:white;border:none;border-radius:50%;width:30px;height:30px;cursor:pointer;font-weight:700;font-size:0.9rem;">✕</button>
+          </div>
+          <div style="background:#fff5f5;border:1px solid #fed7d7;border-radius:8px;padding:14px;margin-bottom:18px;">
+            <p style="margin:0;color:#742a2a;font-size:0.9rem;">📅 <strong>${sessionLabel}</strong></p>
+          </div>
+          <div style="margin-bottom:18px;">
+            <label style="display:block;font-weight:600;color:#4a5568;margin-bottom:8px;">Reason for cancellation <span style="color:#718096;font-weight:400;font-size:0.85rem;">(optional)</span></label>
+            <textarea id="cancelReasonText" rows="3" placeholder="e.g. Child is unwell, family emergency, scheduling conflict…"
+              style="width:100%;padding:10px;border:2px solid #e2e8f0;border-radius:8px;font-size:0.9rem;font-family:inherit;resize:vertical;"></textarea>
+          </div>
+          <div style="background:#e6fffa;border:1px solid #81e6d9;border-radius:8px;padding:12px;margin-bottom:20px;font-size:0.85rem;color:#234e52;">
+            🎁 A <strong>makeup credit</strong> will be added to your account automatically.
+          </div>
+          <div style="display:flex;gap:12px;">
+            <button onclick="document.getElementById('cancelReasonModal').remove()"
+              style="flex:1;padding:12px;background:#f7fafc;border:2px solid #e2e8f0;border-radius:8px;cursor:pointer;font-weight:600;color:#4a5568;">Keep Class</button>
+            <button id="confirmCancelBtn" onclick="confirmCancelClass(${sessionId})"
+              style="flex:1;padding:12px;background:linear-gradient(135deg,#e53e3e,#c53030);color:white;border:none;border-radius:8px;cursor:pointer;font-weight:700;">Yes, Cancel</button>
+          </div>
+        </div>
+      `;
+      modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+      document.body.appendChild(modal);
+    }
+
+    async function confirmCancelClass(sessionId) {
+      const reason = (document.getElementById('cancelReasonText')?.value || '').trim();
+      const btn = document.getElementById('confirmCancelBtn');
+      if (btn) { btn.disabled = true; btn.textContent = 'Cancelling…'; }
 
       try {
         const res = await fetch('/api/parent/cancel-class', {
           method: 'POST',
           headers: {...authHeaders(), 'Content-Type':'application/json'},
-          body: JSON.stringify({ student_id: currentStudent.id, session_id: sid })
+          body: JSON.stringify({ student_id: currentStudent.id, session_id: sessionId, reason })
         });
-
         const data = await res.json();
-
-        if(res.ok) {
-          alert(data.message || 'Class cancelled successfully! Makeup credit added.');
+        document.getElementById('cancelReasonModal')?.remove();
+        if (res.ok) {
+          // Show success toast
+          const toast = document.createElement('div');
+          toast.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#38a169;color:white;padding:14px 28px;border-radius:30px;font-weight:600;font-size:0.95rem;z-index:99999;box-shadow:0 4px 20px rgba(0,0,0,0.25);';
+          toast.textContent = '✅ Class cancelled! Makeup credit added.';
+          document.body.appendChild(toast);
+          setTimeout(() => toast.remove(), 3500);
           loadUpcoming();
-          loadCancelDropdown();
           loadMakeupCredits();
         } else {
           alert(data.error || 'Cannot cancel this class');
@@ -3318,8 +3357,9 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
       } catch(e) {
         console.error('Cancel error:', e);
         alert('Error cancelling class');
+        if (btn) { btn.disabled = false; btn.textContent = 'Yes, Cancel'; }
       }
-    });
+    }
 
     document.getElementById('uploadHomeworkForm').addEventListener('submit', async (e) => {
       e.preventDefault();

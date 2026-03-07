@@ -320,6 +320,139 @@ app.use((req, res, next) => {
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
+// ==================== JOIN CLASS TIME-GATE ====================
+// Email buttons point here. Redirects to Zoom only within 5 mins before to class-end.
+// Outside that window shows a friendly block page.
+app.get('/join-class', async (req, res) => {
+  const sid = parseInt(req.query.sid, 10);
+  if (!sid || isNaN(sid)) {
+    return res.status(400).send(joinClassErrorPage('Invalid link', 'This join link is not valid. Please use the Join button in your Parent Portal.'));
+  }
+
+  try {
+    const result = await pool.query(`
+      SELECT s.session_date, s.session_time, s.status,
+             COALESCE(s.class_link, st.class_link, g.class_link) AS class_link,
+             COALESCE(st.duration, g.duration, '40 mins') AS duration,
+             COALESCE(st.name, g.name) AS student_name
+      FROM sessions s
+      LEFT JOIN students st ON s.student_id = st.id
+      LEFT JOIN groups g ON s.group_id = g.id
+      WHERE s.id = $1
+    `, [sid]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).send(joinClassErrorPage('Session Not Found', 'This session could not be found. Please check your Parent Portal for the correct join link.'));
+    }
+
+    const row = result.rows[0];
+    const classLink = row.class_link || DEFAULT_CLASS;
+
+    // Parse duration in minutes (e.g. "40 mins" → 40)
+    const durationMatch = row.duration ? row.duration.match(/(\d+)/) : null;
+    const durationMins = durationMatch ? parseInt(durationMatch[1]) : 40;
+
+    // Build UTC session start time
+    const dateStr = row.session_date instanceof Date
+      ? row.session_date.toISOString().split('T')[0]
+      : String(row.session_date).split('T')[0];
+    const sessionStart = new Date(dateStr + 'T' + row.session_time + 'Z');
+    const sessionEnd = new Date(sessionStart.getTime() + durationMins * 60 * 1000);
+    const now = new Date();
+    const minsUntilStart = (sessionStart - now) / (1000 * 60); // positive = future
+
+    // Allow entry from 5 mins before start until class ends
+    if (minsUntilStart <= 5 && now <= sessionEnd) {
+      return res.redirect(classLink);
+    }
+
+    if (minsUntilStart > 5) {
+      // Too early
+      const minsRemaining = Math.ceil(minsUntilStart - 5);
+      const hoursRemaining = Math.floor(minsRemaining / 60);
+      const minsLeft = minsRemaining % 60;
+      let waitMsg = minsRemaining < 60
+        ? `${minsRemaining} minute${minsRemaining !== 1 ? 's' : ''}`
+        : `${hoursRemaining}h ${minsLeft}m`;
+      return res.send(joinClassTooEarlyPage(waitMsg, row.student_name));
+    }
+
+    // Past class end time
+    return res.send(joinClassErrorPage('Class Has Ended', 'This session has already ended. Please check your Parent Portal for upcoming sessions.'));
+
+  } catch (err) {
+    console.error('Join-class gate error:', err);
+    return res.status(500).send(joinClassErrorPage('Something went wrong', 'Please try again or use the Join button in your Parent Portal.'));
+  }
+});
+
+function joinClassTooEarlyPage(waitTime, studentName) {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Class Not Open Yet - Fluent Feathers Academy</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Segoe UI', sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
+    .card { background: white; border-radius: 20px; padding: 50px 40px; max-width: 520px; width: 100%; text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+    .icon { font-size: 80px; margin-bottom: 20px; display: block; }
+    h1 { color: #2d3748; font-size: 26px; margin-bottom: 12px; }
+    .badge { display: inline-block; background: #fef3c7; color: #92400e; border: 2px solid #f59e0b; border-radius: 30px; padding: 10px 24px; font-size: 15px; font-weight: 700; margin: 16px 0 20px; }
+    .info-box { background: #f0f9ff; border: 2px solid #bae6fd; border-radius: 12px; padding: 20px; margin: 20px 0; }
+    .info-box p { color: #0369a1; font-size: 15px; line-height: 1.6; margin: 0; }
+    .warn-box { background: #fff7ed; border: 2px solid #fed7aa; border-radius: 12px; padding: 16px; margin: 16px 0; }
+    .warn-box p { color: #9a3412; font-size: 14px; line-height: 1.6; margin: 0; }
+    .portal-btn { display: inline-block; margin-top: 24px; background: linear-gradient(135deg, #B05D9E 0%, #764ba2 100%); color: white; padding: 14px 32px; border-radius: 30px; text-decoration: none; font-weight: 700; font-size: 15px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <span class="icon">⏰</span>
+    <h1>Another Session May Be Going On</h1>
+    <div class="badge">Join opens in ${waitTime}</div>
+    <div class="info-box">
+      <p>👋 Hi${studentName ? ' <strong>' + studentName + '</strong>' : ''}! Your class hasn't started yet.</p>
+      <p style="margin-top: 10px;">The join button becomes active <strong>5 minutes before</strong> your class starts. Please come back then!</p>
+    </div>
+    <div class="warn-box">
+      <p>🚫 Joining early may interrupt another ongoing session on the same link. Please wait for your scheduled time.</p>
+    </div>
+    <a href="${process.env.APP_URL || 'https://fluent-feathers-academy-lms.onrender.com'}/parent.html" class="portal-btn">🏠 Go to Parent Portal</a>
+  </div>
+</body>
+</html>`;
+}
+
+function joinClassErrorPage(title, message) {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${title} - Fluent Feathers Academy</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Segoe UI', sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
+    .card { background: white; border-radius: 20px; padding: 50px 40px; max-width: 520px; width: 100%; text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+    .icon { font-size: 80px; margin-bottom: 20px; display: block; }
+    h1 { color: #2d3748; font-size: 26px; margin-bottom: 16px; }
+    p { color: #4a5568; font-size: 15px; line-height: 1.7; margin-bottom: 24px; }
+    .portal-btn { display: inline-block; background: linear-gradient(135deg, #B05D9E 0%, #764ba2 100%); color: white; padding: 14px 32px; border-radius: 30px; text-decoration: none; font-weight: 700; font-size: 15px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <span class="icon">🔒</span>
+    <h1>${title}</h1>
+    <p>${message}</p>
+    <a href="${process.env.APP_URL || 'https://fluent-feathers-academy-lms.onrender.com'}/parent.html" class="portal-btn">🏠 Go to Parent Portal</a>
+  </div>
+</body>
+</html>`;
+}
+
 app.use((req, res, next) => {
   if (req.path.startsWith('/api/')) markDbActivity();
   next();
@@ -3865,12 +3998,13 @@ async function checkAndSendReminders() {
             console.log(`📍 Using parent timezone: ${parentTimezone} for ${session.student_name}`);
             const localTime = formatUTCToLocal(session.session_date, session.session_time, parentTimezone);
             console.log(`📧 Converted time: ${localTime.date} ${localTime.time} (${localTime.day})`);
+            const joinGateUrl5 = `${process.env.APP_URL || 'https://fluent-feathers-academy-lms.onrender.com'}/join-class?sid=${session.id}`;
             const reminderEmailHTML = getClassReminderEmail({
               studentName: session.student_name,
               localDate: localTime.date,
               localTime: localTime.time,
               localDay: localTime.day,
-              classLink: session.class_link || DEFAULT_CLASS,
+              classLink: joinGateUrl5,
               hoursBeforeClass: 5,
               timezoneLabel: getTimezoneLabel(parentTimezone)
             });
@@ -3915,12 +4049,13 @@ async function checkAndSendReminders() {
             console.log(`📍 Using parent timezone: ${parentTimezone} for ${session.student_name}`);
             const localTime = formatUTCToLocal(session.session_date, session.session_time, parentTimezone);
             console.log(`📧 Converted time: ${localTime.date} ${localTime.time} (${localTime.day})`);
+            const joinGateUrl1 = `${process.env.APP_URL || 'https://fluent-feathers-academy-lms.onrender.com'}/join-class?sid=${session.id}`;
             const reminderEmailHTML = getClassReminderEmail({
               studentName: session.student_name,
               localDate: localTime.date,
               localTime: localTime.time,
               localDay: localTime.day,
-              classLink: session.class_link || DEFAULT_CLASS,
+              classLink: joinGateUrl1,
               hoursBeforeClass: 1,
               timezoneLabel: getTimezoneLabel(parentTimezone)
             });
@@ -7825,7 +7960,7 @@ app.put('/api/makeup-credits/:creditId/schedule', async (req, res) => {
       </div>
 
       <div style="text-align: center; margin: 25px 0;">
-        <a href="${studentData.class_link || DEFAULT_CLASS}" style="display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 14px 35px; text-decoration: none; border-radius: 25px; font-weight: bold;">🎥 Join Class</a>
+        <a href="${process.env.APP_URL || 'https://fluent-feathers-academy-lms.onrender.com'}/join-class?sid=${newSessionId}" style="display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 14px 35px; text-decoration: none; border-radius: 25px; font-weight: bold;">🎥 Join Class</a>
       </div>
 
       <p style="font-size: 14px; color: #718096;">We look forward to seeing ${studentData.name} in class!</p>
