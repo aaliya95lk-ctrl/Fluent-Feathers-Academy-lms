@@ -3,496 +3,282 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>⭐ Class Points</title>
+<title>&#x2B50; Class Points</title>
 <style>
-  :root {
-    --bg:       #f3eeff;
-    --surface:  #ede0ff;
-    --surface2: #e0cffa;
-    --border:   #c084e8;
-    --accent:   #B05D9E;
-    --accent2:  #764ba2;
-    --green:    #059669;
-    --red:      #dc2626;
-    --gold:     #b45309;
-    --text:     #2d1245;
-    --muted:    #7c3aad;
-    --radius:   10px;
-  }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body { min-height: 100%; font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); font-size: 13px; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: #f3eeff; color: #2d1245; font-size: 13px; }
 
-  .hdr {
-    background: linear-gradient(135deg, var(--accent) 0%, var(--accent2) 100%);
-    padding: 10px 14px;
-    display: flex; align-items: center; justify-content: space-between;
-    position: sticky; top: 0; z-index: 50;
-    box-shadow: 0 2px 12px rgba(176,93,158,0.4);
-  }
-  .hdr-title { font-size: 15px; font-weight: 800; letter-spacing: 0.3px; }
-  .btn-reset {
-    background: rgba(255,255,255,0.18); border: 1px solid rgba(255,255,255,0.3);
-    color: #fff; padding: 4px 11px; border-radius: 6px; cursor: pointer; font-size: 11px; font-weight: 600;
-  }
-  .btn-reset:hover { background: rgba(255,255,255,0.28); }
+.hdr {
+  background: linear-gradient(135deg, #B05D9E 0%, #764ba2 100%);
+  padding: 11px 14px;
+  display: flex; align-items: center; justify-content: space-between;
+  position: sticky; top: 0; z-index: 50;
+  box-shadow: 0 2px 10px rgba(176,93,158,0.35);
+}
+.hdr-title { font-size: 15px; font-weight: 800; color: #fff; }
 
-  #setup { padding: 14px; }
+.body { padding: 12px; }
 
-  .section-title {
-    font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px;
-    color: var(--muted); margin-bottom: 8px;
-  }
+.tabs { display: flex; gap: 6px; margin-bottom: 12px; }
+.tab {
+  flex: 1; padding: 8px; border-radius: 8px; border: 1.5px solid #c084e8;
+  background: #ede0ff; color: #7c3aad; font-size: 12px; font-weight: 700;
+  text-align: center; cursor: pointer; transition: all 0.15s;
+}
+.tab.on { background: #B05D9E; border-color: #B05D9E; color: #fff; }
 
-  .mode-tabs, .type-tabs { display: flex; gap: 5px; margin-bottom: 12px; }
-  .mtab {
-    flex: 1; padding: 8px 4px; border-radius: 8px; border: 1.5px solid var(--border);
-    background: var(--surface); color: var(--muted); font-size: 11px; font-weight: 700;
-    text-align: center; cursor: pointer; transition: all 0.15s;
-  }
-  .mtab.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.lbl { font-size: 11px; font-weight: 700; color: #7c3aad; margin-bottom: 4px; }
+select {
+  width: 100%; background: #ede0ff; border: 1.5px solid #c084e8;
+  color: #2d1245; padding: 9px 10px; border-radius: 8px; font-size: 12px;
+  outline: none; cursor: pointer; margin-bottom: 10px;
+}
+select:focus { border-color: #B05D9E; }
+select option { background: #ede0ff; color: #2d1245; }
 
-  .field-label { font-size: 11px; color: var(--muted); margin-bottom: 4px; font-weight: 600; }
-  select {
-    width: 100%; background: var(--surface2); border: 1.5px solid var(--border);
-    color: var(--text); padding: 8px 10px; border-radius: 8px; font-size: 12px;
-    outline: none; margin-bottom: 10px; cursor: pointer;
-  }
-  select:focus { border-color: var(--accent); }
-  select option { background: #ede0ff; color: #2d1245; }
+.s-list { display: flex; flex-direction: column; gap: 8px; }
 
-  .btn-start {
-    width: 100%; background: linear-gradient(135deg, var(--accent) 0%, var(--accent2) 100%);
-    border: none; color: #fff; padding: 10px; border-radius: 8px;
-    font-size: 13px; font-weight: 700; cursor: pointer; transition: opacity 0.2s; margin-top: 2px;
-  }
-  .btn-start:hover { opacity: 0.88; }
-  .btn-start:disabled { opacity: 0.35; cursor: not-allowed; }
+.s-card {
+  background: #fff; border: 1.5px solid #e0cffa;
+  border-radius: 10px; padding: 10px 12px;
+  display: flex; align-items: center; gap: 10px;
+  box-shadow: 0 1px 4px rgba(176,93,158,0.08);
+}
+.s-card.flash-g { animation: fg 0.5s; }
+.s-card.flash-r { animation: fr 0.5s; }
+@keyframes fg { 0%,100%{background:#fff} 40%{background:#d1fae5;border-color:#34d399} }
+@keyframes fr { 0%,100%{background:#fff} 40%{background:#fee2e2;border-color:#f87171} }
 
-  .loading-bar { text-align:center; padding: 20px 14px; color: var(--muted); font-size: 12px; }
-  .spin { display:inline-block; animation: spin 0.8s linear infinite; }
-  @keyframes spin { to { transform: rotate(360deg); } }
+.av {
+  width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
+  background: linear-gradient(135deg, #B05D9E 0%, #764ba2 100%);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 15px; font-weight: 900; color: #fff;
+}
+.s-name { flex: 1; font-size: 13px; font-weight: 700; }
+.s-pts {
+  font-size: 17px; font-weight: 900; color: #b45309;
+  min-width: 36px; text-align: center;
+  background: #fef3c7; border-radius: 8px; padding: 2px 8px;
+}
 
-  #cls { display: none; padding: 12px; }
+.btn-row { display: flex; gap: 4px; }
+.pb {
+  border: none; border-radius: 7px; padding: 6px 9px;
+  cursor: pointer; font-size: 11px; font-weight: 800;
+  transition: transform 0.1s;
+}
+.pb:active { transform: scale(0.88); }
+.pb.p1 { background: #d1fae5; color: #065f46; border: 1.5px solid #34d399; }
+.pb.p2 { background: #a7f3d0; color: #065f46; border: 1.5px solid #10b981; }
+.pb.p5 { background: #fef3c7; color: #92400e; border: 1.5px solid #f59e0b; }
+.pb.m1 { background: #fee2e2; color: #991b1b; border: 1.5px solid #f87171; }
 
-  .cls-info {
-    background: linear-gradient(135deg, var(--accent) 0%, var(--accent2) 100%);
-    border-radius: var(--radius); padding: 10px 14px; margin-bottom: 12px;
-    display: flex; align-items: center; justify-content: space-between;
-  }
-  .cls-name { font-size: 14px; font-weight: 800; }
-  .cls-sub  { font-size: 10px; opacity: 0.8; margin-top: 2px; }
-  .cls-badge {
-    background: rgba(255,255,255,0.25); border: 1px solid rgba(255,255,255,0.4);
-    color: #fff; font-size: 10px; padding: 3px 8px; border-radius: 20px; font-weight: 700;
-  }
+.empty { text-align: center; padding: 30px 14px; color: #c084e8; font-size: 12px; }
 
-  .s-list { display: flex; flex-direction: column; gap: 8px; }
-
-  .s-card {
-    background: var(--surface); border: 1.5px solid var(--border);
-    border-radius: var(--radius); padding: 10px 12px; position: relative; overflow: hidden;
-    transition: border-color 0.2s;
-  }
-  .s-card:hover { border-color: var(--accent); }
-  .s-card.flash-g { animation: fg 0.5s; }
-  .s-card.flash-r { animation: fr 0.5s; }
-  @keyframes fg { 0%,100%{background:var(--surface)} 40%{background:rgba(56,216,136,0.2);border-color:var(--green)} }
-  @keyframes fr { 0%,100%{background:var(--surface)} 40%{background:rgba(247,84,84,0.18);border-color:var(--red)} }
-
-  .s-top { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
-  .s-av {
-    width:32px; height:32px; border-radius:50%;
-    background: linear-gradient(135deg, var(--accent) 0%, var(--accent2) 100%);
-    display:flex; align-items:center; justify-content:center; font-size:15px; font-weight:800; flex-shrink:0;
-  }
-  .s-nm { flex:1; font-size:13px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .s-pts {
-    background: var(--surface2); border: 1.5px solid var(--border); border-radius: 20px;
-    padding: 3px 12px; font-weight: 800; font-size: 15px; color: var(--gold); min-width: 46px; text-align:center;
-  }
-
-  .btn-row { display:flex; gap:4px; }
-  .pb {
-    flex:1; border:none; border-radius:7px; padding:6px 2px;
-    cursor:pointer; font-size:11px; font-weight:800; transition: transform 0.1s, opacity 0.15s; line-height:1.3;
-  }
-  .pb:active { transform:scale(0.92); }
-  .pb.p1 { background: #d1fae5; color: #065f46; border:1.5px solid #34d399; }
-  .pb.p2 { background: #a7f3d0; color: #065f46; border:1.5px solid #10b981; }
-  .pb.p5 { background: #fef3c7; color: #92400e; border:1.5px solid #f59e0b; }
-  .pb.m1 { background: #fee2e2; color: #991b1b; border:1.5px solid #f87171; }
-  .pb:hover { opacity:0.8; }
-
-  .float-pop {
-    position:absolute; right:14px; top:6px; font-size:16px; font-weight:900;
-    pointer-events:none; animation:fup 0.9s ease forwards; z-index:10;
-  }
-  @keyframes fup { 0%{opacity:1;transform:translateY(0) scale(1.1)} 100%{opacity:0;transform:translateY(-38px) scale(0.9)} }
-
-  .hero {
-    background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius);
-    padding: 20px 14px; text-align:center; margin-bottom:10px; position:relative; overflow:hidden;
-  }
-  .hero.flash-g { animation: fg 0.5s; }
-  .hero.flash-r { animation: fr 0.5s; }
-  .hero-av {
-    width:58px; height:58px; border-radius:50%;
-    background: linear-gradient(135deg, var(--accent) 0%, var(--accent2) 100%);
-    display:flex; align-items:center; justify-content:center; font-size:24px; font-weight:900; margin:0 auto 10px;
-  }
-  .hero-nm { font-size:17px; font-weight:800; margin-bottom:6px; }
-  .hero-pts { font-size:48px; font-weight:900; color:var(--gold); line-height:1; margin:4px 0 2px; }
-  .hero-lbl { font-size:11px; color:var(--muted); margin-bottom:16px; }
-  .hero-row { display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:6px; }
-  .hero-row .pb { padding:11px 4px; font-size:14px; }
-
-  .summary {
-    background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius);
-    padding: 10px 14px; margin-top: 12px;
-    display: flex; align-items: center; justify-content: space-around;
-  }
-  .sum-stat { text-align:center; }
-  .sum-val  { font-size:20px; font-weight:900; color:var(--gold); display:block; }
-  .sum-lbl  { font-size:10px; color:var(--muted); }
-
-  .btn-end {
-    width:100%; margin-top:10px;
-    background: linear-gradient(135deg,#9B2C2C,#e74c3c);
-    border:none; color:#fff; padding:9px; border-radius:8px;
-    font-size:12px; font-weight:700; cursor:pointer; opacity:0.85;
-  }
-  .btn-end:hover { opacity:1; }
-
-  #toast {
-    position:fixed; bottom:16px; left:50%; transform:translateX(-50%);
-    background:var(--surface2); border:1px solid var(--border); color:var(--text);
-    padding:8px 18px; border-radius:20px; font-size:12px; opacity:0;
-    transition:opacity 0.3s; z-index:999; white-space:nowrap; pointer-events:none;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
-  }
-  #toast.show { opacity:1; }
-
-  ::-webkit-scrollbar { width:4px; }
-  ::-webkit-scrollbar-thumb { background:var(--border); border-radius:4px; }
+#toast {
+  position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%);
+  background: #2d1245; color: #fff;
+  padding: 7px 18px; border-radius: 20px; font-size: 12px;
+  opacity: 0; transition: opacity 0.3s; z-index: 999;
+  white-space: nowrap; pointer-events: none;
+}
+#toast.show { opacity: 1; }
 </style>
 </head>
 <body>
 
 <div class="hdr">
-  <div class="hdr-title">⭐ Class Points</div>
-  <button class="btn-reset" onclick="goSetup()">↩ Reset</button>
+  <div class="hdr-title">&#x2B50; Class Points</div>
 </div>
 
-<!-- SETUP -->
-<div id="setup">
-  <div id="setup-content">
-    <div id="loading-area" style="font-size:11px;color:var(--muted);text-align:center;padding:6px 0 10px;display:none;"><span class="spin">⏳</span> Loading…</div>
-    <div id="load-err" style="display:none;background:#fee2e2;color:#991b1b;border-radius:8px;padding:8px 12px;font-size:11px;margin-bottom:10px;"></div>
-
-    <div class="section-title">Pick by</div>
-    <div class="mode-tabs">
-      <div class="mtab"    id="tb-today"  onclick="setMode('today')">📅 Today's Class</div>
-      <div class="mtab on" id="tb-manual" onclick="setMode('manual')">🔍 Any Student</div>
-    </div>
-
-    <!-- TODAY pane -->
-    <div id="pane-today" style="display:none;">
-      <div class="field-label">Session (today)</div>
-      <select id="sel-session">
-        <option value="">— loading sessions… —</option>
-      </select>
-      <button class="btn-start" id="btn-today" onclick="startToday()" disabled>▶ Start Class</button>
-    </div>
-
-    <!-- MANUAL pane -->
-    <div id="pane-manual">
-      <div class="type-tabs">
-        <div class="mtab on" id="tb-priv" onclick="setClassType('private')">👤 Private</div>
-        <div class="mtab"    id="tb-grp"  onclick="setClassType('group')">👥 Group</div>
-      </div>
-      <div id="pane-priv">
-        <div class="field-label">Student</div>
-        <select id="sel-student"><option value="">— loading… —</option></select>
-      </div>
-      <div id="pane-grp" style="display:none;">
-        <div class="field-label">Group</div>
-        <select id="sel-group"><option value="">— loading… —</option></select>
-      </div>
-      <button class="btn-start" onclick="startManual()">▶ Start Class</button>
-    </div>
+<div class="body">
+  <div class="tabs">
+    <div class="tab on" id="tab-s" onclick="switchTab('student')">&#x1F464; Student</div>
+    <div class="tab"    id="tab-g" onclick="switchTab('group')">&#x1F465; Group</div>
   </div>
-</div>
 
-<!-- CLASS PANEL -->
-<div id="cls">
-  <div class="cls-info">
-    <div>
-      <div class="cls-name" id="cls-name">—</div>
-      <div class="cls-sub"  id="cls-sub">—</div>
-    </div>
-    <div class="cls-badge" id="cls-badge">Private</div>
+  <div id="pane-student">
+    <div class="lbl">Choose Student</div>
+    <select id="sel-student" onchange="onStudentChange()">
+      <option value="">-- loading... --</option>
+    </select>
   </div>
-  <div class="s-list" id="s-list"></div>
-  <div class="summary">
-    <div class="sum-stat"><span class="sum-val" id="stat-total">0</span><span class="sum-lbl">Total ⭐</span></div>
-    <div class="sum-stat"><span class="sum-val" id="stat-top">—</span><span class="sum-lbl">Top Student</span></div>
-    <div class="sum-stat"><span class="sum-val" id="stat-count">0</span><span class="sum-lbl">Students</span></div>
+
+  <div id="pane-group" style="display:none;">
+    <div class="lbl">Choose Group</div>
+    <select id="sel-group" onchange="onGroupChange()">
+      <option value="">-- loading... --</option>
+    </select>
   </div>
-  <button class="btn-end" onclick="endClass()">End Class &amp; Save 💾</button>
+
+  <div id="s-list" class="s-list">
+    <div class="empty">Select a student or group above</div>
+  </div>
 </div>
 
 <div id="toast"></div>
 
 <script>
-// ── Sound ─────────────────────────────────────────────────────
-var audioCtx = null;
-function getAudioCtx() {
-  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  return audioCtx;
+var _ctx = null;
+function ac() {
+  if (!_ctx) _ctx = new (window.AudioContext || window.webkitAudioContext)();
+  return _ctx;
 }
-function playPointSound(positive) {
+function playSound(positive) {
   try {
-    var ctx = getAudioCtx();
-    // Resume in case browser suspended it (autoplay policy)
-    var doPlay = function() {
+    var ctx = ac();
+    function go() {
       if (positive) {
-        // cheerful ascending two-tone ding
-        var freqs = [523, 784]; // C5 → G5
-        freqs.forEach(function(freq, i) {
-          var osc = ctx.createOscillator();
-          var gain = ctx.createGain();
-          osc.connect(gain); gain.connect(ctx.destination);
-          osc.type = 'sine';
-          osc.frequency.setValueAtTime(freq, ctx.currentTime + i * 0.12);
-          gain.gain.setValueAtTime(0, ctx.currentTime + i * 0.12);
-          gain.gain.linearRampToValueAtTime(0.28, ctx.currentTime + i * 0.12 + 0.02);
-          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.12 + 0.28);
-          osc.start(ctx.currentTime + i * 0.12);
-          osc.stop(ctx.currentTime + i * 0.12 + 0.3);
+        [523, 784].forEach(function(f, i) {
+          var o = ctx.createOscillator(), g = ctx.createGain();
+          o.connect(g); g.connect(ctx.destination);
+          o.type = 'sine'; o.frequency.value = f;
+          var t = ctx.currentTime + i * 0.13;
+          g.gain.setValueAtTime(0, t);
+          g.gain.linearRampToValueAtTime(0.28, t + 0.02);
+          g.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
+          o.start(t); o.stop(t + 0.3);
         });
       } else {
-        // low dull thud for -1
-        var osc = ctx.createOscillator();
-        var gain = ctx.createGain();
-        osc.connect(gain); gain.connect(ctx.destination);
-        osc.type = 'triangle';
-        osc.frequency.setValueAtTime(220, ctx.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(110, ctx.currentTime + 0.2);
-        gain.gain.setValueAtTime(0.25, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25);
-        osc.start(ctx.currentTime);
-        osc.stop(ctx.currentTime + 0.3);
+        var o = ctx.createOscillator(), g = ctx.createGain();
+        o.connect(g); g.connect(ctx.destination);
+        o.type = 'triangle';
+        o.frequency.setValueAtTime(220, ctx.currentTime);
+        o.frequency.exponentialRampToValueAtTime(110, ctx.currentTime + 0.2);
+        g.gain.setValueAtTime(0.25, ctx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25);
+        o.start(ctx.currentTime); o.stop(ctx.currentTime + 0.3);
       }
-    };
-    if (ctx.state === 'suspended') {
-      ctx.resume().then(doPlay);
-    } else {
-      doPlay();
     }
+    ctx.state === 'suspended' ? ctx.resume().then(go) : go();
+  } catch(e) {}
+}
+function badgeFanfare() {
+  try {
+    var ctx = ac();
+    function go() {
+      [523,659,784,1047].forEach(function(f, i) {
+        var o = ctx.createOscillator(), g = ctx.createGain();
+        o.connect(g); g.connect(ctx.destination);
+        o.type = 'sine'; o.frequency.value = f;
+        var t = ctx.currentTime + i * 0.13;
+        g.gain.setValueAtTime(0, t);
+        g.gain.linearRampToValueAtTime(0.3, t + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+        o.start(t); o.stop(t + 0.4);
+      });
+    }
+    ctx.state === 'suspended' ? ctx.resume().then(go) : go();
   } catch(e) {}
 }
 
-var mode      = 'manual';
-var classType = 'private';
-var sessionId = null;
-var students    = [];
 var allStudents = [];
 var allGroups   = [];
+var students    = [];
 
-window.addEventListener('load', init);
+window.addEventListener('load', function() { loadDropdowns(); });
 
-async function init() {
-  var la = document.getElementById('loading-area');
-  var le = document.getElementById('load-err');
-  la.style.display = '';
-  le.style.display = 'none';
-  // Reset dropdowns to placeholder while reloading
-  document.getElementById('sel-student').innerHTML = '<option value="">— loading… —</option>';
-  document.getElementById('sel-group').innerHTML   = '<option value="">— loading… —</option>';
-  document.getElementById('sel-session').innerHTML = '<option value="">— loading sessions… —</option>';
-  document.getElementById('btn-today').disabled = true;
+async function loadDropdowns() {
   try {
-    var tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    var results = await Promise.all([
-      safeJson('/api/live-points/all-students'),
-      safeJson('/api/groups'),
-      safeJson('/api/live-points/today-sessions?tz=' + encodeURIComponent(tz))
-    ]);
-    var sRes = results[0], gRes = results[1], tRes = results[2];
+    var r1 = await fetch('/api/live-points/all-students');
+    allStudents = await r1.json();
+    if (!Array.isArray(allStudents)) allStudents = [];
 
-    allStudents = Array.isArray(sRes) ? sRes : [];
-    var pSel = document.getElementById('sel-student');
-    pSel.innerHTML = '<option value="">— choose student —</option>';
-    allStudents.forEach(function(s) { pSel.appendChild(new Option(s.name, s.id)); });
+    var r2 = await fetch('/api/groups');
+    allGroups = await r2.json();
+    if (!Array.isArray(allGroups)) allGroups = [];
 
-    allGroups = Array.isArray(gRes) ? gRes : [];
-    var gSel = document.getElementById('sel-group');
-    gSel.innerHTML = '<option value="">— choose group —</option>';
-    allGroups.forEach(function(g) { gSel.appendChild(new Option(g.group_name, g.id)); });
+    var ss = document.getElementById('sel-student');
+    ss.innerHTML = '<option value="">-- choose student --</option>';
+    allStudents.forEach(function(s) { ss.appendChild(new Option(s.name, s.id)); });
 
-    var sessions = Array.isArray(tRes) ? tRes : [];
-    var tSel = document.getElementById('sel-session');
-    if (sessions.length) {
-      tSel.innerHTML = '<option value="">— pick a session —</option>';
-      sessions.forEach(function(s) {
-        var t = s.session_time ? s.session_time.slice(0,5) : '';
-        var lbl = (t ? t + ' — ' : '') + (s.label || s.student_name || '?') + ' (' + s.session_type + ')';
-        tSel.appendChild(new Option(lbl, JSON.stringify(s)));
-      });
-    } else {
-      tSel.innerHTML = '<option value="">No sessions today</option>';
-    }
-    tSel.onchange = function() {
-      document.getElementById('btn-today').disabled = !tSel.value;
-    };
-
-    la.style.display = 'none';
+    var sg = document.getElementById('sel-group');
+    sg.innerHTML = '<option value="">-- choose group --</option>';
+    allGroups.forEach(function(g) { sg.appendChild(new Option(g.group_name, g.id)); });
   } catch(e) {
-    la.style.display = 'none';
-    le.innerHTML = '⚠️ Could not load students. <button onclick="init()" style="background:#991b1b;color:#fff;border:none;border-radius:6px;padding:3px 9px;cursor:pointer;margin-left:6px;font-size:11px;">Retry</button>';
-    le.style.display = '';
+    toast('Could not load students. Check connection.');
   }
 }
 
-async function safeJson(url) {
-  var r = await fetch(url);
-  return await r.json();
+function switchTab(t) {
+  document.getElementById('tab-s').classList.toggle('on', t === 'student');
+  document.getElementById('tab-g').classList.toggle('on', t === 'group');
+  document.getElementById('pane-student').style.display = t === 'student' ? '' : 'none';
+  document.getElementById('pane-group').style.display   = t === 'group'   ? '' : 'none';
+  students = [];
+  document.getElementById('s-list').innerHTML = '<div class="empty">Select a student or group above</div>';
 }
 
-function setMode(m) {
-  mode = m;
-  document.getElementById('tb-today').classList.toggle('on', m === 'today');
-  document.getElementById('tb-manual').classList.toggle('on', m === 'manual');
-  document.getElementById('pane-today').style.display  = m === 'today'  ? '' : 'none';
-  document.getElementById('pane-manual').style.display = m === 'manual' ? '' : 'none';
+async function onStudentChange() {
+  var id = parseInt(document.getElementById('sel-student').value);
+  if (!id) { students = []; document.getElementById('s-list').innerHTML = '<div class="empty">Select a student or group above</div>'; return; }
+  var s = allStudents.find(function(x){ return x.id === id; });
+  students = [{ id: id, name: s ? s.name : 'Student', points: 0 }];
+  await loadTotals();
+  renderList();
 }
 
-function setClassType(t) {
-  classType = t;
-  document.getElementById('tb-priv').classList.toggle('on', t === 'private');
-  document.getElementById('tb-grp').classList.toggle('on',  t === 'group');
-  document.getElementById('pane-priv').style.display = t === 'private' ? '' : 'none';
-  document.getElementById('pane-grp').style.display  = t === 'group'   ? '' : 'none';
-}
-
-async function startToday() {
-  var raw = document.getElementById('sel-session').value;
-  if (!raw) return;
-  var s = JSON.parse(raw);
-  sessionId = s.session_id;
-  var isPrivate = (s.session_type || '').toLowerCase().indexOf('private') !== -1;
-  if (isPrivate) {
-    if (!s.student_id) return toast('No student linked to this session');
-    students = [{ id: s.student_id, name: s.student_name || 'Student', points: 0 }];
-    await loadPoints();
-    showClass(s.student_name || s.label || 'Private Class', s.session_type, 'private');
-  } else {
-    if (!s.group_id) return toast('No group linked to this session');
-    await loadGroupStudents(s.group_id);
-    showClass(s.group_name || s.label || 'Group Class', s.session_type, 'group');
-  }
-}
-
-async function startManual() {
-  if (classType === 'private') {
-    var id = parseInt(document.getElementById('sel-student').value);
-    if (!id) return toast('Please select a student');
-    var st = allStudents.find(function(x){ return x.id === id; });
-    students = [{ id: id, name: st ? st.name : 'Student', points: 0 }];
-    sessionId = null;
-    await loadPoints();
-    showClass(st ? st.name : 'Private Class', 'Private', 'private');
-  } else {
-    var gid = parseInt(document.getElementById('sel-group').value);
-    if (!gid) return toast('Please select a group');
-    var grp = allGroups.find(function(x){ return x.id === gid; });
-    sessionId = null;
-    await loadGroupStudents(gid);
-    showClass(grp ? grp.group_name : 'Group Class', 'Group', 'group');
-  }
-}
-
-async function loadGroupStudents(gid) {
-  var data = await safeJson('/api/live-points/group/' + gid + '/students');
-  students = Array.isArray(data) ? data.map(function(s){ return { id: s.id, name: s.name, points: 0 }; }) : [];
-  await loadPoints();
-}
-
-async function loadPoints() {
-  if (!students.length) return;
-  var ids = students.map(function(s){ return s.id; }).join(',');
+async function onGroupChange() {
+  var gid = parseInt(document.getElementById('sel-group').value);
+  if (!gid) { students = []; document.getElementById('s-list').innerHTML = '<div class="empty">Select a student or group above</div>'; return; }
   try {
-    var rows = await safeJson('/api/live-points/totals?ids=' + ids);
+    var r = await fetch('/api/live-points/group/' + gid + '/students');
+    var data = await r.json();
+    students = Array.isArray(data) ? data.map(function(s){ return { id: s.id, name: s.name, points: 0 }; }) : [];
+    await loadTotals();
+    renderList();
+  } catch(e) { toast('Could not load group students'); }
+}
+
+async function loadTotals() {
+  if (!students.length) return;
+  try {
+    var ids = students.map(function(s){ return s.id; }).join(',');
+    var r = await fetch('/api/live-points/totals?ids=' + ids);
+    var rows = await r.json();
     if (Array.isArray(rows)) {
-      rows.forEach(function(r) {
-        var s = students.find(function(x){ return x.id === r.student_id; });
-        if (s) s.points = parseInt(r.total_points) || 0;
+      rows.forEach(function(row) {
+        var s = students.find(function(x){ return x.id === row.student_id; });
+        if (s) s.points = parseInt(row.total_points) || 0;
       });
     }
   } catch(e) {}
 }
 
-function showClass(label, type, m) {
-  document.getElementById('setup').style.display = 'none';
-  document.getElementById('cls').style.display   = '';
-  document.getElementById('cls-name').textContent  = label;
-  document.getElementById('cls-sub').textContent   = new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
-  document.getElementById('cls-badge').textContent = type;
-
+function renderList() {
   var list = document.getElementById('s-list');
   list.innerHTML = '';
-
-  if (m === 'private' && students.length === 1) {
-    var s = students[0];
-    var div = document.createElement('div');
-    div.className = 'hero';
-    div.id = 'hero-' + s.id;
-    div.innerHTML =
-      '<div class="hero-av">' + esc(s.name[0].toUpperCase()) + '</div>' +
-      '<div class="hero-nm">' + esc(s.name) + '</div>' +
-      '<div class="hero-pts" id="pts-' + s.id + '">' + s.points + '</div>' +
-      '<div class="hero-lbl">total points ⭐</div>' +
-      '<div class="hero-row">' +
-        '<button class="pb p1" onclick="give(' + s.id + ',1,\'Good answer!\')">+1<br>⭐</button>' +
-        '<button class="pb p2" onclick="give(' + s.id + ',2,\'Great work!\')">+2<br>🌟</button>' +
-        '<button class="pb p5" onclick="give(' + s.id + ',5,\'Excellent!\')">+5<br>🔥</button>' +
-        '<button class="pb m1" onclick="give(' + s.id + ',-1,\'Oops!\')">-1<br>😅</button>' +
+  if (!students.length) { list.innerHTML = '<div class="empty">No students found</div>'; return; }
+  students.forEach(function(s) {
+    var card = document.createElement('div');
+    card.className = 's-card';
+    card.id = 'card-' + s.id;
+    card.innerHTML =
+      '<div class="av">' + esc(s.name.charAt(0).toUpperCase()) + '</div>' +
+      '<div class="s-name">' + esc(s.name) + '</div>' +
+      '<div class="s-pts" id="pts-' + s.id + '">' + s.points + '</div>' +
+      '<div class="btn-row">' +
+        '<button class="pb p1" onclick="give(' + s.id + ',1)">+1</button>' +
+        '<button class="pb p2" onclick="give(' + s.id + ',2)">+2</button>' +
+        '<button class="pb p5" onclick="give(' + s.id + ',5)">+5</button>' +
+        '<button class="pb m1" onclick="give(' + s.id + ',-1)">&minus;1</button>' +
       '</div>';
-    list.appendChild(div);
-  } else {
-    students.forEach(function(s) {
-      var card = document.createElement('div');
-      card.className = 's-card';
-      card.id = 'card-' + s.id;
-      card.innerHTML =
-        '<div class="s-top">' +
-          '<div class="s-av">' + esc(s.name[0].toUpperCase()) + '</div>' +
-          '<div class="s-nm">' + esc(s.name) + '</div>' +
-          '<div class="s-pts" id="pts-' + s.id + '">' + s.points + '</div>' +
-        '</div>' +
-        '<div class="btn-row">' +
-          '<button class="pb p1" onclick="give(' + s.id + ',1,\'Good answer!\')">+1 ⭐</button>' +
-          '<button class="pb p2" onclick="give(' + s.id + ',2,\'Great work!\')">+2 🌟</button>' +
-          '<button class="pb p5" onclick="give(' + s.id + ',5,\'Excellent!\')">+5 🔥</button>' +
-          '<button class="pb m1" onclick="give(' + s.id + ',-1,\'Oops!\')">-1 😅</button>' +
-        '</div>';
-      list.appendChild(card);
-    });
-  }
-  updateSummary();
+    list.appendChild(card);
+  });
 }
 
-async function give(studentId, pts, reason) {
+async function give(studentId, pts) {
   try {
     var res = await fetch('/api/live-points/award', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ student_id: studentId, points: pts, reason: reason, session_id: sessionId })
+      body: JSON.stringify({ student_id: studentId, points: pts, reason: pts > 0 ? 'Class point' : 'Deducted', session_id: null })
     });
     var data = await res.json();
-    if (!res.ok) { toast('⚠️ ' + (data.error || 'Error')); return; }
+    if (!res.ok) { toast((data.error || 'Error')); return; }
 
-    playPointSound(pts > 0);
+    playSound(pts > 0);
 
     var s = students.find(function(x){ return x.id === studentId; });
     if (s) s.points = data.total_points;
@@ -500,77 +286,30 @@ async function give(studentId, pts, reason) {
     var ptsEl = document.getElementById('pts-' + studentId);
     if (ptsEl) ptsEl.textContent = data.total_points;
 
-    var card = document.getElementById('card-' + studentId) || document.getElementById('hero-' + studentId);
+    var card = document.getElementById('card-' + studentId);
     if (card) {
-      card.classList.remove('flash-g','flash-r');
+      card.classList.remove('flash-g', 'flash-r');
       void card.offsetWidth;
       card.classList.add(pts > 0 ? 'flash-g' : 'flash-r');
-      var pop = document.createElement('div');
-      pop.className = 'float-pop';
-      pop.style.color = pts > 0 ? 'var(--green)' : 'var(--red)';
-      pop.textContent = (pts > 0 ? '+' : '') + pts + (pts > 0 ? ' ⭐' : '');
-      card.appendChild(pop);
-      setTimeout(function(){ pop.remove(); }, 950);
     }
+
     if (data.badge_awarded) {
-      // fanfare for milestone badge
-      try {
-        var ctx = getAudioCtx();
-        [523,659,784,1047].forEach(function(freq, i) {
-          var osc = ctx.createOscillator();
-          var gain = ctx.createGain();
-          osc.connect(gain); gain.connect(ctx.destination);
-          osc.type = 'sine';
-          osc.frequency.value = freq;
-          gain.gain.setValueAtTime(0, ctx.currentTime + i * 0.13);
-          gain.gain.linearRampToValueAtTime(0.3, ctx.currentTime + i * 0.13 + 0.02);
-          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.13 + 0.35);
-          osc.start(ctx.currentTime + i * 0.13);
-          osc.stop(ctx.currentTime + i * 0.13 + 0.4);
-        });
-      } catch(e) {}
-      setTimeout(function(){ toast('🏅 Badge unlocked: ' + data.badge_awarded + '!'); }, 400);
+      badgeFanfare();
+      setTimeout(function(){ toast('Badge unlocked: ' + data.badge_awarded + '!'); }, 400);
     }
-
-    updateSummary();
-  } catch(e) { toast('Network error — try again'); }
+  } catch(e) { toast('Network error - try again'); }
 }
 
-function updateSummary() {
-  var total = students.reduce(function(a,s){ return a + s.points; }, 0);
-  document.getElementById('stat-total').textContent = total;
-  document.getElementById('stat-count').textContent = students.length;
-  var top = students.reduce(function(a,b){ return a.points >= b.points ? a : b; }, students[0]);
-  document.getElementById('stat-top').textContent = top ? top.name.split(' ')[0] : '—';
-}
-
-function endClass() {
-  toast('✅ Points saved!');
-  setTimeout(function(){
-    document.getElementById('cls').style.display   = 'none';
-    document.getElementById('setup').style.display = '';
-    students = []; sessionId = null;
-    init();
-  }, 1200);
-}
-
-function goSetup() {
-  students = []; sessionId = null;
-  document.getElementById('cls').style.display   = 'none';
-  document.getElementById('setup').style.display = '';
-}
-
-var toastTimer;
-function toast(msg) {
-  var t = document.getElementById('toast');
-  t.textContent = msg; t.classList.add('show');
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(function(){ t.classList.remove('show'); }, 2600);
-}
 function esc(s) {
-  return String(s).replace(/[&<>"']/g, function(c){
-    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
-  });
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+var _tt;
+function toast(msg) {
+  var el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(_tt);
+  _tt = setTimeout(function(){ el.classList.remove('show'); }, 2800);
 }
 </script>
 </body>
