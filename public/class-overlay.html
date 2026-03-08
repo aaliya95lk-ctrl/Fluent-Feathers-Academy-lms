@@ -185,28 +185,27 @@
 
 <!-- SETUP -->
 <div id="setup">
-  <div id="loading-area" class="loading-bar">
-    <span class="spin">⏳</span> Loading students &amp; sessions…
-  </div>
+  <div id="setup-content">
+    <div id="loading-area" style="font-size:11px;color:var(--muted);text-align:center;padding:6px 0 10px;display:none;"><span class="spin">⏳</span> Loading…</div>
+    <div id="load-err" style="display:none;background:#fee2e2;color:#991b1b;border-radius:8px;padding:8px 12px;font-size:11px;margin-bottom:10px;"></div>
 
-  <div id="setup-content" style="display:none;">
     <div class="section-title">Pick by</div>
     <div class="mode-tabs">
-      <div class="mtab on" id="tb-today"  onclick="setMode('today')">📅 Today's Class</div>
-      <div class="mtab"    id="tb-manual" onclick="setMode('manual')">🔍 Any Student</div>
+      <div class="mtab"    id="tb-today"  onclick="setMode('today')">📅 Today's Class</div>
+      <div class="mtab on" id="tb-manual" onclick="setMode('manual')">🔍 Any Student</div>
     </div>
 
     <!-- TODAY pane -->
-    <div id="pane-today">
+    <div id="pane-today" style="display:none;">
       <div class="field-label">Session (today)</div>
       <select id="sel-session">
-        <option value="">— choose session —</option>
+        <option value="">— loading sessions… —</option>
       </select>
       <button class="btn-start" id="btn-today" onclick="startToday()" disabled>▶ Start Class</button>
     </div>
 
     <!-- MANUAL pane -->
-    <div id="pane-manual" style="display:none;">
+    <div id="pane-manual">
       <div class="type-tabs">
         <div class="mtab on" id="tb-priv" onclick="setClassType('private')">👤 Private</div>
         <div class="mtab"    id="tb-grp"  onclick="setClassType('group')">👥 Group</div>
@@ -293,7 +292,7 @@ function playPointSound(positive) {
   } catch(e) {}
 }
 
-var mode      = 'today';
+var mode      = 'manual';
 var classType = 'private';
 var sessionId = null;
 var students    = [];
@@ -303,8 +302,15 @@ var allGroups   = [];
 window.addEventListener('load', init);
 
 async function init() {
-  document.getElementById('loading-area').style.display  = '';
-  document.getElementById('setup-content').style.display = 'none';
+  var la = document.getElementById('loading-area');
+  var le = document.getElementById('load-err');
+  la.style.display = '';
+  le.style.display = 'none';
+  // Reset dropdowns to placeholder while reloading
+  document.getElementById('sel-student').innerHTML = '<option value="">— loading… —</option>';
+  document.getElementById('sel-group').innerHTML   = '<option value="">— loading… —</option>';
+  document.getElementById('sel-session').innerHTML = '<option value="">— loading sessions… —</option>';
+  document.getElementById('btn-today').disabled = true;
   try {
     var tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
     var results = await Promise.all([
@@ -334,17 +340,17 @@ async function init() {
         tSel.appendChild(new Option(lbl, JSON.stringify(s)));
       });
     } else {
-      tSel.innerHTML = '<option value="">No sessions today — use Any Student tab</option>';
+      tSel.innerHTML = '<option value="">No sessions today</option>';
     }
     tSel.onchange = function() {
       document.getElementById('btn-today').disabled = !tSel.value;
     };
 
-    document.getElementById('loading-area').style.display  = 'none';
-    document.getElementById('setup-content').style.display = '';
+    la.style.display = 'none';
   } catch(e) {
-    document.getElementById('loading-area').innerHTML =
-      '⚠️ Could not load data. <button onclick="init()" style="background:var(--accent);color:#fff;border:none;border-radius:6px;padding:4px 10px;cursor:pointer;margin-left:6px;">Retry</button>';
+    la.style.display = 'none';
+    le.innerHTML = '⚠️ Could not load students. <button onclick="init()" style="background:#991b1b;color:#fff;border:none;border-radius:6px;padding:3px 9px;cursor:pointer;margin-left:6px;font-size:11px;">Retry</button>';
+    le.style.display = '';
   }
 }
 
