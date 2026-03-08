@@ -86,7 +86,7 @@ select option { background: #ede0ff; color: #2d1245; }
 #toast.show { opacity: 1; }
 
 .s-name-row { flex: 1; display: flex; align-items: center; gap: 6px; min-width: 0; }
-.s-name { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.s-name { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 50px; }
 .badge-wrap { position: relative; flex-shrink: 0; }
 .badge-btn {
   border: 1.5px solid #c9a227; background: linear-gradient(135deg, #fff8dc 0%, #fde97a 100%); border-radius: 7px;
@@ -349,7 +349,7 @@ function renderList() {
     card.innerHTML =
       '<div class="av">' + esc(s.name.charAt(0).toUpperCase()) + '</div>' +
       '<div class="s-name-row">' +
-        '<div class="s-name">' + esc(s.name) + '</div>' +
+        '<div class="s-name" title="' + esc(s.name) + '">' + esc(s.name.split(' ')[0]) + '</div>' +
         '<div class="badge-wrap" id="bwrap-' + s.id + '">' +
           '<button class="badge-btn" onclick="toggleBadgeMenu(' + s.id + ', event)" title="Award a badge">🏅 ▾</button>' +
           '<div class="badge-menu" id="bmenu-' + s.id + '">' + buildBadgeMenuHTML(s.id) + '</div>' +
