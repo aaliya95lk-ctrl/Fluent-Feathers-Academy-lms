@@ -6,54 +6,18 @@
 <title>&#x2B50; Class Points</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
-html, body { width: 100%; height: 100%; overflow: hidden; font-family: 'Segoe UI', system-ui, sans-serif; color: #2d1245; font-size: 13px; background: transparent; }
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: #f3eeff; color: #2d1245; font-size: 13px; }
 
-/* ── Drawer shell ── */
-#drawer {
-  position: fixed;
-  top: 0; right: 0;
-  width: 290px; height: 100vh;
-  background: #f3eeff;
-  transform: translateX(100%);
-  transition: transform 0.32s cubic-bezier(.4,0,.2,1);
-  z-index: 100;
-  display: flex; flex-direction: column;
-  box-shadow: -4px 0 24px rgba(176,93,158,0.22);
-}
-#drawer.open { transform: translateX(0); }
-
-/* ── Arrow tab ── */
-#drawer-tab {
-  position: absolute;
-  left: -32px; top: 50%;
-  transform: translateY(-50%);
-  width: 32px; height: 64px;
-  background: linear-gradient(160deg, #B05D9E 0%, #764ba2 100%);
-  border-radius: 12px 0 0 12px;
-  cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  box-shadow: -4px 0 14px rgba(176,93,158,0.45);
-  transition: background 0.18s, width 0.18s;
-  user-select: none;
-}
-#drawer-tab:hover { background: linear-gradient(160deg, #c46eb0 0%, #8a57bb 100%); width: 36px; }
-#drawer-tab svg {
-  transition: transform 0.32s cubic-bezier(.4,0,.2,1);
-}
-#drawer.open #drawer-tab svg { transform: rotate(180deg); }
-
-/* ── Header ── */
 .hdr {
   background: linear-gradient(135deg, #B05D9E 0%, #764ba2 100%);
   padding: 11px 14px;
   display: flex; align-items: center; justify-content: space-between;
-  flex-shrink: 0;
+  position: sticky; top: 0; z-index: 50;
   box-shadow: 0 2px 10px rgba(176,93,158,0.35);
 }
 .hdr-title { font-size: 15px; font-weight: 800; color: #fff; }
 
-/* ── Scrollable body ── */
-.body { padding: 12px; overflow-y: auto; flex: 1; }
+.body { padding: 12px; }
 
 .tabs { display: flex; gap: 6px; margin-bottom: 12px; }
 .tab {
@@ -147,19 +111,11 @@ select option { background: #ede0ff; color: #2d1245; }
 </head>
 <body>
 
-<div id="drawer">
-  <!-- Arrow tab -->
-  <div id="drawer-tab" onclick="toggleDrawer()" title="Toggle Class Points">
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-      <polyline points="15 18 9 12 15 6"></polyline>
-    </svg>
-  </div>
+<div class="hdr">
+  <div class="hdr-title">&#x2B50; Class Points</div>
+</div>
 
-  <div class="hdr">
-    <div class="hdr-title">&#x2B50; Class Points</div>
-  </div>
-
-  <div class="body">
+<div class="body">
   <div class="tabs">
     <div class="tab on" id="tab-s" onclick="switchTab('student')">&#x1F464; Student</div>
     <div class="tab"    id="tab-g" onclick="switchTab('group')">&#x1F465; Group</div>
@@ -183,8 +139,7 @@ select option { background: #ede0ff; color: #2d1245; }
     <div class="empty">Select a student or group above</div>
   </div>
 
-  </div><!-- /.body -->
-</div><!-- /#drawer -->
+</div>
 
 <div id="toast"></div>
 
@@ -338,10 +293,6 @@ async function assignBadge(studentId, badgeName, badgeDesc, optEl) {
     var badge = CLASS_BADGES.find(function(b){ return b.name === badgeName; });
     setTimeout(function(){ toast((badge ? badge.emoji + ' ' : '') + badgeName + ' badge awarded!'); }, 350);
   }
-}
-
-function toggleDrawer() {
-  document.getElementById('drawer').classList.toggle('open');
 }
 
 window.addEventListener('load', function() { loadDropdowns(); });
