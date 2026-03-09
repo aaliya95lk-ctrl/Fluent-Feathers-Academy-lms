@@ -466,6 +466,7 @@ app.use((req, res, next) => {
     req.path === '/api/config' ||
     req.path === '/api/health' ||
     req.path === '/api/health/light' ||
+    req.path === '/api/db/ping' ||
     req.path === '/api/admin/reconnect-db';
 
   if (alwaysAvailable) return next();
@@ -11679,6 +11680,19 @@ app.get('/api/health/light', (req, res) => {
       ready: dbReady
     }
   });
+});
+
+// DB ping — called by browser pages every 30s to keep Supabase warm.
+// Runs SELECT 1 against the real pool so the DB connection is never idle.
+app.get('/api/db/ping', async (req, res) => {
+  try {
+    await pool.query('SELECT 1');
+    if (!dbReady) dbReady = true;
+    markDbActivity();
+    res.json({ ok: true, dbReady: true });
+  } catch (err) {
+    res.json({ ok: false, dbReady: false });
+  }
 });
 
 // Endpoint to check server health and upcoming reminders

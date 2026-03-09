@@ -1822,6 +1822,23 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
         ]);
       }, 7500);
 
+      // ── Always-on DB keep-alive ────────────────────────────────────────────
+      // Pings real DB (SELECT 1) every 30s while page is open.
+      // Supabase never idles as long as anyone has the parent portal open.
+      let _dbPingInFlight = false;
+      async function _parentDbPing() {
+        if (_dbPingInFlight) return;
+        _dbPingInFlight = true;
+        try { await fetch('/api/db/ping', { cache: 'no-store' }); } catch (_) {}
+        finally { _dbPingInFlight = false; }
+      }
+      setInterval(_parentDbPing, 20 * 1000);                                // layer 1
+      document.addEventListener('click', _parentDbPing, { passive: true });  // layer 2
+      document.addEventListener('visibilitychange', () => {                  // layer 3
+        if (document.visibilityState === 'visible') _parentDbPing();
+      });
+      // ─────────────────────────────────────────────────────────────────────────
+
       // Restore last active tab from localStorage
       let savedTab = localStorage.getItem('parentActiveTab');
       // Map old tab names to new ones
@@ -2653,6 +2670,7 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
       return sessionSerialMap[session.id] || '-';
     }
 
+    let _upcomingRetryCount = 0;
     async function loadUpcoming(showLoadingOverlay = true) {
       try {
         if (showLoadingOverlay) setPortalDbLoading(true, 'Loading upcoming classes...');
@@ -2680,12 +2698,14 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
         const tbody = document.getElementById('upcomingBody');
 
         if (upcoming.length === 0) {
+          _upcomingRetryCount = 0; // genuine empty — reset counter
           startParentNextClassTimer(null);
         tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: #718096;">No upcoming classes scheduled</td></tr>';
           return;
         }
 
         // Start next-class countdown timer from first upcoming session
+        _upcomingRetryCount = 0; // data loaded successfully — reset counter
         startParentNextClassTimer(upcoming[0] || null);
 
         tbody.innerHTML = upcoming.map(s => {
@@ -2728,8 +2748,16 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
           </tr>`;
         }).join('');
       } catch(e) {
-        console.error('Error loading upcoming:', e);
-        document.getElementById('upcomingBody').innerHTML = '<tr><td colspan="4">Error loading sessions</td></tr>';
+        _upcomingRetryCount++;
+        console.error(`Error loading upcoming (attempt ${_upcomingRetryCount}):`, e);
+        const tbody = document.getElementById('upcomingBody');
+        if (_upcomingRetryCount <= 3) {
+          if (tbody) tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:#718096; padding:20px;">⏳ Database warming up… retrying (${_upcomingRetryCount}/3) 🔄</td></tr>`;
+          setTimeout(() => loadUpcoming(false), 5000);
+        } else {
+          _upcomingRetryCount = 0;
+          if (tbody) tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:#e53e3e; padding:20px;">Could not load classes. <a href="javascript:void(0);" onclick="_upcomingRetryCount=0; loadUpcoming()" style="color:#B05D9E;">Tap to retry</a></td></tr>';
+        }
       } finally {
         if (showLoadingOverlay) setPortalDbLoading(false);
       }
@@ -2812,6 +2840,7 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
     let allPastSessions = []; // Store all past sessions for filtering
     let showAllPastClasses = false;
 
+    let _pastRetryCount = 0;
     async function loadPast(showLoadingOverlay = false) {
       try {
         if (showLoadingOverlay) setPortalDbLoading(true, 'Loading past classes...');
@@ -2840,10 +2869,17 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
         });
 
         // Show recent 10 by default
+        _pastRetryCount = 0; // data loaded successfully — reset counter
         renderPastClasses(showAllPastClasses ? allPastSessions : allPastSessions.slice(0, 10));
         updatePastClassCount();
       } catch(e) {
-        console.error('Error loading past:', e);
+        _pastRetryCount++;
+        console.error(`Error loading past (attempt ${_pastRetryCount}):`, e);
+        if (_pastRetryCount <= 3) {
+          setTimeout(() => loadPast(false), 5000);
+        } else {
+          _pastRetryCount = 0;
+        }
       } finally {
         if (showLoadingOverlay) setPortalDbLoading(false);
       }

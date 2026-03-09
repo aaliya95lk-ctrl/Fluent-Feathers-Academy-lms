@@ -1,4 +1,4 @@
-
+﻿
 
 <!DOCTYPE html>
 <html lang="en">
@@ -3783,28 +3783,25 @@ I'm passionate about helping children develop confidence in communication!"></te
         if (document.visibilityState !== 'hidden') loadUpcomingClasses(false);
       }, 5 * 60 * 1000);
 
-      // ── Keep-DB-Awake on click ──────────────────────────────────────────
-      // After any button/click on admin panel, ping the server every 60s
-      // for 15 minutes so the DB pool never goes cold mid-session.
-      let _keepAwakeTimer = null;
-      let _keepAwakeExpiry = 0;
-      const KEEP_AWAKE_DURATION_MS = 15 * 60 * 1000; // 15 minutes
-      const KEEP_AWAKE_PING_MS = 60 * 1000;           // ping every 60s
-
-      function _resetKeepAwake() {
-        _keepAwakeExpiry = Date.now() + KEEP_AWAKE_DURATION_MS;
-        if (_keepAwakeTimer) return; // already running
-        _keepAwakeTimer = setInterval(async () => {
-          if (Date.now() >= _keepAwakeExpiry) {
-            clearInterval(_keepAwakeTimer);
-            _keepAwakeTimer = null;
-            return;
-          }
-          try { await fetch('/api/health/light', { cache: 'no-store' }); } catch (_) {}
-        }, KEEP_AWAKE_PING_MS);
+      // ── Always-on DB keep-alive (3-layer) ──────────────────────────────
+      // 1. Timer  — SELECT 1 every 20s, no visibility gate (runs even when
+      //             you alt-tab or switch to another window/app)
+      // 2. Click  — any click on the page immediately fires a ping so active
+      //             work keeps the DB warm
+      // 3. Return — becoming visible (switching back) fires an instant ping
+      //             so you never land on empty data after tabbing away
+      let _dbPingInFlight = false;
+      async function _adminDbPing() {
+        if (_dbPingInFlight) return;
+        _dbPingInFlight = true;
+        try { await fetch('/api/db/ping', { cache: 'no-store' }); } catch (_) {}
+        finally { _dbPingInFlight = false; }
       }
-
-      document.addEventListener('click', _resetKeepAwake, { passive: true });
+      setInterval(_adminDbPing, 20 * 1000);                               // layer 1
+      document.addEventListener('click', _adminDbPing, { passive: true }); // layer 2
+      document.addEventListener('visibilitychange', () => {               // layer 3
+        if (document.visibilityState === 'visible') _adminDbPing();
+      });
       // ────────────────────────────────────────────────────────────────────
 
       // Warm remaining tab data in staged batches for instant tab switching
@@ -4059,6 +4056,7 @@ I'm passionate about helping children develop confidence in communication!"></te
       }
     }
 
+    let _upcomingRetryCount = 0;
     async function loadUpcomingClasses(showLoadingOverlay = true) {
       try {
         if (showLoadingOverlay) setDbLoading(true, 'Loading upcoming classes...');
@@ -4079,6 +4077,7 @@ I'm passionate about helping children develop confidence in communication!"></te
           startAdminNextClassTimer(null);
           return grid.innerHTML = '<p style="color:#a0aec0; padding:20px; text-align:center;">No upcoming classes scheduled 📅</p>';
         }
+        _upcomingRetryCount = 0; // reset on success
         startAdminNextClassTimer(classes[0]);
         grid.innerHTML = classes.map(cls => {
           // Get day name
@@ -4134,8 +4133,16 @@ I'm passionate about helping children develop confidence in communication!"></te
         </div>`;
         }).join('');
       } catch (err) {
-        console.warn('⏳ Upcoming classes slow to load:', err.message);
-        document.getElementById('upcomingClassesGrid').innerHTML = '<p style="color:#a0aec0; padding:20px; text-align:center;">Loading upcoming classes... (Database warming up) 🔄</p>';
+        _upcomingRetryCount++;
+        console.warn(`⏳ Upcoming classes load failed (attempt ${_upcomingRetryCount}):`, err.message);
+        const grid = document.getElementById('upcomingClassesGrid');
+        if (_upcomingRetryCount <= 4) {
+          if (grid) grid.innerHTML = `<p style="color:#a0aec0; padding:20px; text-align:center;">⏳ Database warming up… retrying (${_upcomingRetryCount}/4) 🔄</p>`;
+          setTimeout(() => loadUpcomingClasses(false), 5000);
+        } else {
+          _upcomingRetryCount = 0;
+          if (grid) grid.innerHTML = '<p style="color:#e53e3e; padding:20px; text-align:center;">Could not load classes. <a href="javascript:void(0);" onclick="_upcomingRetryCount=0; loadUpcomingClasses()" style="color:#B05D9E;">Click to retry</a> 🔃</p>';
+        }
       } finally {
         if (showLoadingOverlay) setDbLoading(false);
       }
@@ -4674,6 +4681,7 @@ if (dueEl) {
     let allPastSessions = []; // Store all past sessions for filtering
     let pastSessionsLoadedAt = 0;
 
+    let _pastRetryCount = 0;
     async function loadPastSessions(showLoadingOverlay = true) {
       if (allPastSessions.length > 0 && (Date.now() - pastSessionsLoadedAt) < 60000) {
         filterPastSessions();
@@ -4690,15 +4698,21 @@ if (dueEl) {
         if (!res.ok) {
           throw new Error(payload?.error || `Failed to load past sessions (${res.status})`);
         }
+        _pastRetryCount = 0; // reset on success
         allPastSessions = Array.isArray(payload) ? payload : [];
         pastSessionsLoadedAt = Date.now();
         filterPastSessions(); // Apply initial filter (show 10)
       } catch(err) {
-        console.error('Past sessions load error:', err);
+        _pastRetryCount++;
+        console.error(`Past sessions load error (attempt ${_pastRetryCount}):`, err);
         allPastSessions = [];
         const tbody = document.getElementById('pastSessionsBody');
-        if (tbody) {
-          tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color:#e53e3e; padding:20px;">Failed to load past sessions: ${err.message}</td></tr>`;
+        if (_pastRetryCount <= 3) {
+          if (tbody) tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color:#718096; padding:20px;">⏳ Database warming up… retrying (${_pastRetryCount}/3) 🔄</td></tr>`;
+          setTimeout(() => loadPastSessions(false), 5000);
+        } else {
+          _pastRetryCount = 0;
+          if (tbody) tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color:#e53e3e; padding:20px;">Failed to load past sessions: ${err.message} — <a href="javascript:void(0);" onclick="_pastRetryCount=0; loadPastSessions()" style="color:#B05D9E;">Retry</a></td></tr>`;
         }
       } finally {
         if (showLoadingOverlay) setDbLoading(false);
