@@ -545,7 +545,6 @@ window.addEventListener('load', function() {
 
     // ── Pin-on-top: keep float window in front while Canva/PPT is running ──
     var _pinned = true;  // ON by default so it just works
-    var _pinBlurTimer = null;
     var pinBtn = document.getElementById('btn-pin');
     if (pinBtn) {
       pinBtn.style.display = 'inline-block';
@@ -564,15 +563,33 @@ window.addEventListener('load', function() {
         }
       });
     }
-    // When the float window loses focus and pin is ON, refocus it
-    window.addEventListener('blur', function() {
+    // When the float window loses focus and pin is ON, aggressively reclaim it.
+    // A single window.focus() isn't enough — Canva re-steals focus on every
+    // page change. Instead we run a rapid interval (every 200ms) for 2 seconds
+    // after each blur, hammering focus back before Canva can settle.
+    var _pinFocusInterval = null;
+    function _startPinFocusBurst() {
       if (!_pinned) return;
-      // Small delay so the OS can finish the focus-switch animation first
-      clearTimeout(_pinBlurTimer);
-      _pinBlurTimer = setTimeout(function() {
-        if (_pinned) window.focus();
-      }, 120);
-    });
+      clearInterval(_pinFocusInterval);
+      var bursts = 0;
+      _pinFocusInterval = setInterval(function() {
+        if (!_pinned || bursts >= 10) {   // 10 × 200ms = 2 second burst
+          clearInterval(_pinFocusInterval);
+          _pinFocusInterval = null;
+          return;
+        }
+        window.focus();
+        bursts++;
+      }, 200);
+    }
+    window.addEventListener('blur', _startPinFocusBurst);
+    // Also keep a slow steady ping (every 800ms) so if Canva takes focus
+    // again after the burst, we still reclaim it quickly.
+    setInterval(function() {
+      if (_pinned && document.visibilityState !== 'hidden' && document.hasFocus && !document.hasFocus()) {
+        window.focus();
+      }
+    }, 800);
     // ────────────────────────────────────────────────────────────────────────
   } else {
     loadDropdowns();
