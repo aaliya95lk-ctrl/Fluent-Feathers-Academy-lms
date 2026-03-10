@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>⭐ Present Mode</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', system-ui, sans-serif; }
+body { display: flex; flex-direction: column; background: #111; }
+
+/* ── TOP BAR ── */
+.topbar {
+  background: #2d1245;
+  padding: 7px 12px;
+  display: flex; align-items: center; gap: 7px;
+  border-bottom: 2px solid #B05D9E;
+  flex-shrink: 0;
+}
+.topbar-logo { color: #e0c4ff; font-size: 13px; font-weight: 800; white-space: nowrap; }
+.topbar input {
+  flex: 1; background: #3d1a5e; border: 1.5px solid #764ba2;
+  color: #fff; padding: 7px 10px; border-radius: 7px; font-size: 12px; outline: none;
+  min-width: 0;
+}
+.topbar input::placeholder { color: #a78bca; }
+.topbar input:focus { border-color: #c084e8; }
+.topbar-go {
+  background: #B05D9E; color: #fff; border: none;
+  border-radius: 7px; padding: 7px 16px; font-size: 12px; font-weight: 800;
+  cursor: pointer; white-space: nowrap; flex-shrink: 0;
+}
+.topbar-go:hover { background: #9a4d8a; }
+.topbar-save {
+  background: #3d1a5e; color: #e0c4ff; border: 1.5px solid #764ba2;
+  border-radius: 7px; padding: 7px 12px; font-size: 12px; font-weight: 700;
+  cursor: pointer; white-space: nowrap; flex-shrink: 0;
+}
+.topbar-save:hover { background: #4e236e; }
+#saved-select {
+  background: #3d1a5e; border: 1.5px solid #764ba2; color: #e0c4ff;
+  padding: 7px 8px; border-radius: 7px; font-size: 12px; outline: none;
+  cursor: pointer; max-width: 200px; flex-shrink: 0;
+}
+#saved-select option { background: #2d1245; color: #e0c4ff; }
+#saved-select:focus { border-color: #c084e8; }
+
+/* ── CONTENT ROW ── */
+.content { flex: 1; display: flex; overflow: hidden; min-height: 0; }
+
+/* ── LEFT PANEL ── */
+.panel {
+  width: 285px; flex-shrink: 0;
+  background: #f3eeff;
+  display: flex; flex-direction: column;
+  border-right: 2px solid #B05D9E;
+  overflow: hidden;
+}
+.panel-hdr {
+  background: linear-gradient(135deg, #B05D9E 0%, #764ba2 100%);
+  padding: 11px 14px;
+  font-size: 14px; font-weight: 800; color: #fff;
+  flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(176,93,158,0.3);
+}
+.panel-body { flex: 1; overflow-y: auto; padding: 10px; }
+
+.tabs { display: flex; gap: 5px; margin-bottom: 10px; }
+.tab {
+  flex: 1; padding: 7px; border-radius: 8px; border: 1.5px solid #c084e8;
+  background: #ede0ff; color: #7c3aad; font-size: 12px; font-weight: 700;
+  text-align: center; cursor: pointer;
+}
+.tab.on { background: #B05D9E; border-color: #B05D9E; color: #fff; }
+
+.lbl { font-size: 11px; font-weight: 700; color: #7c3aad; margin-bottom: 4px; }
+select.std {
+  width: 100%; background: #ede0ff; border: 1.5px solid #c084e8;
+  color: #2d1245; padding: 9px 10px; border-radius: 8px; font-size: 12px;
+  outline: none; cursor: pointer; margin-bottom: 10px;
+}
+select.std:focus { border-color: #B05D9E; }
+
+.s-list { display: flex; flex-direction: column; gap: 7px; }
+.s-card {
+  background: #fff; border: 1.5px solid #e0cffa; border-radius: 10px;
+  padding: 9px 11px; display: flex; align-items: center; gap: 8px;
+  box-shadow: 0 1px 4px rgba(176,93,158,0.08);
+}
+.s-card.flash-g { animation: fg 0.5s; }
+.s-card.flash-r { animation: fr 0.5s; }
+@keyframes fg { 0%,100%{background:#fff} 40%{background:#d1fae5;border-color:#34d399} }
+@keyframes fr { 0%,100%{background:#fff} 40%{background:#fee2e2;border-color:#f87171} }
+.av {
+  width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0;
+  background: linear-gradient(135deg, #B05D9E 0%, #764ba2 100%);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; font-weight: 900; color: #fff;
+}
+.s-name { flex: 1; font-size: 12px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.s-pts {
+  font-size: 16px; font-weight: 900; color: #b45309;
+  background: #fef3c7; border-radius: 7px; padding: 2px 7px;
+  min-width: 32px; text-align: center;
+}
+.btn-row { display: flex; gap: 3px; }
+.pb { border: none; border-radius: 6px; padding: 5px 6px; cursor: pointer; font-size: 10px; font-weight: 800; transition: transform 0.1s; }
+.pb:active { transform: scale(0.88); }
+.pb.p1 { background: #d1fae5; color: #065f46; border: 1.5px solid #34d399; }
+.pb.p2 { background: #a7f3d0; color: #065f46; border: 1.5px solid #10b981; }
+.pb.p5 { background: #fef3c7; color: #92400e; border: 1.5px solid #f59e0b; }
+.pb.m1 { background: #fee2e2; color: #991b1b; border: 1.5px solid #f87171; }
+.empty { text-align: center; padding: 25px 10px; color: #c084e8; font-size: 12px; }
+
+/* ── MAIN (Canva) AREA ── */
+.main { flex: 1; min-width: 0; position: relative; background: #111; display: flex; flex-direction: column; }
+#canva-frame { flex: 1; width: 100%; border: none; display: none; }
+
+/* Placeholder */
+.placeholder {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  color: #a78bca; text-align: center; padding: 40px; gap: 18px;
+}
+.placeholder-icon { font-size: 58px; }
+.placeholder h2 { font-size: 20px; font-weight: 800; color: #c084e8; }
+.placeholder p { font-size: 13px; line-height: 1.7; max-width: 420px; color: #8b6fa8; }
+.steps-box {
+  background: #1e0d33; border: 1px solid #4a2070;
+  border-radius: 12px; padding: 18px 22px;
+  font-size: 13px; color: #d0b0f0; text-align: left;
+  max-width: 430px; width: 100%; line-height: 2;
+}
+.steps-box b { color: #e9d5ff; }
+
+/* Save dialog */
+#save-dialog {
+  display: none;
+  position: fixed; inset: 0; z-index: 9999;
+  background: rgba(0,0,0,0.6);
+  align-items: center; justify-content: center;
+}
+#save-dialog.open { display: flex; }
+.save-box {
+  background: #f3eeff; border-radius: 14px; padding: 24px 26px;
+  max-width: 380px; width: 90%; box-shadow: 0 8px 40px rgba(0,0,0,0.5);
+}
+.save-box h3 { font-size: 16px; font-weight: 800; color: #2d1245; margin-bottom: 14px; }
+.save-box input {
+  width: 100%; background: #ede0ff; border: 1.5px solid #c084e8;
+  color: #2d1245; padding: 9px 12px; border-radius: 8px; font-size: 13px;
+  outline: none; margin-bottom: 14px;
+}
+.save-box input:focus { border-color: #B05D9E; }
+.save-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.save-ok {
+  background: #B05D9E; color: #fff; border: none;
+  border-radius: 8px; padding: 8px 20px; font-size: 13px; font-weight: 800; cursor: pointer;
+}
+.save-cancel {
+  background: #ede0ff; color: #7c3aad; border: 1.5px solid #c084e8;
+  border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 700; cursor: pointer;
+}
+
+/* Saved list in panel */
+.saved-section { margin-top: 12px; border-top: 1.5px solid #e0cffa; padding-top: 10px; }
+.saved-lbl { font-size: 11px; font-weight: 700; color: #7c3aad; margin-bottom: 6px; }
+.saved-item {
+  background: #fff; border: 1.5px solid #e0cffa; border-radius: 8px;
+  padding: 8px 10px; margin-bottom: 5px;
+  display: flex; align-items: center; gap: 6px;
+  cursor: pointer; transition: background 0.12s;
+}
+.saved-item:hover { background: #ede0ff; border-color: #B05D9E; }
+.saved-item-name { flex: 1; font-size: 12px; font-weight: 700; color: #2d1245; }
+.saved-del { background: none; border: none; color: #f87171; cursor: pointer; font-size: 14px; line-height: 1; padding: 0 2px; }
+.saved-del:hover { color: #dc2626; }
+
+#toast {
+  position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%);
+  background: #2d1245; color: #fff; padding: 7px 18px; border-radius: 20px;
+  font-size: 12px; opacity: 0; transition: opacity 0.3s; z-index: 999;
+  white-space: nowrap; pointer-events: none;
+}
+#toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div class="topbar">
+  <span class="topbar-logo">🎨</span>
+  <input type="text" id="canva-url" placeholder="Paste Canva link here…" onkeydown="if(event.key==='Enter')loadCanva()" />
+  <button class="topbar-go" onclick="loadCanva()">▶ Present</button>
+  <button class="topbar-save" onclick="openSaveDialog()" title="Save this link with a topic name">💾 Save</button>
+  <select id="saved-select" onchange="pickSaved()" title="Load a saved presentation">
+    <option value="">📂 My Presentations…</option>
+  </select>
+</div>
+
+<!-- CONTENT -->
+<div class="content">
+
+  <!-- LEFT: Points Panel -->
+  <div class="panel">
+    <div class="panel-hdr">⭐ Class Points</div>
+    <div class="panel-body">
+      <div class="tabs">
+        <div class="tab on" id="tab-s" onclick="switchTab('student')">👤 Student</div>
+        <div class="tab"    id="tab-g" onclick="switchTab('group')">👥 Group</div>
+      </div>
+      <div id="pane-student">
+        <div class="lbl">Choose Student</div>
+        <select class="std" id="sel-student" onchange="onStudentChange()">
+          <option value="">-- loading... --</option>
+        </select>
+      </div>
+      <div id="pane-group" style="display:none;">
+        <div class="lbl">Choose Group</div>
+        <select class="std" id="sel-group" onchange="onGroupChange()">
+          <option value="">-- loading... --</option>
+        </select>
+      </div>
+      <div id="s-list" class="s-list">
+        <div class="empty">Select a student or group above</div>
+      </div>
+
+      <!-- Saved presentations list in sidebar -->
+      <div class="saved-section" id="saved-section" style="display:none;">
+        <div class="saved-lbl">📂 Saved Presentations</div>
+        <div id="saved-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT: Canva -->
+  <div class="main">
+    <div class="placeholder" id="placeholder">
+      <div class="placeholder-icon">🎨</div>
+      <h2>Your Canva slide will appear here</h2>
+      <div class="steps-box">
+        <b>How to get the Canva embed link:</b><br>
+        1. Open your presentation in Canva<br>
+        2. Click <b>Share</b> → <b>More</b> → <b>Embed</b><br>
+        3. Copy the URL inside the iframe code (the <b>src="…"</b> part)<br>
+        4. Paste it in the bar above → click <b>▶ Present</b>
+      </div>
+      <p>Then in Zoom → <b>Share Screen</b> → pick <b>this tab</b>.<br>Students see your slides + points together! 🎉</p>
+    </div>
+    <iframe id="canva-frame" allowfullscreen allow="fullscreen"></iframe>
+  </div>
+</div>
+
+<!-- Save Dialog -->
+<div id="save-dialog">
+  <div class="save-box">
+    <h3>💾 Save Presentation</h3>
+    <input type="text" id="save-name" placeholder="Topic name (e.g. Narrative Writing)" onkeydown="if(event.key==='Enter')confirmSave()" />
+    <div class="save-actions">
+      <button class="save-cancel" onclick="closeSaveDialog()">Cancel</button>
+      <button class="save-ok" onclick="confirmSave()">Save</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+var allStudents = [], allGroups = [], students = [];
+
+window.addEventListener('load', function() {
+  loadDropdowns();
+  renderSaved();
+  var saved = localStorage.getItem('present_canva_url');
+  if (saved) {
+    document.getElementById('canva-url').value = saved;
+    loadCanva(true);
+  }
+});
+
+// ── Dropdowns ──
+async function loadDropdowns() {
+  try {
+    var r1 = await fetch('/api/live-points/all-students');
+    allStudents = await r1.json();
+    if (!Array.isArray(allStudents)) allStudents = [];
+
+    var r2 = await fetch('/api/groups');
+    allGroups = await r2.json();
+    if (!Array.isArray(allGroups)) allGroups = [];
+
+    var ss = document.getElementById('sel-student');
+    ss.innerHTML = '<option value="">-- choose student --</option>';
+    allStudents.forEach(function(s) { ss.appendChild(new Option(s.name, s.id)); });
+
+    var sg = document.getElementById('sel-group');
+    sg.innerHTML = '<option value="">-- choose group --</option>';
+    allGroups.forEach(function(g) { sg.appendChild(new Option(g.group_name, g.id)); });
+  } catch(e) {}
+}
+
+function switchTab(t) {
+  document.getElementById('tab-s').classList.toggle('on', t === 'student');
+  document.getElementById('tab-g').classList.toggle('on', t === 'group');
+  document.getElementById('pane-student').style.display = t === 'student' ? '' : 'none';
+  document.getElementById('pane-group').style.display   = t === 'group'   ? '' : 'none';
+  students = [];
+  document.getElementById('s-list').innerHTML = '<div class="empty">Select a student or group above</div>';
+}
+
+async function onStudentChange() {
+  var id = parseInt(document.getElementById('sel-student').value);
+  if (!id) { students = []; document.getElementById('s-list').innerHTML = '<div class="empty">Select a student or group above</div>'; return; }
+  var s = allStudents.find(function(x){ return x.id === id; });
+  students = [{ id: id, name: s ? s.name : 'Student', points: 0 }];
+  await loadTotals(); renderList();
+}
+
+async function onGroupChange() {
+  var gid = parseInt(document.getElementById('sel-group').value);
+  if (!gid) { students = []; document.getElementById('s-list').innerHTML = '<div class="empty">Select a student or group above</div>'; return; }
+  try {
+    var r = await fetch('/api/live-points/group/' + gid + '/students');
+    var data = await r.json();
+    students = Array.isArray(data) ? data.map(function(s){ return { id: s.id, name: s.name, points: 0 }; }) : [];
+    await loadTotals(); renderList();
+  } catch(e) { toast('Could not load group students'); }
+}
+
+async function loadTotals() {
+  if (!students.length) return;
+  try {
+    var ids = students.map(function(s){ return s.id; }).join(',');
+    var r = await fetch('/api/live-points/totals?ids=' + ids);
+    var rows = await r.json();
+    if (Array.isArray(rows)) {
+      rows.forEach(function(row) {
+        var s = students.find(function(x){ return x.id === row.student_id; });
+        if (s) s.points = parseInt(row.total_points) || 0;
+      });
+    }
+  } catch(e) {}
+}
+
+function renderList() {
+  var list = document.getElementById('s-list');
+  list.innerHTML = '';
+  if (!students.length) { list.innerHTML = '<div class="empty">No students found</div>'; return; }
+  students.forEach(function(s) {
+    var card = document.createElement('div');
+    card.className = 's-card';
+    card.id = 'card-' + s.id;
+    card.innerHTML =
+      '<div class="av">' + esc(s.name.charAt(0).toUpperCase()) + '</div>' +
+      '<div class="s-name" title="' + esc(s.name) + '">' + esc(s.name.split(' ')[0]) + '</div>' +
+      '<div class="s-pts" id="pts-' + s.id + '">' + s.points + '</div>' +
+      '<div class="btn-row">' +
+        '<button class="pb p1" onclick="give(' + s.id + ',1)">+1</button>' +
+        '<button class="pb p2" onclick="give(' + s.id + ',2)">+2</button>' +
+        '<button class="pb p5" onclick="give(' + s.id + ',5)">+5</button>' +
+        '<button class="pb m1" onclick="give(' + s.id + ',-1)">&minus;1</button>' +
+      '</div>';
+    list.appendChild(card);
+  });
+}
+
+// ── Audio ──
+var _ctx = null;
+function ac() { if (!_ctx) _ctx = new (window.AudioContext || window.webkitAudioContext)(); return _ctx; }
+function playSound(positive) {
+  try {
+    var ctx = ac();
+    function go() {
+      if (positive) {
+        var now = ctx.currentTime;
+        [{f:659,t:0},{f:988,t:0.13}].forEach(function(n) {
+          var o=ctx.createOscillator(),g=ctx.createGain();
+          o.connect(g); g.connect(ctx.destination);
+          o.type='sine'; o.frequency.value=n.f;
+          g.gain.setValueAtTime(0,now+n.t);
+          g.gain.linearRampToValueAtTime(0.45,now+n.t+0.008);
+          g.gain.exponentialRampToValueAtTime(0.001,now+n.t+0.35);
+          o.start(now+n.t); o.stop(now+n.t+0.4);
+        });
+      } else {
+        var o=ctx.createOscillator(),g=ctx.createGain();
+        o.connect(g); g.connect(ctx.destination);
+        o.type='triangle'; o.frequency.setValueAtTime(220,ctx.currentTime);
+        o.frequency.exponentialRampToValueAtTime(110,ctx.currentTime+0.22);
+        g.gain.setValueAtTime(0.28,ctx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.28);
+        o.start(ctx.currentTime); o.stop(ctx.currentTime+0.3);
+      }
+    }
+    ctx.state==='suspended'?ctx.resume().then(go):go();
+  } catch(e) {}
+}
+
+// ── Give points ──
+async function give(studentId, pts) {
+  try {
+    var res = await fetch('/api/live-points/award', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ student_id: studentId, points: pts, reason: pts > 0 ? 'Class point' : 'Deducted', session_id: null })
+    });
+    var data = await res.json();
+    if (!res.ok) { toast(data.error || 'Error'); return; }
+    playSound(pts > 0);
+    var s = students.find(function(x){ return x.id === studentId; });
+    if (s) s.points = data.total_points;
+    var ptsEl = document.getElementById('pts-' + studentId);
+    if (ptsEl) ptsEl.textContent = data.total_points;
+    var card = document.getElementById('card-' + studentId);
+    if (card) {
+      card.classList.remove('flash-g', 'flash-r');
+      void card.offsetWidth;
+      card.classList.add(pts > 0 ? 'flash-g' : 'flash-r');
+    }
+  } catch(e) { toast('Network error'); }
+}
+
+// ── Canva URL handling ──
+function toEmbedUrl(raw) {
+  var url = raw.trim();
+  if (url.indexOf('embed') !== -1) return url;
+  // canva.com/design/ID/HASH/view → add ?embed
+  var m = url.match(/canva\.com\/design\/([^\/\?]+)\/([^\/\?]+)\/view/);
+  if (m) return 'https://www.canva.com/design/' + m[1] + '/' + m[2] + '/view?embed';
+  // canva.com/design/ID/view
+  var m2 = url.match(/canva\.com\/design\/([^\/\?]+)\/view/);
+  if (m2) return 'https://www.canva.com/design/' + m2[1] + '/view?embed';
+  // canva.com/design/ID
+  var m3 = url.match(/canva\.com\/design\/([^\/\?]+)/);
+  if (m3) return 'https://www.canva.com/design/' + m3[1] + '/view?embed';
+  return url;
+}
+
+function loadCanva(silent) {
+  var raw = document.getElementById('canva-url').value.trim();
+  if (!raw) { if (!silent) toast('Paste a Canva link first'); return; }
+  var embed = toEmbedUrl(raw);
+  localStorage.setItem('present_canva_url', raw);
+  var frame = document.getElementById('canva-frame');
+  var ph    = document.getElementById('placeholder');
+  frame.src = embed;
+  frame.style.display = 'block';
+  ph.style.display = 'none';
+  if (!silent) toast('✅ Loaded! Now share this tab in Zoom');
+}
+
+// ── Save / load presentations ──
+function getSaved() {
+  try { return JSON.parse(localStorage.getItem('saved_presentations') || '[]'); } catch(e) { return []; }
+}
+function setSaved(arr) {
+  localStorage.setItem('saved_presentations', JSON.stringify(arr));
+}
+
+function renderSaved() {
+  var arr = getSaved();
+  var sel = document.getElementById('saved-select');
+  sel.innerHTML = '<option value="">📂 My Presentations…</option>';
+  arr.forEach(function(item, i) {
+    sel.appendChild(new Option('🎨 ' + item.name, i));
+  });
+
+  var section = document.getElementById('saved-section');
+  var list    = document.getElementById('saved-list');
+  if (!arr.length) { section.style.display = 'none'; return; }
+  section.style.display = '';
+  list.innerHTML = '';
+  arr.forEach(function(item, i) {
+    var row = document.createElement('div');
+    row.className = 'saved-item';
+    row.innerHTML =
+      '<span class="saved-item-name">🎨 ' + esc(item.name) + '</span>' +
+      '<button class="saved-del" onclick="deleteSaved(' + i + ');event.stopPropagation();" title="Delete">✕</button>';
+    row.addEventListener('click', function() { loadSaved(i); });
+    list.appendChild(row);
+  });
+}
+
+function pickSaved() {
+  var sel = document.getElementById('saved-select');
+  var idx = sel.value;
+  if (idx === '') return;
+  loadSaved(parseInt(idx));
+  sel.value = '';
+}
+
+function loadSaved(i) {
+  var arr = getSaved();
+  if (!arr[i]) return;
+  document.getElementById('canva-url').value = arr[i].url;
+  loadCanva();
+}
+
+function deleteSaved(i) {
+  var arr = getSaved();
+  arr.splice(i, 1);
+  setSaved(arr);
+  renderSaved();
+  toast('Deleted');
+}
+
+function openSaveDialog() {
+  var url = document.getElementById('canva-url').value.trim();
+  if (!url) { toast('Paste a Canva link first, then save it'); return; }
+  document.getElementById('save-name').value = '';
+  document.getElementById('save-dialog').classList.add('open');
+  setTimeout(function() { document.getElementById('save-name').focus(); }, 80);
+}
+function closeSaveDialog() {
+  document.getElementById('save-dialog').classList.remove('open');
+}
+function confirmSave() {
+  var name = document.getElementById('save-name').value.trim();
+  if (!name) { toast('Enter a topic name'); return; }
+  var url = document.getElementById('canva-url').value.trim();
+  if (!url) { closeSaveDialog(); toast('No link to save'); return; }
+  var arr = getSaved();
+  // avoid duplicates by name
+  var existing = arr.findIndex(function(x){ return x.name.toLowerCase() === name.toLowerCase(); });
+  if (existing >= 0) arr[existing].url = url;
+  else arr.push({ name: name, url: url });
+  setSaved(arr);
+  renderSaved();
+  closeSaveDialog();
+  toast('✅ Saved: ' + name);
+}
+
+// close dialog on backdrop click
+document.getElementById('save-dialog').addEventListener('click', function(e) {
+  if (e.target === this) closeSaveDialog();
+});
+
+// ── Utils ──
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+var _tt;
+function toast(msg) {
+  var el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(_tt);
+  _tt = setTimeout(function(){ el.classList.remove('show'); }, 2800);
+}
+</script>
+</body>
+</html>
