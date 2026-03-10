@@ -334,7 +334,7 @@ app.get('/join-class', async (req, res) => {
       SELECT s.session_date, s.session_time, s.status,
              COALESCE(s.class_link, st.class_link) AS class_link,
              COALESCE(st.duration, g.duration, '40 mins') AS duration,
-             COALESCE(st.name, g.name) AS student_name
+             COALESCE(st.name, g.group_name) AS student_name
       FROM sessions s
       LEFT JOIN students st ON s.student_id = st.id
       LEFT JOIN groups g ON s.group_id = g.id
@@ -1872,6 +1872,16 @@ async function runMigrations() {
       console.log('✅ Migration 41: Created class_points table for live class point tracking');
     } catch (err) {
       console.log('Migration 41 note:', err.message);
+    }
+
+    // Migration 42: Add class_link to sessions table (was zoom_link in older schema)
+    try {
+      await client.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS class_link TEXT`);
+      // Backfill class_link from zoom_link if zoom_link exists
+      await client.query(`UPDATE sessions SET class_link = zoom_link WHERE class_link IS NULL AND zoom_link IS NOT NULL`).catch(() => {});
+      console.log('✅ Migration 42: Added class_link column to sessions');
+    } catch (err) {
+      console.log('Migration 42 note:', err.message);
     }
 
     console.log('✅ All database migrations completed successfully!');

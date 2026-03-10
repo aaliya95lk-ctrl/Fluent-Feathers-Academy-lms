@@ -74,7 +74,7 @@ CREATE TABLE sessions (
   status TEXT DEFAULT 'Pending',
   attendance TEXT,
   cancelled_by TEXT,
-  zoom_link TEXT,
+  class_link TEXT,
   teacher_notes TEXT,
   ppt_file_path TEXT,
   recording_file_path TEXT,
