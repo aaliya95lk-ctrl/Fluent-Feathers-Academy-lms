@@ -115,10 +115,9 @@ select.std:focus { border-color: #B05D9E; }
   display: flex; align-items: center; justify-content: center;
   font-size: 14px; font-weight: 900; color: #fff;
 }
-.s-name-col { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.s-name-row { flex: 1; min-width: 0; display: flex; align-items: center; gap: 5px; }
 .s-name { font-size: 12px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.s-earned { display: flex; flex-wrap: wrap; gap: 2px; min-height: 0; }
-.s-earned-pill { font-size: 13px; line-height: 1; title-display: none; }
+.badge-count { font-size: 11px; font-weight: 700; color: #92400e; background: #fef3c7; border: 1px solid #f59e0b; border-radius: 6px; padding: 1px 5px; white-space: nowrap; flex-shrink: 0; }
 
 /* Badge award button */
 .badge-wrap { position: relative; flex-shrink: 0; }
@@ -435,18 +434,13 @@ function renderList() {
     var card = document.createElement('div');
     card.className = 's-card';
     card.id = 'card-' + s.id;
-    var earnedHTML = '';
-    if (s.badges && s.badges.length) {
-      s.badges.forEach(function(b) {
-        var em = CLASS_BADGES_MAP[b.badge_name] || '🏅';
-        earnedHTML += '<span class="s-earned-pill" title="' + esc(b.badge_name) + '">' + em + '</span>';
-      });
-    }
+    var badgeCount = (s.badges && s.badges.length) ? s.badges.length : 0;
+    var cntStyle = badgeCount > 0 ? '' : 'display:none;';
     card.innerHTML =
       '<div class="av">' + esc(s.name.charAt(0).toUpperCase()) + '</div>' +
-      '<div class="s-name-col">' +
+      '<div class="s-name-row">' +
         '<div class="s-name" title="' + esc(s.name) + '">' + esc(s.name.split(' ')[0]) + '</div>' +
-        '<div class="s-earned" id="earned-' + s.id + '">' + earnedHTML + '</div>' +
+        '<span class="badge-count" id="bcnt-' + s.id + '" style="' + cntStyle + '">🏅' + badgeCount + '</span>' +
       '</div>' +
       '<div class="s-pts" id="pts-' + s.id + '">' + s.points + '</div>' +
       '<div class="btn-row">' +
@@ -610,17 +604,11 @@ async function updateBadgeDisplay(studentId) {
     var data = await r.json();
     var s = students.find(function(x){ return x.id === studentId; });
     if (s) s.badges = Array.isArray(data) ? data : [];
-    var row = document.getElementById('earned-' + studentId);
-    if (row && s) {
-      row.innerHTML = '';
-      s.badges.forEach(function(b) {
-        var em = CLASS_BADGES_MAP[b.badge_name] || '🏅';
-        var pill = document.createElement('span');
-        pill.className = 's-earned-pill';
-        pill.title = b.badge_name;
-        pill.textContent = em;
-        row.appendChild(pill);
-      });
+    var cnt = document.getElementById('bcnt-' + studentId);
+    if (cnt && s) {
+      var n = s.badges.length;
+      cnt.textContent = '🏅' + n;
+      cnt.style.display = n > 0 ? '' : 'none';
     }
   } catch(e) {}
 }
