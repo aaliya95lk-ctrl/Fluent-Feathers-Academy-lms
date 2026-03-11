@@ -58,11 +58,11 @@ select option { background: #ede0ff; color: #2d1245; }
 .s-name { flex: 1; font-size: 13px; font-weight: 700; }
 .s-pts {
   font-size: 17px; font-weight: 900; color: #b45309;
-  min-width: 36px; text-align: center;
+  min-width: 42px; text-align: center; flex-shrink: 0;
   background: #fef3c7; border-radius: 8px; padding: 2px 8px;
 }
 
-.btn-row { display: flex; gap: 4px; }
+.btn-row { display: flex; gap: 4px; flex-shrink: 0; }
 .pb {
   border: none; border-radius: 7px; padding: 6px 9px;
   cursor: pointer; font-size: 11px; font-weight: 800;
@@ -70,7 +70,6 @@ select option { background: #ede0ff; color: #2d1245; }
 }
 .pb:active { transform: scale(0.88); }
 .pb.p1 { background: #d1fae5; color: #065f46; border: 1.5px solid #34d399; }
-.pb.p2 { background: #a7f3d0; color: #065f46; border: 1.5px solid #10b981; }
 .pb.p5 { background: #fef3c7; color: #92400e; border: 1.5px solid #f59e0b; }
 .pb.m1 { background: #fee2e2; color: #991b1b; border: 1.5px solid #f87171; }
 
@@ -85,17 +84,15 @@ select option { background: #ede0ff; color: #2d1245; }
 }
 #toast.show { opacity: 1; }
 
-.s-name-row { flex: 1; display: flex; align-items: center; gap: 6px; min-width: 0; }
-.s-name { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 50px; }
-.badge-count { font-size: 10px; font-weight: 700; color: #92400e; background: #fef3c7; border: 1px solid #f59e0b; border-radius: 5px; padding: 1px 4px; white-space: nowrap; flex-shrink: 0; }
+.s-name { flex: 1; font-size: 15px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .badge-wrap { position: relative; flex-shrink: 0; }
-.badge-btn {
+.badge-count-btn {
   border: 1.5px solid #c9a227; background: linear-gradient(135deg, #fff8dc 0%, #fde97a 100%); border-radius: 7px;
-  padding: 3px 7px; cursor: pointer; font-size: 12px; line-height: 1.4;
+  padding: 2px 6px; cursor: pointer; font-size: 11px; line-height: 1.4;
   color: #7a5c00; font-weight: 700; transition: transform 0.1s;
   white-space: nowrap; box-shadow: 0 1px 3px rgba(201,162,39,0.25);
 }
-.badge-btn:active { transform: scale(0.88); }
+.badge-count-btn:active { transform: scale(0.88); }
 .badge-menu {
   position: absolute; left: 0; top: calc(100% + 4px); z-index: 300;
   background: #fff; border: 1.5px solid #c084e8; border-radius: 10px;
@@ -477,7 +474,7 @@ async function assignBadge(studentId, badgeName, badgeDesc, optEl) {
     if (s) {
       s.badgeCount = (s.badgeCount || 0) + 1;
       var cnt = document.getElementById('bcnt-' + studentId);
-      if (cnt) { cnt.textContent = '🏅' + s.badgeCount; cnt.style.display = ''; }
+      if (cnt) { cnt.textContent = '🏅 ' + s.badgeCount + ' ▾'; }
     }
   } catch(e) {
     badgeFanfare();
@@ -585,18 +582,14 @@ function renderList() {
     var bc = s.badgeCount || 0;
     card.innerHTML =
       '<div class="av">' + esc(s.name.charAt(0).toUpperCase()) + '</div>' +
-      '<div class="s-name-row">' +
-        '<div class="s-name" title="' + esc(s.name) + '">' + esc(s.name.split(' ')[0]) + '</div>' +
-        (bc > 0 ? '<span class="badge-count" id="bcnt-' + s.id + '">🏅' + bc + '</span>' : '<span class="badge-count" id="bcnt-' + s.id + '" style="display:none">🏅0</span>') +
-        '<div class="badge-wrap" id="bwrap-' + s.id + '">' +
-          '<button class="badge-btn" onclick="toggleBadgeMenu(' + s.id + ', event)" title="Award a badge">🏅 ▾</button>' +
-          '<div class="badge-menu" id="bmenu-' + s.id + '">' + buildBadgeMenuHTML(s.id) + '</div>' +
-        '</div>' +
+      '<div class="s-name" title="' + esc(s.name) + '">' + esc(s.name.split(' ')[0]) + '</div>' +
+      '<div class="badge-wrap" id="bwrap-' + s.id + '">' +
+        '<button class="badge-count-btn" id="bcnt-' + s.id + '" onclick="toggleBadgeMenu(' + s.id + ', event)" title="Award a badge">🏅 ' + bc + ' ▾</button>' +
+        '<div class="badge-menu" id="bmenu-' + s.id + '">' + buildBadgeMenuHTML(s.id) + '</div>' +
       '</div>' +
       '<div class="s-pts" id="pts-' + s.id + '">' + s.points + '</div>' +
       '<div class="btn-row">' +
         '<button class="pb p1" onclick="give(' + s.id + ',1)">+1</button>' +
-        '<button class="pb p2" onclick="give(' + s.id + ',2)">+2</button>' +
         '<button class="pb p5" onclick="give(' + s.id + ',5)">+5</button>' +
         '<button class="pb m1" onclick="give(' + s.id + ',-1)">&minus;1</button>' +
       '</div>';
@@ -722,7 +715,6 @@ function _buildPiP() {
     '.pb { border:none;border-radius:6px;padding:5px 7px;cursor:pointer;font-size:11px;font-weight:800;transition:transform 0.1s; }',
     '.pb:active { transform:scale(0.85); }',
     '.p1 { background:#d1fae5;color:#065f46;border:1.5px solid #34d399; }',
-    '.p2 { background:#a7f3d0;color:#065f46;border:1.5px solid #10b981; }',
     '.p5 { background:#fef3c7;color:#92400e;border:1.5px solid #f59e0b; }',
     '.m1 { background:#fee2e2;color:#991b1b;border:1.5px solid #f87171; }'
   ].join('\n');
@@ -762,7 +754,6 @@ function _renderPiP() {
         '<div class="sp" id="pip-pts-' + s.id + '">' + s.points + '</div>' +
         '<div class="br">' +
           '<button class="pb p1" onclick="_pipGive(' + s.id + ',1)">+1</button>' +
-          '<button class="pb p2" onclick="_pipGive(' + s.id + ',2)">+2</button>' +
           '<button class="pb p5" onclick="_pipGive(' + s.id + ',5)">+5</button>' +
           '<button class="pb m1" onclick="_pipGive(' + s.id + ',-1)">&minus;1</button>' +
         '</div>';
