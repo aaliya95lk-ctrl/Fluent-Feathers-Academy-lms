@@ -5598,6 +5598,13 @@ app.post('/api/groups/:groupId/add-to-sessions', async (req, res) => {
         [regularCount, student_id]
       );
     }
+    // Increment remaining for makeup sessions so they show in the count
+    if (makeupNum > 0) {
+      await client.query(
+        'UPDATE students SET remaining_sessions = remaining_sessions + $1 WHERE id = $2',
+        [makeupNum, student_id]
+      );
+    }
 
     await client.query('COMMIT');
 
@@ -5713,6 +5720,14 @@ app.post('/api/schedule/private-classes', async (req, res) => {
 
       sessionNumber++;
       emailSerial++;
+    }
+
+    // Increment remaining_sessions for makeup classes so they appear in the count
+    if (makeupClasses.length > 0) {
+      await client.query(
+        'UPDATE students SET remaining_sessions = remaining_sessions + $1 WHERE id = $2',
+        [makeupClasses.length, student_id]
+      );
     }
 
     await client.query('COMMIT');
@@ -5865,6 +5880,16 @@ app.post('/api/schedule/group-classes', async (req, res) => {
 
       sessionNumber++;
       groupEmailSerial++;
+    }
+
+    // Increment remaining_sessions for each student who used makeup credits
+    for (const [studentId, idx] of Object.entries(studentMakeupIndex)) {
+      if (idx > 0) {
+        await client.query(
+          'UPDATE students SET remaining_sessions = remaining_sessions + $1 WHERE id = $2',
+          [idx, parseInt(studentId)]
+        );
+      }
     }
 
     await client.query('COMMIT');
@@ -8099,6 +8124,9 @@ app.put('/api/makeup-credits/:creditId/schedule', async (req, res) => {
       WHERE id = $4
     `, [newSessionId, session_date, session_time, creditId]);
 
+    // Increment remaining_sessions so the scheduled makeup class shows in the count
+    await client.query('UPDATE students SET remaining_sessions = remaining_sessions + 1 WHERE id = $1', [student_id]);
+
     await renumberPrivateSessionsForStudent(student_id, client);
     const renumbered = await client.query('SELECT session_number FROM sessions WHERE id = $1', [newSessionId]);
     const finalSessionNumber = renumbered.rows[0]?.session_number || sessionNumber;
@@ -8580,6 +8608,12 @@ app.post('/api/students/:id/add-extra-sessions', async (req, res) => {
     if (deduct_from === 'remaining') {
       await client.query(
         'UPDATE students SET remaining_sessions = remaining_sessions - $1 WHERE id = $2',
+        [classes.length, studentId]
+      );
+    } else if (deduct_from === 'makeup') {
+      // Increment remaining so scheduled makeup classes appear in the count
+      await client.query(
+        'UPDATE students SET remaining_sessions = remaining_sessions + $1 WHERE id = $2',
         [classes.length, studentId]
       );
     }
