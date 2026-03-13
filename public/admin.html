@@ -1189,8 +1189,8 @@
           </div>
         </div>
         <div style="margin-bottom:16px;">
-          <label style="font-size:12px;font-weight:700;color:#4a5568;display:block;margin-bottom:4px;">Feedback for Parents</label>
-          <textarea id="hwFeedbackComments" rows="5" placeholder="Write feedback here, or use &#x2728; AI Feedback above…" style="width:100%;padding:9px 10px;border:1.5px solid #e2e8f0;border-radius:7px;font-size:13px;resize:vertical;outline:none;color:#2d3748;"></textarea>
+          <label style="font-size:12px;font-weight:700;color:#4a5568;display:block;margin-bottom:4px;">Feedback for Parents <span style="color:#e53e3e;">*</span></label>
+          <textarea id="hwFeedbackComments" rows="7" placeholder="Write detailed feedback here, or use &#x2728; AI Feedback above to generate it…" style="width:100%;padding:9px 10px;border:1.5px solid #e2e8f0;border-radius:7px;font-size:13px;resize:vertical;outline:none;color:#2d3748;"></textarea>
         </div>
         <div style="display:flex;gap:8px;justify-content:flex-end;">
           <button type="button" onclick="closeHwFeedbackModal()" style="background:#edf2f7;border:1.5px solid #e2e8f0;border-radius:8px;padding:9px 18px;font-size:13px;font-weight:700;cursor:pointer;color:#4a5568;">Cancel</button>
@@ -5159,7 +5159,8 @@ if (dueEl) {
       const id       = document.getElementById('hwFeedbackId').value;
       const grade    = document.getElementById('hwFeedbackGrade').value.trim();
       const comments = document.getElementById('hwFeedbackComments').value.trim();
-      if (!grade) { alert('Please enter a grade.'); return; }
+      if (!grade)    { document.getElementById('hwFeedbackGrade').focus();    alert('Please enter a grade.'); return; }
+      if (!comments) { document.getElementById('hwFeedbackComments').focus(); alert('Please write feedback for the parents before saving.'); return; }
       await gradeHomework(id, grade, comments);
       closeHwFeedbackModal();
     }
