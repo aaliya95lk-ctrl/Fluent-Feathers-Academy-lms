@@ -2427,6 +2427,18 @@
           </div>
 
           <div class="form-group"><label>📝 Overall Feedback for Parent</label>
+            <!-- AI Quick Notes + Suggest -->
+            <div style="background:linear-gradient(135deg,#eef2ff,#e0e7ff);border:1.5px solid #a5b4fc;border-radius:10px;padding:14px 16px;margin-bottom:14px;">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                <span style="font-size:18px;">🤖</span>
+                <span style="font-weight:700;color:#3730a3;font-size:13px;">AI Assessment Assistant</span>
+              </div>
+              <textarea id="aiAssessNotes" rows="2" placeholder="Type quick notes about this session... e.g. 'great at reading, struggled with spellings, did homework'" style="width:100%;padding:8px 10px;border-radius:7px;border:1px solid #c7d2fe;font-size:13px;resize:vertical;box-sizing:border-box;"></textarea>
+              <div style="display:flex;gap:8px;margin-top:8px;align-items:center;">
+                <button type="button" id="aiAssessBtn" onclick="runAiAssessmentSuggest()" style="background:linear-gradient(135deg,#6366f1,#4f46e5);color:white;border:none;border-radius:8px;padding:8px 18px;cursor:pointer;font-weight:700;font-size:13px;">🤖 AI Suggest Stars + Feedback</button>
+                <span style="font-size:11px;color:#6366f1;">AI will fill star ratings, feedback & certificate based on your notes</span>
+              </div>
+            </div>
             <div style="display:flex;flex-wrap:wrap;gap:7px;margin-bottom:10px;" id="feedbackChips">
               <button type="button" class="chip-btn" onclick="addChip('Shows excellent progress this month!')">Shows excellent progress this month!</button>
               <button type="button" class="chip-btn" onclick="addChip('Very attentive and participates well in class.')">Very attentive in class</button>
@@ -5272,6 +5284,91 @@ if (dueEl) {
         annotCtx.fillText(text, x, y);
         annotHistory.push(annotCtx.getImageData(0, 0, annotCanvas.width, annotCanvas.height));
       });
+    }
+
+    async function runAiAssessmentSuggest() {
+      const btn = document.getElementById('aiAssessBtn');
+      const notes = document.getElementById('aiAssessNotes').value.trim();
+      if (!notes) { alert('Please type some quick notes about the session first.'); return; }
+
+      const studentId = document.getElementById('assessmentStudent')?.value || '';
+      const assessType = document.querySelector('input[name="assessmentType"]:checked')?.value || 'monthly';
+
+      btn.textContent = '⏳ Thinking...';
+      btn.disabled = true;
+
+      try {
+        const res = await fetch('/api/assessments/ai-suggest', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ student_id: studentId || null, quick_notes: notes, assessment_type: assessType })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'AI request failed');
+
+        const { skill_ratings, certificate_title, performance_summary } = data;
+
+        // 1. Check skill categories that match AI suggestions, then set star ratings
+        if (skill_ratings && typeof skill_ratings === 'object') {
+          // First make sure the right checkboxes are checked
+          const catToCheckbox = {
+            'Phonics': 'skillPhonics', 'Reading': 'skillReading',
+            'Spoken English': 'skillSpoken', 'Grammar': 'skillGrammar',
+            'Vocabulary': 'skillVocab', 'Creative Writing': 'skillCreative',
+            'Spellings': 'skillSpellings', 'Handwriting': 'skillHandwriting',
+            'Public Speaking': 'skillPublicSpeaking'
+          };
+          Object.keys(skill_ratings).forEach(cat => {
+            const cbId = catToCheckbox[cat];
+            if (cbId) {
+              const cb = document.getElementById(cbId);
+              if (cb && !cb.checked) { cb.checked = true; }
+            }
+          });
+          // Re-render star widgets
+          if (typeof updateSkillRatings === 'function') updateSkillRatings();
+          // Set the star values
+          setTimeout(() => {
+            Object.entries(skill_ratings).forEach(([cat, val]) => {
+              if (typeof setStarRating === 'function') setStarRating(cat, val);
+            });
+          }, 100);
+        }
+
+        // 2. Fill performance summary
+        if (performance_summary) {
+          document.getElementById('performanceSummary').value = performance_summary;
+        }
+
+        // 3. Set certificate
+        if (certificate_title) {
+          const certSelect = document.getElementById('certificateTitle');
+          if (certSelect) {
+            // Try to find matching option
+            const opts = Array.from(certSelect.options);
+            const match = opts.find(o => o.value.toLowerCase().includes(certificate_title.toLowerCase()) || certificate_title.toLowerCase().includes(o.value.toLowerCase()));
+            if (match) certSelect.value = match.value;
+            else {
+              // Set custom
+              const customOpt = opts.find(o => o.value === 'custom' || o.value === '');
+              if (customOpt) certSelect.value = customOpt.value;
+              const customInput = document.getElementById('customCertTitle');
+              if (customInput) { customInput.value = certificate_title; customInput.style.display = 'block'; }
+            }
+          }
+        }
+
+        // Highlight the AI box green briefly
+        const box = document.getElementById('aiAssessNotes').closest('div').parentElement;
+        box.style.background = 'linear-gradient(135deg,#d1fae5,#a7f3d0)';
+        box.style.borderColor = '#34d399';
+        setTimeout(() => { box.style.background = ''; box.style.borderColor = ''; }, 2000);
+
+      } catch (err) {
+        alert('AI Error: ' + err.message + '\n\nMake sure GEMINI_API_KEY is set in Render environment variables.');
+      }
+      btn.textContent = '🤖 AI Suggest Stars + Feedback';
+      btn.disabled = false;
     }
 
     async function runAiCorrections() {

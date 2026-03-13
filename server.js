@@ -10395,6 +10395,105 @@ Return ONLY the JSON. No markdown. No explanation.`;
   }
 });
 
+// AI assessment suggestion using Gemini
+app.post('/api/assessments/ai-suggest', express.json(), async (req, res) => {
+  try {
+    const geminiKey = process.env.GEMINI_API_KEY;
+    if (!geminiKey) {
+      return res.status(400).json({ error: 'GEMINI_API_KEY not configured on Render.' });
+    }
+
+    const { student_id, quick_notes, assessment_type } = req.body;
+    if (!quick_notes) return res.status(400).json({ error: 'quick_notes is required' });
+
+    // Fetch student info
+    let studentName = 'the student';
+    let studentAge = '';
+    let pastAssessments = [];
+    if (student_id) {
+      const sRes = await pool.query('SELECT name, age FROM students WHERE id = $1', [student_id]);
+      if (sRes.rows[0]) {
+        studentName = sRes.rows[0].name;
+        studentAge = sRes.rows[0].age ? ` (age ${sRes.rows[0].age})` : '';
+      }
+      const aRes = await pool.query(
+        `SELECT skill_ratings, certificate_title, performance_summary, month, year
+         FROM monthly_assessments
+         WHERE student_id = $1 AND assessment_type = 'monthly' AND (deferred IS NULL OR deferred = FALSE)
+         ORDER BY year DESC, month DESC LIMIT 3`,
+        [student_id]
+      );
+      pastAssessments = aRes.rows;
+    }
+
+    const pastContext = pastAssessments.length > 0
+      ? pastAssessments.map(a => {
+          let r = {};
+          try { r = a.skill_ratings ? JSON.parse(a.skill_ratings) : {}; } catch(e) {}
+          const rStr = Object.entries(r).map(([k,v]) => `${k}:${v}/5`).join(', ');
+          return `- ${a.year}-${String(a.month).padStart(2,'0')}: cert="${a.certificate_title || 'none'}", ratings={${rStr}}, summary="${(a.performance_summary||'').slice(0,80)}..."`;
+        }).join('\n')
+      : 'No previous assessments.';
+
+    const isDemo = assessment_type === 'demo';
+    const prompt = `You are an expert English language teacher's assistant helping fill out a ${isDemo ? 'demo class' : 'monthly'} student assessment.
+
+Student: ${studentName}${studentAge}
+Teacher's quick notes about this session: "${quick_notes}"
+
+Past assessment history:
+${pastContext}
+
+Based on the teacher's notes and past history, generate a complete assessment suggestion.
+
+Skill categories to rate (1-5 stars, where 1=needs work, 3=average, 5=excellent):
+- Phonics
+- Reading
+- Spoken English
+- Grammar
+- Vocabulary
+- Creative Writing
+- Spellings
+- Handwriting
+- Public Speaking
+
+Only include categories that are relevant given the teacher's notes (minimum 3, maximum 9).
+
+Return ONLY valid JSON in this exact format:
+{
+  "skill_ratings": {
+    "Phonics": 4,
+    "Reading": 3
+  },
+  "certificate_title": "Star of the Month",
+  "performance_summary": "A warm, encouraging 2-3 sentence summary written to the parents about their child's progress this month.",
+  "grade_suggestion": "A"
+}
+
+For certificate_title, choose the most appropriate from: Star of the Month, Most Improved, Creative Writing Star, Reading Champion, Speaking Star, Spelling Bee Champion, Student of the Week, Student of the Month, Handwriting Excellence, Grammar Guru, or leave as empty string if no award is warranted.
+
+Return ONLY JSON. No markdown. No explanation.`;
+
+    const response = await axios.post(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,
+      {
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { maxOutputTokens: 1024, temperature: 0.4 }
+      },
+      { headers: { 'Content-Type': 'application/json' }, timeout: 20000 }
+    );
+
+    const content = response.data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+    if (!content) return res.status(500).json({ error: 'Gemini returned empty response' });
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return res.status(500).json({ error: 'Unexpected AI response', raw: content });
+    res.json(JSON.parse(jsonMatch[0]));
+  } catch (err) {
+    console.error('AI assess suggest error:', err.response?.data || err.message);
+    res.status(500).json({ error: err.response?.data?.error?.message || err.message });
+  }
+});
+
 // Get all homework submissions (for admin panel)
 app.get('/api/homework/all', async (req, res) => {
   try {
