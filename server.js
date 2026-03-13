@@ -1912,6 +1912,15 @@ async function runMigrations() {
       console.log('Migration 43 note:', err.message);
     }
 
+    // Migration 44: Add skill_ratings and deferred columns to monthly_assessments
+    try {
+      await client.query(`ALTER TABLE monthly_assessments ADD COLUMN IF NOT EXISTS skill_ratings TEXT`);
+      await client.query(`ALTER TABLE monthly_assessments ADD COLUMN IF NOT EXISTS deferred BOOLEAN DEFAULT FALSE`);
+      console.log('✅ Migration 44: Added skill_ratings and deferred columns to monthly_assessments');
+    } catch (err) {
+      console.log('Migration 44 note:', err.message);
+    }
+
     console.log('✅ All database migrations completed successfully!');
 
     // Auto-sync badges for students who should have them
@@ -10317,6 +10326,75 @@ app.get('/api/students/:id/homework', async (req, res) => {
   }
 });
 
+// AI auto-correct homework using GPT-4 Vision
+app.post('/api/homework/ai-annotate', express.json({ limit: '20mb' }), async (req, res) => {
+  try {
+    const geminiKey = process.env.GEMINI_API_KEY;
+    if (!geminiKey) {
+      return res.status(400).json({ error: 'GEMINI_API_KEY is not configured. Add it to your environment variables on Render. Get a free key at aistudio.google.com/apikey' });
+    }
+
+    const { image_data } = req.body;
+    if (!image_data) return res.status(400).json({ error: 'No image data provided' });
+
+    // Strip data URL prefix to get raw base64
+    const base64 = image_data.replace(/^data:image\/[a-z]+;base64,/, '');
+    const mimeMatch = image_data.match(/^data:(image\/[a-z]+);base64,/);
+    const mimeType = mimeMatch ? mimeMatch[1] : 'image/png';
+
+    const prompt = `You are an English language teacher reviewing a student's creative writing homework image. Carefully read ALL the handwritten or typed text in the image.
+
+Find every spelling mistake, grammar error, punctuation error, and capitalisation error.
+
+Return ONLY a valid JSON object in this exact format (no other text before or after):
+{
+  "corrections": [
+    {
+      "wrong": "the exact wrong word or phrase as written by student",
+      "correct": "the correct version",
+      "type": "spelling",
+      "note": "brief reason",
+      "x": 45,
+      "y": 30
+    }
+  ],
+  "grade": "B+",
+  "summary": "One sentence overall feedback for the student"
+}
+
+For x and y: estimate the percentage position (0-100) from the TOP-LEFT corner of the image where that error appears visually.
+If the writing has no errors, return {"corrections": [], "grade": "A+", "summary": "Excellent work! No errors found."}
+Return ONLY the JSON. No markdown. No explanation.`;
+
+    const response = await axios.post(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,
+      {
+        contents: [{
+          parts: [
+            { text: prompt },
+            { inline_data: { mime_type: mimeType, data: base64 } }
+          ]
+        }],
+        generationConfig: { maxOutputTokens: 2048, temperature: 0.1 }
+      },
+      { headers: { 'Content-Type': 'application/json' }, timeout: 45000 }
+    );
+
+    const content = response.data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+    if (!content) return res.status(500).json({ error: 'Gemini returned empty response' });
+
+    // Extract JSON even if Gemini wraps it in markdown code block
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return res.status(500).json({ error: 'AI returned unexpected format', raw: content });
+    const result = JSON.parse(jsonMatch[0]);
+    res.json(result);
+  } catch (err) {
+    console.error('AI annotate error:', err.response?.data || err.message);
+    const msg = err.response?.data?.error?.message || err.message;
+    res.status(500).json({ error: msg });
+  }
+});
+
 // Get all homework submissions (for admin panel)
 app.get('/api/homework/all', async (req, res) => {
   try {
@@ -11088,6 +11166,87 @@ app.delete('/api/certificates/:id', async (req, res) => {
 });
 
 // ==================== MONTHLY ASSESSMENTS API ====================
+// Monthly assessment dashboard — all active students with current-month status
+app.get('/api/assessments/monthly-dashboard', async (req, res) => {
+  const now = new Date();
+  const month = parseInt(req.query.month) || (now.getMonth() + 1);
+  const year = parseInt(req.query.year) || now.getFullYear();
+  try {
+    // All active students + their completed session count for this month
+    const studentsResult = await pool.query(`
+      SELECT s.id, s.name, s.parent_email,
+             COUNT(CASE WHEN sess.session_date >= $1::date
+                         AND sess.session_date < ($1::date + INTERVAL '1 month')
+                         AND sess.status = 'Completed' THEN 1 END) as sessions_this_month
+      FROM students s
+      LEFT JOIN sessions sess ON sess.student_id = s.id
+      WHERE s.is_active = true
+      GROUP BY s.id, s.name, s.parent_email
+      ORDER BY s.name
+    `, [`${year}-${String(month).padStart(2,'0')}-01`]);
+
+    const assessmentsResult = await pool.query(
+      `SELECT id, student_id, deferred, certificate_title, created_at
+       FROM monthly_assessments
+       WHERE month = $1 AND year = $2 AND assessment_type = 'monthly'`,
+      [month, year]
+    );
+    const assessmentMap = {};
+    assessmentsResult.rows.forEach(a => { assessmentMap[a.student_id] = a; });
+
+    const dashboard = studentsResult.rows.map(s => {
+      const a = assessmentMap[s.id];
+      let status;
+      if (a) { status = a.deferred ? 'deferred' : 'completed'; }
+      else { status = parseInt(s.sessions_this_month) >= 4 ? 'due' : 'pending'; }
+      return {
+        id: s.id, name: s.name, parent_email: s.parent_email,
+        sessions_this_month: parseInt(s.sessions_this_month) || 0,
+        status, assessment_id: a?.id || null, certificate_title: a?.certificate_title || null
+      };
+    });
+    res.json({ month, year, students: dashboard });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Defer a student's assessment to next month
+app.post('/api/assessments/defer-student', async (req, res) => {
+  const { student_id, month, year } = req.body;
+  try {
+    const existing = await pool.query(
+      'SELECT id FROM monthly_assessments WHERE student_id = $1 AND month = $2 AND year = $3 AND assessment_type = $4',
+      [student_id, month, year, 'monthly']
+    );
+    if (existing.rows.length > 0) {
+      await pool.query('UPDATE monthly_assessments SET deferred = TRUE WHERE id = $1', [existing.rows[0].id]);
+    } else {
+      await pool.query(
+        'INSERT INTO monthly_assessments (student_id, month, year, assessment_type, deferred) VALUES ($1, $2, $3, $4, TRUE)',
+        [student_id, month, year, 'monthly']
+      );
+    }
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Un-defer a student's assessment
+app.post('/api/assessments/undefe-student', async (req, res) => {
+  const { student_id, month, year } = req.body;
+  try {
+    await pool.query(
+      'UPDATE monthly_assessments SET deferred = FALSE WHERE student_id = $1 AND month = $2 AND year = $3 AND assessment_type = $4',
+      [student_id, month, year, 'monthly']
+    );
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/assessments', async (req, res) => {
   try {
     const result = await pool.query(`
@@ -11176,6 +11335,8 @@ app.get('/api/students/:id/assessments', async (req, res) => {
     const result = await pool.query(`
       SELECT * FROM monthly_assessments
       WHERE student_id = $1
+        AND assessment_type = 'monthly'
+        AND (deferred IS NULL OR deferred = FALSE)
       ORDER BY year DESC, month DESC
     `, [req.params.id]);
     res.json(result.rows);
@@ -11185,7 +11346,7 @@ app.get('/api/students/:id/assessments', async (req, res) => {
 });
 
 app.post('/api/assessments', async (req, res) => {
-  const { assessment_type, student_id, demo_lead_id, month, year, skills, certificate_title, performance_summary, areas_of_improvement, teacher_comments, send_email } = req.body;
+  const { assessment_type, student_id, demo_lead_id, month, year, skills, skill_ratings, certificate_title, performance_summary, areas_of_improvement, teacher_comments, send_email } = req.body;
 
   try {
     const isDemo = assessment_type === 'demo';
@@ -11230,10 +11391,10 @@ app.post('/api/assessments', async (req, res) => {
     } else {
       // Monthly assessment - linked to student
       result = await pool.query(`
-        INSERT INTO monthly_assessments (student_id, assessment_type, month, year, skills, certificate_title, performance_summary, areas_of_improvement, teacher_comments)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        INSERT INTO monthly_assessments (student_id, assessment_type, month, year, skills, skill_ratings, certificate_title, performance_summary, areas_of_improvement, teacher_comments)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         RETURNING *
-      `, [student_id, 'monthly', month, year, skills, certificate_title, performance_summary, areas_of_improvement, teacher_comments]);
+      `, [student_id, 'monthly', month, year, skills, skill_ratings ? JSON.stringify(skill_ratings) : null, certificate_title, performance_summary, areas_of_improvement || '', teacher_comments || '']);
 
       // Send email if requested
       if (send_email) {

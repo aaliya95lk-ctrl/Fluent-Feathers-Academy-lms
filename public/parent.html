@@ -4325,8 +4325,48 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
 
         const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
-        container.innerHTML = assessments.map(a => {
+        // ── Build progress chart if 2+ assessments have skill_ratings ──────
+        const ratedAssessments = assessments.filter(a => a.skill_ratings);
+        let chartHTML = '';
+        if (ratedAssessments.length >= 1) {
+          // Get all categories present
+          let allCats = new Set();
+          ratedAssessments.forEach(a => {
+            let r = {}; try { r = typeof a.skill_ratings === 'string' ? JSON.parse(a.skill_ratings) : a.skill_ratings; } catch(e) {}
+            Object.keys(r).forEach(k => allCats.add(k));
+          });
+          allCats = Array.from(allCats);
+          // Use latest assessment for the chart
+          const latestRatings = (() => { let r={}; try { r = typeof ratedAssessments[0].skill_ratings==='string' ? JSON.parse(ratedAssessments[0].skill_ratings) : ratedAssessments[0].skill_ratings; } catch(e){} return r; })();
+          const catIcons = { 'Phonics':'🔤','Reading':'📖','Spoken English':'🗣️','Grammar':'📝','Vocabulary':'📚','Creative Writing':'✍️','Spellings':'🔠','Handwriting':'✏️','Public Speaking':'🎤' };
+          const bars = allCats.map(cat => {
+            const val = latestRatings[cat] || 0;
+            const pct = (val / 5) * 100;
+            const prev = ratedAssessments.length > 1 ? (() => { let r={}; try{r=typeof ratedAssessments[1].skill_ratings==='string'?JSON.parse(ratedAssessments[1].skill_ratings):ratedAssessments[1].skill_ratings;}catch(e){} return r[cat]||0; })() : 0;
+            const trend = val > prev ? '▲' : val < prev ? '▼' : '';
+            const trendColor = val > prev ? '#38a169' : val < prev ? '#e53e3e' : '#718096';
+            return `
+            <div style="margin-bottom:12px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+                <span style="font-size:13px;font-weight:600;color:#2d3748;">${catIcons[cat]||'📌'} ${cat}</span>
+                <span style="font-size:12px;font-weight:700;color:#B05D9E;">${'★'.repeat(val)}${'☆'.repeat(5-val)} <span style="color:${trendColor};font-size:10px;">${trend}</span></span>
+              </div>
+              <div style="background:#e2e8f0;border-radius:20px;height:10px;overflow:hidden;">
+                <div style="background:linear-gradient(90deg,#B05D9E,#764ba2);height:100%;border-radius:20px;width:${pct}%;transition:width 0.6s ease;"></div>
+              </div>
+            </div>`;
+          }).join('');
+          chartHTML = `
+          <div style="background:white;border:1px solid #e2e8f0;border-radius:12px;padding:22px;margin-bottom:18px;box-shadow:0 2px 8px rgba(0,0,0,0.06);">
+            <h3 style="margin:0 0 16px;color:#2d3748;font-size:16px;">📈 Skills Progress — ${monthNames[ratedAssessments[0].month-1]} ${ratedAssessments[0].year}</h3>
+            ${bars}
+            ${ratedAssessments.length > 1 ? `<p style="font-size:11px;color:#a0aec0;margin:8px 0 0;">▲▼ = compared to previous assessment</p>` : ''}
+          </div>`;
+        }
+        container.innerHTML = chartHTML + assessments.map(a => {
           const skills = a.skills ? JSON.parse(a.skills) : [];
+          let skillRatings = null;
+          if (a.skill_ratings) { try { skillRatings = typeof a.skill_ratings==='string' ? JSON.parse(a.skill_ratings) : a.skill_ratings; } catch(e){} }
 
           return `
           <div style="background: white; border: 1px solid #e2e8f0; padding: 25px; margin-bottom: 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.08);">
@@ -4351,15 +4391,12 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
             <div id="certificate-${a.id}" style="position: absolute; left: -9999px; width: 800px;">
               <div style="position: relative; width: 800px;">
                 <img src="https://res.cloudinary.com/dmqipms4f/image/upload/v1769931490/Pink_and_Red_Playful_Student_Certificate_kry0o6.png" style="width: 100%; display: block;" crossorigin="anonymous">
-                <!-- Title: 26% from top with golden border -->
                 <div style="position: absolute; top: 26%; left: 50%; transform: translateX(-50%); text-align: center; width: 75%;">
                   <h2 style="margin: 0; color: #C41E3A; font-size: 24px; font-weight: bold; font-family: 'Georgia', serif; background: linear-gradient(135deg, #D4AF37 0%, #F4E4A6 50%, #D4AF37 100%); padding: 8px 25px; border-radius: 8px; border: 2px solid #B8860B; display: inline-block;">${a.certificate_title}</h2>
                 </div>
-                <!-- Name: 52% from top (moved down) -->
                 <div style="position: absolute; top: 52%; left: 50%; transform: translateX(-50%); text-align: center; width: 75%;">
                   <h1 style="margin: 0; color: #C41E3A; font-size: 28px; font-weight: bold; font-family: 'Georgia', serif; text-transform: uppercase;">${currentStudent.name}</h1>
                 </div>
-                <!-- Date: 75% from top, moved right to 78% -->
                 <div style="position: absolute; top: 75%; left: 78%; transform: translateX(-50%); text-align: center;">
                   <p style="margin: 0; color: #555; font-size: 14px; font-weight: 600;">${monthNames[a.month - 1]} ${a.year}</p>
                 </div>
@@ -4375,28 +4412,31 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
             </div>
             ` : ''}
 
-            ${skills.length > 0 ? `
-            <!-- Skills -->
+            ${skillRatings ? `
+            <!-- Star Ratings -->
+            <div style="margin-bottom:20px;">
+              <h4 style="color:#2d3748;font-size:16px;margin:0 0 12px;">⭐ Skills Assessment</h4>
+              <div style="display:flex;flex-direction:column;gap:8px;">
+                ${Object.entries(skillRatings).map(([cat,val])=>`
+                <div style="display:flex;align-items:center;gap:10px;">
+                  <span style="font-size:12px;font-weight:600;color:#4a5568;min-width:120px;">${cat}</span>
+                  <span style="color:#f59e0b;font-size:18px;letter-spacing:2px;">${'★'.repeat(val)}${'☆'.repeat(5-val)}</span>
+                </div>`).join('')}
+              </div>
+            </div>
+            ` : skills.length > 0 ? `
+            <!-- Skills (legacy checkbox list) -->
             <div style="margin-bottom: 20px;">
-              <h4 style="color: #2d3748; font-size: 16px; margin: 0 0 12px; display: flex; align-items: center; gap: 6px;">
-                <span>📝</span> Skills Assessed
-              </h4>
+              <h4 style="color: #2d3748; font-size: 16px; margin: 0 0 12px;">📝 Skills Assessed</h4>
               <div style="display: flex; flex-wrap: wrap; gap: 8px;">
-                ${skills.map(skill => `
-                <span style="background: #f7fafc; padding: 8px 12px; border-radius: 6px; border-left: 3px solid #B05D9E; font-size: 12px; color: #4a5568; font-weight: 600;">
-                  ✓ ${skill}
-                </span>
-                `).join('')}
+                ${skills.map(skill => `<span style="background: #f7fafc; padding: 8px 12px; border-radius: 6px; border-left: 3px solid #B05D9E; font-size: 12px; color: #4a5568; font-weight: 600;">✓ ${skill}</span>`).join('')}
               </div>
             </div>
             ` : ''}
 
             ${a.performance_summary ? `
-            <!-- Performance -->
             <div style="margin-bottom: 20px;">
-              <h4 style="color: #2d3748; font-size: 16px; margin: 0 0 10px; display: flex; align-items: center; gap: 6px;">
-                <span>📈</span> Performance Summary
-              </h4>
+              <h4 style="color: #2d3748; font-size: 16px; margin: 0 0 10px;">💬 Teacher's Feedback</h4>
               <div style="background: #e6fffa; padding: 15px; border-radius: 8px; border-left: 3px solid #38b2ac;">
                 <p style="margin: 0; color: #2d3748; font-size: 14px; line-height: 1.6;">${a.performance_summary}</p>
               </div>
@@ -4404,11 +4444,8 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
             ` : ''}
 
             ${a.areas_of_improvement ? `
-            <!-- Improvement Areas -->
             <div style="margin-bottom: 20px;">
-              <h4 style="color: #2d3748; font-size: 16px; margin: 0 0 10px; display: flex; align-items: center; gap: 6px;">
-                <span>📌</span> Areas to Focus On
-              </h4>
+              <h4 style="color: #2d3748; font-size: 16px; margin: 0 0 10px;">📌 Areas to Focus On</h4>
               <div style="background: #fff5f5; padding: 15px; border-radius: 8px; border-left: 3px solid #fc8181;">
                 <p style="margin: 0; color: #2d3748; font-size: 14px; line-height: 1.6;">${a.areas_of_improvement}</p>
               </div>
@@ -4416,11 +4453,8 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
             ` : ''}
 
             ${a.teacher_comments ? `
-            <!-- Teacher Comments -->
             <div style="margin-bottom: 20px;">
-              <h4 style="color: #2d3748; font-size: 16px; margin: 0 0 10px; display: flex; align-items: center; gap: 6px;">
-                <span>💬</span> Teacher's Comments
-              </h4>
+              <h4 style="color: #2d3748; font-size: 16px; margin: 0 0 10px;">🗣️ Teacher's Comments</h4>
               <div style="background: #fef5e7; padding: 15px; border-radius: 8px; border-left: 3px solid #f6ad55;">
                 <p style="margin: 0; color: #2d3748; font-size: 14px; line-height: 1.6; font-style: italic;">"${a.teacher_comments}"</p>
               </div>

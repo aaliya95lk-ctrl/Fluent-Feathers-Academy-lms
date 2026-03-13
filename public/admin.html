@@ -242,6 +242,22 @@
     .email-badge-default { background: #e2e8f0; color: #4a5568; }
     /* Demo class styling */
     .class-card-demo { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); }
+    /* Smart chip buttons for feedback */
+    .chip-btn { background:#f0f4f8;border:1.5px solid #cbd5e0;border-radius:20px;padding:5px 12px;font-size:12px;font-weight:600;color:#4a5568;cursor:pointer;transition:all 0.15s; }
+    .chip-btn:hover { background:#B05D9E;color:white;border-color:#B05D9E; }
+    /* Star rating widget */
+    .star-rating-row { display:flex;align-items:center;justify-content:space-between;background:#f7fafc;border-radius:10px;padding:10px 14px;border:1.5px solid #e2e8f0; }
+    .star-rating-row .cat-label { font-size:13px;font-weight:700;color:#2d3748; }
+    .star-widget { display:flex;gap:4px; }
+    .star-widget .star { font-size:22px;cursor:pointer;transition:transform 0.1s;line-height:1;color:#d1d5db; }
+    .star-widget .star.filled { color:#f59e0b; }
+    .star-widget .star:hover { transform:scale(1.2); }
+    /* Dashboard status cards */
+    .dash-card { background:white;border-radius:10px;padding:14px 16px;border:2px solid #e2e8f0;display:flex;flex-direction:column;gap:6px; }
+    .dash-card.status-due { border-color:#f59e0b;background:#fffbeb; }
+    .dash-card.status-completed { border-color:#48bb78;background:#f0fff4; }
+    .dash-card.status-deferred { border-color:#a0aec0;background:#f7fafc; }
+    .dash-card.status-pending { border-color:#e2e8f0;background:#f9fafb; }
     /* Table row backgrounds */
     .row-even { background: #f7fafc; }
     .row-odd { background: white; }
@@ -1989,7 +2005,24 @@
     </div>
 
     <div id="monthlyAssessmentTab" class="tab-content">
-      <!-- Students Due for Assessment Alert -->
+
+      <!-- ===== MONTHLY ASSESSMENT DASHBOARD ===== -->
+      <div class="section" style="margin-bottom:20px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:16px;">
+          <h2 style="margin:0;">📋 Monthly Assessment Dashboard</h2>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <button onclick="dashboardPrevMonth()" style="background:#e2e8f0;border:none;border-radius:8px;padding:7px 14px;cursor:pointer;font-size:16px;">‹</button>
+            <span id="dashboardMonthLabel" style="font-weight:700;font-size:15px;min-width:120px;text-align:center;color:#4a5568;"></span>
+            <button onclick="dashboardNextMonth()" style="background:#e2e8f0;border:none;border-radius:8px;padding:7px 14px;cursor:pointer;font-size:16px;">›</button>
+            <button onclick="loadAssessmentDashboard()" style="background:#B05D9E;color:white;border:none;border-radius:8px;padding:7px 14px;cursor:pointer;font-size:13px;font-weight:600;">🔄 Refresh</button>
+          </div>
+        </div>
+        <div id="assessmentDashboardGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;">
+          <p style="color:#718096;font-size:14px;">Loading...</p>
+        </div>
+      </div>
+
+      <!-- Students Due for Assessment Alert (legacy) -->
       <div id="dueAssessmentAlert" style="display: none; background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%); border: 2px solid #f59e0b; border-radius: 12px; padding: 20px; margin-bottom: 20px;">
         <h3 style="color: #92400e; margin: 0 0 15px; display: flex; align-items: center; gap: 10px;">
           <span style="font-size: 24px;">📊</span> Students Due for Assessment
@@ -2304,7 +2337,17 @@
             </div>
           </div>
 
+          <!-- ===== STAR RATINGS SECTION (auto-appears for checked categories) ===== -->
+          <div id="skillRatingsSection" style="display:none;margin:20px 0;">
+            <h3 style="color:#4a5568;margin-bottom:4px;">⭐ Rate Performance in Covered Areas</h3>
+            <p style="color:#718096;font-size:13px;margin-bottom:14px;">Rate each category you covered this month. Only categories with at least one checked skill will appear.</p>
+            <div id="skillRatingsGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;"></div>
+          </div>
+
           <h3 style="margin-top: 20px; color: #4a5568;">🏆 Award Certificate (Optional)</h3>
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+            <button type="button" onclick="autoSuggestCertificate()" style="background:linear-gradient(135deg,#f59e0b,#d97706);color:white;border:none;border-radius:8px;padding:7px 16px;cursor:pointer;font-size:13px;font-weight:600;">✨ Auto-Suggest from Stars</button>
+          </div>
           <div class="form-row">
             <div class="form-group"><label>Certificate Title</label>
               <select id="certificateTitle">
@@ -2383,11 +2426,31 @@
             </div>
           </div>
 
-          <div class="form-group"><label>Overall Performance Summary</label><textarea id="performanceSummary" rows="4" placeholder="Write a brief summary of the student's progress this month..."></textarea></div>
+          <div class="form-group"><label>📝 Overall Feedback for Parent</label>
+            <div style="display:flex;flex-wrap:wrap;gap:7px;margin-bottom:10px;" id="feedbackChips">
+              <button type="button" class="chip-btn" onclick="addChip('Shows excellent progress this month!')">Shows excellent progress this month!</button>
+              <button type="button" class="chip-btn" onclick="addChip('Very attentive and participates well in class.')">Very attentive in class</button>
+              <button type="button" class="chip-btn" onclick="addChip('Has been consistent with homework.')">Consistent with homework</button>
+              <button type="button" class="chip-btn" onclick="addChip('Great improvement this month, keep it up!')">Great improvement</button>
+              <button type="button" class="chip-btn" onclick="addChip('Needs to practice regularly at home.')">Needs home practice</button>
+              <button type="button" class="chip-btn" onclick="addChip('Reading skills are developing beautifully.')">Reading developing well</button>
+              <button type="button" class="chip-btn" onclick="addChip('Pronunciation has improved significantly.')">Pronunciation improved</button>
+              <button type="button" class="chip-btn" onclick="addChip('Confidence is growing with each class.')">Confidence growing</button>
+              <button type="button" class="chip-btn" onclick="addChip('Excellent attitude towards learning.')">Excellent attitude</button>
+              <button type="button" class="chip-btn" onclick="addChip('Ready to move to the next level.')">Ready for next level</button>
+              <button type="button" class="chip-btn" onclick="addChip('Could improve on focus during class.')">Improve focus</button>
+              <button type="button" class="chip-btn" onclick="addChip('Spelling accuracy is improving.')">Spelling improving</button>
+              <button type="button" class="chip-btn" onclick="addChip('Creative writing shows great imagination.')">Creative writing</button>
+              <button type="button" class="chip-btn" onclick="addChip('Grammar foundations are getting stronger.')">Grammar stronger</button>
+              <button type="button" class="chip-btn" onclick="addChip('Keep up the wonderful work!')">Keep up the work!</button>
+            </div>
+            <textarea id="performanceSummary" rows="4" placeholder="Write overall feedback for parents, or click chips above to build it quickly..."></textarea>
+          </div>
 
-          <div class="form-group"><label>Areas of Improvement</label><textarea id="areasOfImprovement" rows="3" placeholder="Mention areas where the student can focus for better results..."></textarea></div>
-
-          <div class="form-group"><label>Teacher's Comments</label><textarea id="teacherComments" rows="3" placeholder="Any additional comments or encouragement..."></textarea></div>
+          <div style="display:none;">
+            <textarea id="areasOfImprovement"></textarea>
+            <textarea id="teacherComments"></textarea>
+          </div>
 
           <div class="form-row">
             <div class="form-group" style="flex-direction: row; align-items: center; gap: 10px;">
@@ -3822,7 +3885,7 @@ I'm passionate about helping children develop confidence in communication!"></te
 
       setTimeout(() => {
         safePreload(() => loadTabCached('financials', () => loadFinancialReports()), 'financial reports');
-        safePreload(() => loadTabCached('monthlyAssessment', () => loadDueAssessments()), 'monthly assessment');
+        safePreload(() => loadTabCached('monthlyAssessment', () => { loadDueAssessments(); loadAssessmentDashboard(); }), 'monthly assessment');
       }, 8000);
     });
 
@@ -3888,7 +3951,7 @@ I'm passionate about helping children develop confidence in communication!"></te
       if (tabName === 'leaderboard') loadTabCached('leaderboard', () => loadLeaderboard());
       if (tabName === 'challenges') loadTabCached('challenges', () => loadChallenges());
       if (tabName === 'financials') loadTabCached('financials', () => loadFinancialReports());
-      if (tabName === 'monthlyAssessment') loadTabCached('monthlyAssessment', () => loadDueAssessments());
+      if (tabName === 'monthlyAssessment') loadTabCached('monthlyAssessment', () => { loadDueAssessments(); loadAssessmentDashboard(); });
       if (tabName === 'whiteboard') {
         setTimeout(initWhiteboard, 100); // Small delay to ensure canvas is visible
       }
@@ -5134,6 +5197,7 @@ if (dueEl) {
             <button onclick="annotTool='pen';this.style.outline='2px solid white';this.parentElement.querySelectorAll('button').forEach(b=>b!==this&&(b.style.outline='none'))" style="padding:5px 12px;border:none;border-radius:5px;background:#e53e3e;color:white;cursor:pointer;outline:2px solid white;">🖊️ Pen</button>
             <button onclick="annotTool='text';this.style.outline='2px solid white';this.parentElement.querySelectorAll('button').forEach(b=>b!==this&&(b.style.outline='none'))" style="padding:5px 12px;border:none;border-radius:5px;background:#3182ce;color:white;cursor:pointer;">Aa Text</button>
             <button onclick="annotTool='eraser';this.style.outline='2px solid white';this.parentElement.querySelectorAll('button').forEach(b=>b!==this&&(b.style.outline='none'))" style="padding:5px 12px;border:none;border-radius:5px;background:#718096;color:white;cursor:pointer;">🧹 Eraser</button>
+            <button id="aiCorrectBtn" onclick="runAiCorrections()" style="padding:5px 14px;border:none;border-radius:5px;background:linear-gradient(135deg,#6366f1,#4f46e5);color:white;cursor:pointer;font-weight:700;letter-spacing:0.3px;">🤖 AI Correct</button>
           </div>
           <div style="display:flex;gap:5px;margin-left:10px;">
             ${['#e53e3e','#3182ce','#38a169','#000000'].map(c => `<div onclick="annotColor='${c}';this.parentElement.querySelectorAll('div').forEach(d=>d.style.outline='none');this.style.outline='2px solid white'" style="width:28px;height:28px;border-radius:50%;background:${c};cursor:pointer;border:2px solid #4a5568;${c==='#e53e3e'?'outline:2px solid white':''}"></div>`).join('')}
@@ -5208,6 +5272,73 @@ if (dueEl) {
         annotCtx.fillText(text, x, y);
         annotHistory.push(annotCtx.getImageData(0, 0, annotCanvas.width, annotCanvas.height));
       });
+    }
+
+    async function runAiCorrections() {
+      const btn = document.getElementById('aiCorrectBtn');
+      btn.textContent = '⏳ Analyzing...';
+      btn.disabled = true;
+      try {
+        const imageData = annotCanvas.toDataURL('image/png');
+        const res = await fetch('/api/homework/ai-annotate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image_data: imageData })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'AI request failed');
+
+        const { corrections, grade, summary } = data;
+        if (!corrections || corrections.length === 0) {
+          alert(`✅ AI found no errors!\n\nGrade suggestion: ${grade || 'A+'}\n\n${summary || ''}`);
+          btn.textContent = '🤖 AI Correct'; btn.disabled = false; return;
+        }
+
+        // Draw corrections on canvas with thin red pen style
+        const W = annotCanvas.width, H = annotCanvas.height;
+        annotCtx.save();
+        corrections.forEach(c => {
+          const cx = ((c.x || 0) / 100) * W;
+          const cy = ((c.y || 0) / 100) * H;
+          const label = `✗ ${c.wrong} → ${c.correct}`;
+          const fontSize = Math.max(11, Math.round(W / 60));
+          annotCtx.font = `${fontSize}px 'Courier New', monospace`;
+          const tw = annotCtx.measureText(label).width;
+
+          // Red underline squiggle under the error area
+          annotCtx.beginPath();
+          annotCtx.strokeStyle = '#dc2626';
+          annotCtx.lineWidth = 1.5;
+          annotCtx.setLineDash([3, 2]);
+          for (let i = 0; i < tw; i += 4) {
+            const wave = (i % 8 < 4) ? 2 : -2;
+            if (i === 0) annotCtx.moveTo(cx + i, cy + 3 + wave);
+            else annotCtx.lineTo(cx + i, cy + 3 + wave);
+          }
+          annotCtx.stroke();
+          annotCtx.setLineDash([]);
+
+          // Red correction text above
+          const textY = Math.max(fontSize + 4, cy - 4);
+          annotCtx.fillStyle = 'rgba(255,255,255,0.82)';
+          annotCtx.fillRect(cx - 2, textY - fontSize, tw + 4, fontSize + 3);
+          annotCtx.fillStyle = '#dc2626';
+          annotCtx.fillText(label, cx, textY);
+        });
+        annotCtx.restore();
+        annotHistory.push(annotCtx.getImageData(0, 0, W, H));
+
+        // Fill in grade/comments boxes if empty
+        const gradeEl = document.getElementById('annotGrade');
+        const commentsEl = document.getElementById('annotComments');
+        if (!gradeEl.value && grade) gradeEl.value = grade;
+        if (!commentsEl.value && summary) commentsEl.value = summary;
+
+        alert(`🤖 AI marked ${corrections.length} correction(s).\n\nGrade suggestion: ${grade || ''}\n${summary || ''}\n\nYou can still draw or edit before saving.`);
+      } catch (err) {
+        alert('AI Error: ' + err.message + '\n\nMake sure GEMINI_API_KEY is set in your Render environment variables.\nGet a free key at aistudio.google.com/apikey');
+      }
+      btn.textContent = '🤖 AI Correct'; btn.disabled = false;
     }
 
     function annotStart(e) {
@@ -9715,6 +9846,259 @@ async function saveEditedPayment() {
     }
 
     // ==================== ASSESSMENTS (Monthly & Demo) ====================
+
+    // ── Auto-default month/year to current ────────────────────────────────
+    (function() {
+      const now = new Date();
+      const mSel = document.getElementById('assessmentMonth');
+      const ySel = document.getElementById('assessmentYear');
+      if (mSel) mSel.value = String(now.getMonth() + 1);
+      if (ySel) ySel.value = String(now.getFullYear());
+    })();
+
+    // ── Smart chip inserter ───────────────────────────────────────────────
+    function addChip(text) {
+      const ta = document.getElementById('performanceSummary');
+      if (!ta) return;
+      const current = ta.value.trim();
+      ta.value = current ? current + ' ' + text : text;
+      ta.focus();
+    }
+
+    // ── Skill categories and their checkbox IDs ───────────────────────────
+    const SKILL_CATEGORIES = [
+      { key: 'Phonics', icon: '🔤', ids: ['letter_sounds','blending','segmenting','sight_words','phonemic_awareness','decoding'] },
+      { key: 'Reading', icon: '📖', ids: ['reading_fluency','reading_comprehension','reading_expression','story_understanding'] },
+      { key: 'Spoken English', icon: '🗣️', ids: ['speaking','pronunciation','confidence','listening','conversation','sentence_formation'] },
+      { key: 'Grammar', icon: '📝', ids: ['grammar','tenses','punctuation','parts_of_speech'] },
+      { key: 'Vocabulary', icon: '📚', ids: ['vocabulary','spelling','word_meanings','synonyms_antonyms'] },
+      { key: 'Creative Writing', icon: '✍️', ids: ['writing','story_writing','essay_writing','handwriting'] },
+      { key: 'Spellings', icon: '🔠', ids: ['spelling_accuracy','word_formation','dictation','spelling_patterns','word_recall','tricky_words'] },
+      { key: 'Handwriting', icon: '✏️', ids: ['letter_formation','letter_sizing','writing_neatness','cursive_writing','writing_speed','pencil_grip'] },
+      { key: 'Public Speaking', icon: '🎤', ids: ['public_speaking','presentation','storytelling','debate','stage_presence'] }
+    ];
+
+    function updateSkillRatings() {
+      const section = document.getElementById('skillRatingsSection');
+      const grid = document.getElementById('skillRatingsGrid');
+      const activeCategories = SKILL_CATEGORIES.filter(cat =>
+        cat.ids.some(id => { const el = document.getElementById('skill_' + id); return el && el.checked; })
+      );
+      if (activeCategories.length === 0) { section.style.display = 'none'; return; }
+      section.style.display = 'block';
+      grid.innerHTML = activeCategories.map(cat => {
+        const current = parseInt(grid.querySelector(`[data-cat="${cat.key}"]`)?.dataset.rating || 0);
+        return `
+        <div class="star-rating-row" data-cat="${cat.key}" data-rating="${current}">
+          <span class="cat-label">${cat.icon} ${cat.key}</span>
+          <div class="star-widget" id="stars_${cat.key.replace(/\s+/g,'_')}">
+            ${[1,2,3,4,5].map(n => `<span class="star ${n<=current?'filled':''}" data-val="${n}" onclick="setStarRating('${cat.key}',${n})">★</span>`).join('')}
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    function setStarRating(catKey, val) {
+      const row = document.querySelector(`[data-cat="${catKey}"]`);
+      if (!row) return;
+      row.dataset.rating = val;
+      const widgetId = 'stars_' + catKey.replace(/\s+/g,'_');
+      document.getElementById(widgetId).querySelectorAll('.star').forEach((s,i) => {
+        s.classList.toggle('filled', i < val);
+      });
+    }
+
+    function getSkillRatings() {
+      const ratings = {};
+      document.querySelectorAll('.star-rating-row[data-cat]').forEach(row => {
+        const r = parseInt(row.dataset.rating);
+        if (r > 0) ratings[row.dataset.cat] = r;
+      });
+      return Object.keys(ratings).length > 0 ? ratings : null;
+    }
+
+    // Attach checkbox change listeners for star ratings
+    SKILL_CATEGORIES.forEach(cat => cat.ids.forEach(id => {
+      const el = document.getElementById('skill_' + id);
+      if (el) el.addEventListener('change', updateSkillRatings);
+    }));
+
+    // ── Auto-suggest certificate based on highest star ratings ────────────
+    const CERT_SUGGESTIONS = {
+      'Phonics': ['Phonics Star', 'Sound Master', 'Blending Champion'],
+      'Reading': ['Reading Rockstar', 'Avid Reader', 'Fluent Reader'],
+      'Spoken English': ['Superb Speaker', 'Confident Communicator', 'Pronunciation Pro'],
+      'Grammar': ['Grammar Guru', 'Grammar Champion'],
+      'Vocabulary': ['Vocabulary Virtuoso', 'Word Wizard'],
+      'Creative Writing': ['Creative Writing Star', 'Story Teller'],
+      'Spellings': ['Spelling Superstar', 'Spelling Bee Champion', 'Perfect Speller'],
+      'Handwriting': ['Handwriting Hero', 'Beautiful Handwriting', 'Neat Writer'],
+      'Public Speaking': ['Public Speaking Pro', 'Confident Performer', 'Stage Star']
+    };
+    function autoSuggestCertificate() {
+      const ratings = getSkillRatings();
+      if (!ratings || Object.keys(ratings).length === 0) {
+        alert('Please rate at least one skill category first (check some skills and rate them above).');
+        return;
+      }
+      let best = null; let bestScore = 0;
+      Object.entries(ratings).forEach(([cat, score]) => {
+        if (score > bestScore) { bestScore = score; best = cat; }
+      });
+      if (!best) return;
+      const suggestions = CERT_SUGGESTIONS[best] || [];
+      if (suggestions.length === 0) return;
+      const suggestion = suggestions[0];
+      const select = document.getElementById('certificateTitle');
+      for (let i = 0; i < select.options.length; i++) {
+        if (select.options[i].value === suggestion) {
+          select.value = suggestion;
+          select.style.background = '#fef3c7';
+          setTimeout(() => select.style.background = '', 2000);
+          return;
+        }
+      }
+    }
+
+    // ── Auto-prefill from last month when student is selected ────────────
+    document.getElementById('assessmentStudent').addEventListener('change', async function() {
+      const studentId = this.value;
+      if (!studentId) return;
+      try {
+        const r = await fetch(`/api/students/${studentId}/assessments`);
+        const assessments = await r.json();
+        if (!assessments || assessments.length === 0) return;
+        const last = assessments[0]; // already ordered DESC by year,month
+        // Pre-fill skills
+        const skillIds = ['letter_sounds','blending','segmenting','sight_words','phonemic_awareness','decoding',
+          'reading_fluency','reading_comprehension','reading_expression','story_understanding',
+          'speaking','pronunciation','confidence','listening','conversation','sentence_formation',
+          'grammar','tenses','punctuation','parts_of_speech','vocabulary','spelling','word_meanings',
+          'synonyms_antonyms','spelling_accuracy','word_formation','dictation','spelling_patterns',
+          'word_recall','tricky_words','letter_formation','letter_sizing','writing_neatness',
+          'cursive_writing','writing_speed','pencil_grip','writing','story_writing','essay_writing',
+          'handwriting','public_speaking','presentation','storytelling','debate','stage_presence'];
+        const skillNames = {
+          'letter_sounds':'Letter Sounds Recognition','blending':'Blending Sounds','segmenting':'Segmenting Words',
+          'sight_words':'Sight Words','phonemic_awareness':'Phonemic Awareness','decoding':'Decoding Skills',
+          'reading_fluency':'Reading Fluency','reading_comprehension':'Reading Comprehension',
+          'reading_expression':'Reading with Expression','story_understanding':'Story Understanding',
+          'speaking':'Speaking & Communication','pronunciation':'Pronunciation','confidence':'Confidence Building',
+          'listening':'Active Listening','conversation':'Conversation Skills','sentence_formation':'Sentence Formation',
+          'grammar':'Grammar & Structure','tenses':'Tenses','punctuation':'Punctuation','parts_of_speech':'Parts of Speech',
+          'vocabulary':'Vocabulary Enhancement','spelling':'Spelling Mastery','word_meanings':'Word Meanings',
+          'synonyms_antonyms':'Synonyms & Antonyms','spelling_accuracy':'Spelling Accuracy',
+          'word_formation':'Word Formation','dictation':'Dictation Skills','spelling_patterns':'Spelling Patterns & Rules',
+          'word_recall':'Word Recall & Memory','tricky_words':'Tricky Words','letter_formation':'Letter Formation',
+          'letter_sizing':'Letter Sizing & Spacing','writing_neatness':'Neatness & Presentation',
+          'cursive_writing':'Cursive Writing','writing_speed':'Writing Speed','pencil_grip':'Pencil Grip & Posture',
+          'writing':'Creative Writing','story_writing':'Story Writing','essay_writing':'Essay Writing',
+          'handwriting':'Handwriting','public_speaking':'Public Speaking','presentation':'Presentation Skills',
+          'storytelling':'Storytelling','debate':'Debate Skills','stage_presence':'Stage Presence'
+        };
+        const nameToId = Object.fromEntries(Object.entries(skillNames).map(([k,v])=>[v,k]));
+        let previousSkills = [];
+        try { previousSkills = last.skills ? JSON.parse(last.skills) : []; } catch(e) {}
+        // Clear all, then re-check what was previously covered
+        skillIds.forEach(id => { const el = document.getElementById('skill_' + id); if (el) el.checked = false; });
+        previousSkills.forEach(name => {
+          const id = nameToId[name];
+          if (id) { const el = document.getElementById('skill_' + id); if (el) el.checked = true; }
+        });
+        updateSkillRatings();
+        // Pre-fill star ratings from last assessment
+        if (last.skill_ratings) {
+          let prevRatings = {};
+          try { prevRatings = typeof last.skill_ratings === 'string' ? JSON.parse(last.skill_ratings) : last.skill_ratings; } catch(e) {}
+          Object.entries(prevRatings).forEach(([cat, val]) => setStarRating(cat, val));
+        }
+      } catch(e) { /* silently ignore prefill errors */ }
+    });
+
+    // ── Monthly assessment dashboard ──────────────────────────────────────
+    let _dashMonth = new Date().getMonth() + 1;
+    let _dashYear = new Date().getFullYear();
+    const _monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+    function dashboardPrevMonth() {
+      _dashMonth--; if (_dashMonth < 1) { _dashMonth = 12; _dashYear--; }
+      loadAssessmentDashboard();
+    }
+    function dashboardNextMonth() {
+      _dashMonth++; if (_dashMonth > 12) { _dashMonth = 1; _dashYear++; }
+      loadAssessmentDashboard();
+    }
+
+    async function loadAssessmentDashboard() {
+      document.getElementById('dashboardMonthLabel').textContent = _monthNames[_dashMonth-1] + ' ' + _dashYear;
+      const grid = document.getElementById('assessmentDashboardGrid');
+      grid.innerHTML = '<p style="color:#718096;font-size:14px;">Loading...</p>';
+      try {
+        const r = await fetch(`/api/assessments/monthly-dashboard?month=${_dashMonth}&year=${_dashYear}`);
+        const data = await r.json();
+        if (!data.students || data.students.length === 0) {
+          grid.innerHTML = '<p style="color:#718096;font-size:14px;">No active students found.</p>';
+          return;
+        }
+        const statusInfo = {
+          completed: { label:'✅ Done', color:'#38a169' },
+          due:       { label:'🎯 Due', color:'#d97706' },
+          deferred:  { label:'⏭️ Deferred', color:'#718096' },
+          pending:   { label:'⏳ Not enough sessions', color:'#a0aec0' }
+        };
+        grid.innerHTML = data.students.map(s => {
+          const si = statusInfo[s.status] || statusInfo.pending;
+          const isDue = s.status === 'due';
+          const isDeferred = s.status === 'deferred';
+          return `
+          <div class="dash-card status-${s.status}">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <strong style="font-size:14px;color:#2d3748;">${s.name}</strong>
+              <span style="font-size:11px;font-weight:700;color:${si.color};">${si.label}</span>
+            </div>
+            <div style="font-size:12px;color:#718096;">📅 ${s.sessions_this_month} session${s.sessions_this_month!==1?'s':''} this month</div>
+            ${s.certificate_title ? `<div style="font-size:11px;color:#B05D9E;font-weight:600;">🏆 ${s.certificate_title}</div>` : ''}
+            <div style="display:flex;gap:7px;margin-top:4px;flex-wrap:wrap;">
+              ${isDue ? `<button onclick="prefillAssessmentForm(${s.id},'${s.name.replace(/'/g,"\\'")}',${_dashMonth},${_dashYear})" style="background:#B05D9E;color:white;border:none;border-radius:6px;padding:5px 10px;font-size:11px;font-weight:600;cursor:pointer;">📝 Fill Now</button>` : ''}
+              ${!isDeferred && s.status !== 'completed' ? `<button onclick="deferStudent(${s.id},'${s.name.replace(/'/g,"\\'")}',${_dashMonth},${_dashYear})" style="background:#718096;color:white;border:none;border-radius:6px;padding:5px 10px;font-size:11px;font-weight:600;cursor:pointer;">⏭️ Defer</button>` : ''}
+              ${isDeferred ? `<span style="font-size:11px;color:#718096;">Deferred to next month</span>` : ''}
+              ${s.assessment_id && !isDeferred ? `<button onclick="viewAssessment(${s.assessment_id})" style="background:#e2e8f0;color:#4a5568;border:none;border-radius:6px;padding:5px 10px;font-size:11px;font-weight:600;cursor:pointer;">👁 View</button>` : ''}
+            </div>
+          </div>`;
+        }).join('');
+      } catch(err) {
+        grid.innerHTML = `<p style="color:#e53e3e;font-size:14px;">Error loading dashboard: ${err.message}</p>`;
+      }
+    }
+
+    function prefillAssessmentForm(studentId, studentName, month, year) {
+      // Scroll to form
+      document.getElementById('monthlyAssessmentForm').scrollIntoView({ behavior:'smooth', block:'start' });
+      // Set student
+      const studentSel = document.getElementById('assessmentStudent');
+      if (studentSel) { studentSel.value = studentId; studentSel.dispatchEvent(new Event('change')); }
+      // Set month/year
+      const mSel = document.getElementById('assessmentMonth');
+      const ySel = document.getElementById('assessmentYear');
+      if (mSel) mSel.value = String(month);
+      if (ySel) ySel.value = String(year);
+      // Ensure monthly type selected
+      const radio = document.getElementById('typeMonthly');
+      if (radio) { radio.checked = true; radio.dispatchEvent(new Event('change')); }
+    }
+
+    async function deferStudent(studentId, studentName, month, year) {
+      if (!confirm(`Defer ${studentName}'s assessment to next month?`)) return;
+      try {
+        const r = await fetch('/api/assessments/defer-student', {
+          method: 'POST', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ student_id: studentId, month, year })
+        });
+        if (r.ok) { loadAssessmentDashboard(); }
+        else { const d = await r.json(); alert('Error: ' + (d.error || 'Unknown')); }
+      } catch(err) { alert('Error: ' + err.message); }
+    }
+
     // Show/hide custom certificate title field
     document.getElementById('certificateTitle').addEventListener('change', function() {
       const customGroup = document.getElementById('customTitleGroup');
@@ -9780,7 +10164,19 @@ async function saveEditedPayment() {
           const skills = a.skills ? JSON.parse(a.skills) : [];
           const skillsText = skills.length > 0 ? (skills.length > 3 ? skills.slice(0, 3).join(', ') + '...' : skills.join(', ')) : 'N/A';
           const isDemo = a.assessment_type === 'demo';
-          const typeLabel = isDemo ? '<span style="background:#38b2ac;color:white;padding:2px 8px;border-radius:4px;font-size:11px;">Demo</span>' : '<span style="background:#667eea;color:white;padding:2px 8px;border-radius:4px;font-size:11px;">Monthly</span>';
+          const certTitle = (a.certificate_title || '').toLowerCase();
+          let typeLabel;
+          if (certTitle.includes('week')) {
+            typeLabel = '<span style="background:#f59e0b;color:white;padding:2px 8px;border-radius:4px;font-size:11px;">Week Award</span>';
+          } else if (certTitle.includes('month')) {
+            typeLabel = '<span style="background:#B05D9E;color:white;padding:2px 8px;border-radius:4px;font-size:11px;">Month Award</span>';
+          } else if (certTitle.includes('year')) {
+            typeLabel = '<span style="background:#e53e3e;color:white;padding:2px 8px;border-radius:4px;font-size:11px;">Year Award</span>';
+          } else if (isDemo) {
+            typeLabel = '<span style="background:#38b2ac;color:white;padding:2px 8px;border-radius:4px;font-size:11px;">Demo</span>';
+          } else {
+            typeLabel = '<span style="background:#667eea;color:white;padding:2px 8px;border-radius:4px;font-size:11px;">Monthly</span>';
+          }
           const period = isDemo ? (a.demo_date ? new Date(a.demo_date).toLocaleDateString() : 'Demo Class') : `${monthNames[a.month - 1]} ${a.year}`;
 
           return `
@@ -9940,10 +10336,11 @@ async function saveEditedPayment() {
       const data = {
         assessment_type: assessmentType,
         skills: JSON.stringify(skills),
+        skill_ratings: getSkillRatings(),
         certificate_title: certificateTitle || null,
         performance_summary: document.getElementById('performanceSummary').value,
-        areas_of_improvement: document.getElementById('areasOfImprovement').value,
-        teacher_comments: document.getElementById('teacherComments').value,
+        areas_of_improvement: '',
+        teacher_comments: '',
         send_email: sendEmail
       };
 
