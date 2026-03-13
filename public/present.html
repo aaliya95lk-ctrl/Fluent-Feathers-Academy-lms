@@ -631,15 +631,17 @@ function playSound(positive) {
     var ctx = ac();
     function go() {
       if (positive) {
+        // ✅ Ascending chime arpeggio (C5→G6)
         var now = ctx.currentTime;
-        [{f:659,t:0},{f:988,t:0.13}].forEach(function(n) {
+        [523,659,784,880,1047,1319,1568].forEach(function(f,i) {
           var o=ctx.createOscillator(),g=ctx.createGain();
           o.connect(g); g.connect(ctx.destination);
-          o.type='sine'; o.frequency.value=n.f;
-          g.gain.setValueAtTime(0,now+n.t);
-          g.gain.linearRampToValueAtTime(0.45,now+n.t+0.008);
-          g.gain.exponentialRampToValueAtTime(0.001,now+n.t+0.35);
-          o.start(now+n.t); o.stop(now+n.t+0.4);
+          o.type='sine'; o.frequency.value=f;
+          var t=now+i*0.07;
+          g.gain.setValueAtTime(0,t);
+          g.gain.linearRampToValueAtTime(0.32,t+0.018);
+          g.gain.exponentialRampToValueAtTime(0.001,t+0.5);
+          o.start(t); o.stop(t+0.55);
         });
       } else {
         var o=ctx.createOscillator(),g=ctx.createGain();
@@ -1149,7 +1151,7 @@ function fxConfetti() {
     ov.appendChild(p);
   }
   playConfettiFx();
-  setTimeout(fxClear, 5000);
+  setTimeout(fxClear, 3500);
 }
 
 // ── Clap ──
@@ -1210,10 +1212,11 @@ function fxBubbles() {
         b.style.setProperty('--glow-color', c.glow);
         b.style.setProperty('--dur', (2.5 + Math.random() * 2.5) + 's');
         ov.appendChild(b);
-        setTimeout(function() { if (b.parentNode) b.parentNode.removeChild(b); }, 6000);
+        setTimeout(function() { if (b.parentNode) b.parentNode.removeChild(b); }, 3500);
       }, idx * 200);
     })(i);
   }
+  setTimeout(fxClear, 4000);
 }
 
 // ── FX Audio Functions ──
@@ -1303,26 +1306,54 @@ function playConfettiFx() {
   try {
     var ctx = ac();
     function go() {
-      var freqs = [523, 659, 784, 880, 1047, 1319, 1568];
-      freqs.forEach(function(f, i) {
-        var o = ctx.createOscillator(), g = ctx.createGain();
-        o.connect(g); g.connect(ctx.destination);
-        o.type = 'sine'; o.frequency.value = f;
-        var t = ctx.currentTime + i * 0.07;
-        g.gain.setValueAtTime(0, t);
-        g.gain.linearRampToValueAtTime(0.32, t + 0.018);
-        g.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
-        o.start(t); o.stop(t + 0.55);
-      });
-      // Pop
-      var buf = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 0.03), ctx.sampleRate);
-      var d   = buf.getChannelData(0);
-      for (var j = 0; j < d.length; j++) d[j] = Math.random() * 2 - 1;
-      var src = ctx.createBufferSource(); src.buffer = buf;
-      var g0  = ctx.createGain(); src.connect(g0); g0.connect(ctx.destination);
-      g0.gain.setValueAtTime(0.45, ctx.currentTime);
-      g0.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.03);
-      src.start(ctx.currentTime); src.stop(ctx.currentTime + 0.04);
+      var now = ctx.currentTime;
+      // 1. Cork pop — sharp noise burst with bandpass
+      var popBuf = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 0.06), ctx.sampleRate);
+      var pd = popBuf.getChannelData(0);
+      for (var j = 0; j < pd.length; j++) pd[j] = (Math.random()*2-1) * Math.exp(-j/(pd.length*0.12));
+      var popSrc = ctx.createBufferSource(); popSrc.buffer = popBuf;
+      var popF = ctx.createBiquadFilter(); popF.type = 'bandpass'; popF.frequency.value = 1400; popF.Q.value = 0.4;
+      var popG = ctx.createGain(); popG.gain.setValueAtTime(1.4, now);
+      popSrc.connect(popF); popF.connect(popG); popG.connect(ctx.destination);
+      popSrc.start(now); popSrc.stop(now + 0.07);
+      // 2. Low thud body
+      var o1 = ctx.createOscillator(), g1 = ctx.createGain();
+      o1.connect(g1); g1.connect(ctx.destination);
+      o1.type = 'sine';
+      o1.frequency.setValueAtTime(200, now);
+      o1.frequency.exponentialRampToValueAtTime(55, now + 0.14);
+      g1.gain.setValueAtTime(0.85, now);
+      g1.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
+      o1.start(now); o1.stop(now + 0.17);
+      // 3. Upward fizz (confetti flying)
+      var o2 = ctx.createOscillator(), g2 = ctx.createGain();
+      o2.connect(g2); g2.connect(ctx.destination);
+      o2.type = 'sine';
+      o2.frequency.setValueAtTime(500, now + 0.04);
+      o2.frequency.exponentialRampToValueAtTime(2200, now + 0.38);
+      g2.gain.setValueAtTime(0, now + 0.04);
+      g2.gain.linearRampToValueAtTime(0.18, now + 0.07);
+      g2.gain.exponentialRampToValueAtTime(0.001, now + 0.42);
+      o2.start(now + 0.04); o2.stop(now + 0.43);
+      // 4. Second pop at 0.22s — double party-popper effect
+      setTimeout(function() {
+        var n2 = ctx.currentTime;
+        var b2 = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 0.05), ctx.sampleRate);
+        var d2 = b2.getChannelData(0);
+        for (var j = 0; j < d2.length; j++) d2[j] = (Math.random()*2-1) * Math.exp(-j/(d2.length*0.1));
+        var s2 = ctx.createBufferSource(); s2.buffer = b2;
+        var f2 = ctx.createBiquadFilter(); f2.type = 'bandpass'; f2.frequency.value = 1000; f2.Q.value = 0.5;
+        var g2b = ctx.createGain(); g2b.gain.setValueAtTime(0.9, n2);
+        s2.connect(f2); f2.connect(g2b); g2b.connect(ctx.destination);
+        s2.start(n2); s2.stop(n2 + 0.06);
+        var o3 = ctx.createOscillator(), g3 = ctx.createGain();
+        o3.connect(g3); g3.connect(ctx.destination);
+        o3.type = 'sine'; o3.frequency.setValueAtTime(160, n2);
+        o3.frequency.exponentialRampToValueAtTime(45, n2 + 0.12);
+        g3.gain.setValueAtTime(0.65, n2);
+        g3.gain.exponentialRampToValueAtTime(0.001, n2 + 0.14);
+        o3.start(n2); o3.stop(n2 + 0.15);
+      }, 220);
     }
     ctx.state === 'suspended' ? ctx.resume().then(go) : go();
   } catch(e) {}

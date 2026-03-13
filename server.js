@@ -10515,13 +10515,13 @@ app.post('/api/homework/ai-feedback', express.json(), async (req, res) => {
     const { student_name, teacher_notes, file_name } = req.body;
     if (!teacher_notes) return res.status(400).json({ error: 'teacher_notes is required' });
 
-    const prompt = `You are a warm, encouraging English language teacher writing homework feedback for a child.
+    const prompt = `You are a warm, encouraging English language teacher writing homework feedback directly to a student.
 
 Student name: ${student_name || 'the student'}
 Homework file: ${file_name || 'submitted homework'}
 Teacher\'s quick notes: "${teacher_notes}"
 
-Write polished, friendly feedback (3-5 sentences) addressed to the parents about their child\'s homework. Be specific, encouraging, and mention what was done well and what to improve. End with a motivating closing line.
+Write polished, friendly feedback (3-5 sentences) in second person, addressed directly to the student by name (e.g. "Great work, ${student_name || 'you'}!"). Be specific, encouraging, and mention what was done well and what to improve. End with a motivating closing line directed at the student.
 
 Also suggest a grade from: A+, A, B+, B, C+, C, Needs Improvement.
 

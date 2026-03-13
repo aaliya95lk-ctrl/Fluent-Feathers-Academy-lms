@@ -306,47 +306,18 @@ function playSound(positive) {
     var ctx = ac();
     function go() {
       if (positive) {
-        // ✅ "Correct answer" sound: punchy ding-ding (E5 → G5) with a bright bell tail
+        // ✅ Ascending chime arpeggio (C5→G6)
         var now = ctx.currentTime;
-
-        // First ding — E5 (659 Hz)
-        (function() {
-          var o = ctx.createOscillator();
-          var g = ctx.createGain();
+        [523, 659, 784, 880, 1047, 1319, 1568].forEach(function(f, i) {
+          var o = ctx.createOscillator(), g = ctx.createGain();
           o.connect(g); g.connect(ctx.destination);
-          o.type = 'sine';
-          o.frequency.setValueAtTime(659, now);
-          g.gain.setValueAtTime(0, now);
-          g.gain.linearRampToValueAtTime(0.45, now + 0.008);
-          g.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
-          o.start(now); o.stop(now + 0.3);
-        })();
-
-        // Second ding — B5 (988 Hz) — slightly delayed and brighter
-        (function() {
-          var o = ctx.createOscillator();
-          var g = ctx.createGain();
-          o.connect(g); g.connect(ctx.destination);
-          o.type = 'sine';
-          o.frequency.setValueAtTime(988, now + 0.13);
-          g.gain.setValueAtTime(0, now + 0.13);
-          g.gain.linearRampToValueAtTime(0.5, now + 0.138);
-          g.gain.exponentialRampToValueAtTime(0.001, now + 0.48);
-          o.start(now + 0.13); o.stop(now + 0.5);
-        })();
-
-        // Shimmer overtone on the second ding for richness
-        (function() {
-          var o = ctx.createOscillator();
-          var g = ctx.createGain();
-          o.connect(g); g.connect(ctx.destination);
-          o.type = 'sine';
-          o.frequency.setValueAtTime(1976, now + 0.13); // 2x B5
-          g.gain.setValueAtTime(0, now + 0.13);
-          g.gain.linearRampToValueAtTime(0.12, now + 0.138);
-          g.gain.exponentialRampToValueAtTime(0.001, now + 0.38);
-          o.start(now + 0.13); o.stop(now + 0.4);
-        })();
+          o.type = 'sine'; o.frequency.value = f;
+          var t = now + i * 0.07;
+          g.gain.setValueAtTime(0, t);
+          g.gain.linearRampToValueAtTime(0.32, t + 0.018);
+          g.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+          o.start(t); o.stop(t + 0.55);
+        });
 
       } else {
         // ❌ Deduct sound: low thud drop
