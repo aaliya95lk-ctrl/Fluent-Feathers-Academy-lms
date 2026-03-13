@@ -10372,7 +10372,7 @@ Return ONLY the JSON. No markdown. No explanation.`;
             { type: 'image_url', image_url: { url: image_data } }
           ]
         }],
-        max_tokens: 2048,
+        max_tokens: 4096,
         temperature: 0.1
       },
       { headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${groqKey}` }, timeout: 45000 }
@@ -10381,10 +10381,21 @@ Return ONLY the JSON. No markdown. No explanation.`;
     const content = response.data.choices?.[0]?.message?.content?.trim();
     if (!content) return res.status(500).json({ error: 'Groq returned empty response' });
 
-    // Extract JSON even if wrapped in markdown code block
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) return res.status(500).json({ error: 'AI returned unexpected format', raw: content });
-    const result = JSON.parse(jsonMatch[0]);
+    // Extract JSON block, strip markdown fences if present
+    let jsonStr = content;
+    const fenceMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    if (fenceMatch) jsonStr = fenceMatch[1].trim();
+    else { const braceMatch = content.match(/\{[\s\S]*\}/); if (braceMatch) jsonStr = braceMatch[0]; }
+
+    let result;
+    try {
+      result = JSON.parse(jsonStr);
+    } catch (parseErr) {
+      // Attempt to sanitize common issues: replace unescaped newlines inside strings
+      const sanitized = jsonStr.replace(/[\r\n]+/g, ' ').replace(/([^\\])\\'/g, "$1'");
+      try { result = JSON.parse(sanitized); }
+      catch (e2) { return res.status(500).json({ error: 'AI returned malformed JSON', raw: jsonStr.slice(0, 300) }); }
+    }
     res.json(result);
   } catch (err) {
     console.error('AI annotate error:', err.response?.data || err.message);
