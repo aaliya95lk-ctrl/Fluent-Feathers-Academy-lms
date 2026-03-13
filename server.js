@@ -10334,10 +10334,11 @@ app.post('/api/homework/ai-annotate', express.json({ limit: '20mb' }), async (re
       return res.status(400).json({ error: 'GROQ_API_KEY is not configured. Add it to your environment variables on Render. Get a free key at console.groq.com' });
     }
 
-    const { image_data } = req.body;
+    const { image_data, student_name } = req.body;
     if (!image_data) return res.status(400).json({ error: 'No image data provided' });
 
-    const prompt = `You are an English language teacher reviewing a student's creative writing homework image. Carefully read ALL the handwritten or typed text in the image.
+    const studentLabel = student_name ? `Student: ${student_name}. ` : '';
+    const prompt = `You are an English language teacher reviewing a student's creative writing homework image. ${studentLabel}Carefully read ALL the handwritten or typed text in the image.
 
 Find every spelling mistake, grammar error, punctuation error, and capitalisation error.
 
@@ -10354,11 +10355,11 @@ Return ONLY a valid JSON object in this exact format (no other text before or af
     }
   ],
   "grade": "B+",
-  "summary": "One sentence overall feedback for the student"
+  "summary": "One sentence overall feedback addressed to ${student_name ? student_name : 'the student'}"
 }
 
 For x and y: estimate the percentage position (0-100) from the TOP-LEFT corner of the image where that error appears visually.
-If the writing has no errors, return {"corrections": [], "grade": "A+", "summary": "Excellent work! No errors found."}
+If the writing has no errors, return {"corrections": [], "grade": "A+", "summary": "${student_name ? student_name + ', excellent' : 'Excellent'} work! No errors found."}
 Return ONLY the JSON. No markdown. No explanation.`;
 
     const response = await axios.post(

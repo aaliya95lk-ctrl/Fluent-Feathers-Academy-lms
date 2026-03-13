@@ -5255,6 +5255,7 @@ if (dueEl) {
       annotTool = 'pen';
       annotColor = '#e53e3e';
       annotSize = 3;
+      annotStudentName = studentName || '';
 
       // Load image
       if (fileType === 'pdf') {
@@ -5398,7 +5399,7 @@ if (dueEl) {
         const res = await fetch('/api/homework/ai-annotate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ image_data: imageData })
+          body: JSON.stringify({ image_data: imageData, student_name: annotStudentName || '' })
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'AI request failed');
@@ -5408,6 +5409,9 @@ if (dueEl) {
           alert(`✅ AI found no errors!\n\nGrade suggestion: ${grade || 'A+'}\n\n${summary || ''}`);
           btn.textContent = '🤖 AI Correct'; btn.disabled = false; return;
         }
+
+        // Save snapshot BEFORE drawing AI marks so ↩️ Undo removes all AI marks at once
+        annotHistory.push(annotCtx.getImageData(0, 0, annotCanvas.width, annotCanvas.height));
 
         // Draw corrections on canvas with thin red pen style
         const W = annotCanvas.width, H = annotCanvas.height;
