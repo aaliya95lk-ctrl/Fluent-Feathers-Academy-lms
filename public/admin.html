@@ -672,7 +672,7 @@
           <span id="studentCount" style="margin-left: 15px; color: #718096; font-size: 14px;"></span>
         </div>
         <div class="table-responsive">
-        <table id="studentsTable"><thead><tr><th>Name</th><th>Age</th><th>Program</th><th>Type</th><th>Sessions (C/R)</th><th>Makeup</th><th>Actions</th></tr></thead><tbody id="studentsBody"><tr><td colspan="7">Loading...</td></tr></tbody></table>
+        <table id="studentsTable"><thead><tr><th>Name</th><th>Age</th><th>Program</th><th>Type</th><th>Sessions (C/R)</th><th>Makeup</th><th>Status</th><th>Actions</th></tr></thead><tbody id="studentsBody"><tr><td colspan="8">Loading...</td></tr></tbody></table>
         </div>
       </div>
     </div>
@@ -834,19 +834,42 @@
             </div>
             <div class="form-group"><label>Max Students *</label><input type="number" id="groupMaxStudents" value="10" required></div>
         </div><button type="submit" class="btn btn-primary">Create Group</button></form></div>
+
+      <!-- Group Enrollment -->
+      <div class="section"><h2>🔀 Merge Matching Private Sessions into Group</h2>
+        <div class="form-group" style="max-width: 400px; margin-bottom: 20px;">
+          <label>Select Group *</label>
+          <select id="groupEnrollGroup" onchange="loadGroupEnrollments()">
+            <option value="">Select group...</option>
+          </select>
+        </div>
+
+        <div id="groupEnrollSection" style="display: none;">
+          <h3 style="color: #4a5568; margin-bottom: 15px;">👥 Simple Workflow: Schedule Individually, Then Merge</h3>
+          <p style="color: #718096; font-size: 0.9rem; margin-bottom: 12px;">Use private scheduling for each child first. Then come here to merge only the slots where 2 or more students in the same group already have the exact same date and time.</p>
+          <div style="background:#f0f9ff; border-left:4px solid #3182ce; padding:14px 16px; border-radius:8px; margin-bottom:20px; color:#2d3748; font-size:0.9rem;">
+            This keeps session counts, makeup credits, and weekly frequency individual for each student, while still letting you turn matching classes into one group session for resources and attendance.
+          </div>
+
+          <div id="groupEnrollStudents" style="background: #f0f9ff; padding: 20px; border-radius: 10px; margin-bottom: 20px;">
+            <h4 style="color: #2d3748; margin-bottom: 15px;">📅 Matching Private Slots Ready to Merge</h4>
+            <div id="enrollableStudentsList"></div>
+          </div>
+
+          <button onclick="enrollStudentsInGroup()" class="btn btn-primary" style="background: linear-gradient(135deg, #667eea, #764ba2); font-size: 1.1rem; padding: 12px 24px;">
+            🔀 Merge Matching Slots into Group Classes
+          </button>
+        </div>
+      </div>
       <div class="section"><h2>📋 All Groups</h2><div class="table-responsive"><table id="groupsTable"><thead><tr><th>Group Name</th><th>Program</th><th>Duration</th><th>Students</th><th>Max</th><th>Actions</th></tr></thead><tbody id="groupsBody"><tr><td colspan="6">Loading...</td></tr></tbody></table></div></div>
     </div>
 
    <div id="scheduleTab" class="tab-content">
    <div class="section">
-  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
-    <h2 style="margin:0;">📅 Schedule Classes</h2>
-    <div style="display:flex; align-items:center; gap:10px;">
-      <label style="font-weight:600; color:#4a5568; margin:0;">Class Type:</label>
-      <select id="scheduleType" onchange="handleScheduleTypeChange()" style="padding:8px 14px; border:2px solid #B05D9E; border-radius:8px; font-size:1rem; font-weight:600; color:#2d3748; background:white; cursor:pointer;">
-        <option value="private">👤 Private</option>
-        <option value="group">👥 Group</option>
-      </select>
+  <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:16px; margin-bottom:15px; flex-wrap:wrap;">
+    <div>
+      <h2 style="margin:0;">📅 Schedule Individual Classes</h2>
+      <p style="margin:8px 0 0; color:#718096; font-size:0.95rem;">Book each child separately here. If multiple students later match on the same date and time, merge them from the Groups tab.</p>
     </div>
   </div>
         <!-- Private Class Scheduling -->
@@ -859,7 +882,6 @@
             <span style="color: #718096; font-size: 0.85rem; margin-left: 8px;">(Check "Makeup" on rows below to use credits instead of regular sessions)</span>
           </div>
 
-          <!-- Bulk Scheduling Options -->
           <div style="background: #f0f9ff; padding: 20px; border-radius: 10px; margin: 20px 0; border: 2px solid #B05D9E;">
             <h3 style="margin-bottom: 15px; color: #B05D9E;">📆 Bulk Schedule</h3>
             <div class="form-row">
@@ -944,7 +966,7 @@
                 </div>
               </div>
             </div>
-            <button type="button" onclick="generateBulkSchedule('private')" class="btn" style="background: #B05D9E; color: white; margin-top: 10px;">Generate Schedule Preview</button>
+            <button type="button" onclick="generateBulkSchedule()" class="btn" style="background: #B05D9E; color: white; margin-top: 10px;">Generate Schedule Preview</button>
           </div>
 
           <h4 style="margin: 20px 0 10px; color: #4a5568;">📋 Scheduled Classes (or add manually)</h4>
@@ -953,126 +975,6 @@
 
           <div class="form-group" style="flex-direction: row; align-items: center; gap: 10px; margin-top: 15px;">
             <input type="checkbox" id="sendPrivateScheduleEmail" checked style="width: auto; margin: 0;">
-            <label style="margin: 0;">Send Schedule Confirmation Email</label>
-          </div>
-          <button type="submit" class="btn btn-primary" style="margin-top:10px;">Schedule All Classes</button>
-        </form>
-
-        <!-- Group Class Scheduling -->
-        <form id="scheduleGroupForm" style="display: none;">
-          <div class="form-group"><label>Select Group *</label><select id="scheduleGroup" required><option value="">Select group...</option></select></div>
-
-          <!-- Per-Student Session Counts -->
-          <div id="groupStudentSessionCounts" style="display: none; background: #f7fafc; padding: 18px; border-radius: 12px; margin: 12px 0; border: 2px solid #667eea;">
-            <h4 style="margin-bottom: 6px; color: #4a5568;">👥 Step 1 — Set sessions per student</h4>
-
-            <!-- Workflow guide -->
-            <div style="background:#fff;border-radius:8px;padding:12px 14px;margin-bottom:14px;border-left:4px solid #667eea;font-size:0.82rem;color:#4a5568;line-height:1.7;">
-              <strong style="color:#2d3748;">How group renewal works:</strong><br>
-              • <span style="background:#c6f6d5;padding:1px 6px;border-radius:10px;color:#276749;font-weight:600;">📗 Paid</span> — student has remaining sessions → enter how many sessions to book now<br>
-              • <span style="background:#feebc8;padding:1px 6px;border-radius:10px;color:#7b341e;font-weight:600;">🎫 Makeup only</span> — no paid sessions left but has makeup credits → set <strong>Sessions = 0</strong>, enter makeup credits to use<br>
-              • <span style="background:#fed7d7;padding:1px 6px;border-radius:10px;color:#742a2a;font-weight:600;">⏸ No sessions</span> — not paid yet → keep <strong>Sessions = 0</strong> and use <strong>"+ Add to Existing"</strong> after they pay<br>
-              Each student can have a <em>different</em> session count — the bulk scheduler generates slots up to the highest count.
-            </div>
-
-            <div id="studentSessionInputs"></div>
-            <button type="button" id="convertPrivateBtn" onclick="convertPrivateToGroup()" class="btn" style="background: #ed8936; color: white; margin-top: 10px; display: none;">Convert Existing Private Sessions to Group</button>
-          </div>
-
-          <!-- Bulk Scheduling Options for Groups -->
-          <div style="background: #f0f9ff; padding: 20px; border-radius: 10px; margin: 20px 0; border: 2px solid #9f7aea;">
-            <h3 style="margin-bottom: 15px; color: #9f7aea;">📆 Bulk Schedule</h3>
-            <div class="form-row">
-              <div class="form-group">
-                <label>Start Date *</label>
-                <input type="date" id="groupBulkStartDate">
-              </div>
-              <div class="form-group">
-                <label>Number of Sessions *</label>
-                <input type="number" id="groupBulkNumSessions" min="1" max="100" placeholder="e.g. 10">
-              </div>
-            </div>
-            <div class="form-row">
-              <div class="form-group">
-                <label>Time Option 1 *</label>
-                <input type="time" id="groupBulkClassTime1">
-              </div>
-              <div class="form-group">
-                <label>Time Option 2 (Optional)</label>
-                <input type="time" id="groupBulkClassTime2" placeholder="For different days">
-              </div>
-            </div>
-            <div class="form-group">
-              <label>Select Days & Assign Time *</label>
-              <p style="font-size: 0.85rem; color: #718096; margin-bottom: 10px;">Check days and select which time to use for each day</p>
-              <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 8px;">
-                <div style="display: flex; align-items: center; gap: 5px; padding: 8px 12px; background: white; border-radius: 6px; border: 1px solid #ddd;">
-                  <input type="checkbox" name="groupBulkDays" value="0" id="groupBulkDay0">
-                  <label for="groupBulkDay0" style="cursor:pointer; margin-right: 5px;">Sun</label>
-                  <select name="groupBulkDayTime" data-day="0" style="padding: 2px 5px; font-size: 0.8rem; border-radius: 4px;">
-                    <option value="1">Time 1</option>
-                    <option value="2">Time 2</option>
-                  </select>
-                </div>
-                <div style="display: flex; align-items: center; gap: 5px; padding: 8px 12px; background: white; border-radius: 6px; border: 1px solid #ddd;">
-                  <input type="checkbox" name="groupBulkDays" value="1" id="groupBulkDay1">
-                  <label for="groupBulkDay1" style="cursor:pointer; margin-right: 5px;">Mon</label>
-                  <select name="groupBulkDayTime" data-day="1" style="padding: 2px 5px; font-size: 0.8rem; border-radius: 4px;">
-                    <option value="1">Time 1</option>
-                    <option value="2">Time 2</option>
-                  </select>
-                </div>
-                <div style="display: flex; align-items: center; gap: 5px; padding: 8px 12px; background: white; border-radius: 6px; border: 1px solid #ddd;">
-                  <input type="checkbox" name="groupBulkDays" value="2" id="groupBulkDay2">
-                  <label for="groupBulkDay2" style="cursor:pointer; margin-right: 5px;">Tue</label>
-                  <select name="groupBulkDayTime" data-day="2" style="padding: 2px 5px; font-size: 0.8rem; border-radius: 4px;">
-                    <option value="1">Time 1</option>
-                    <option value="2">Time 2</option>
-                  </select>
-                </div>
-                <div style="display: flex; align-items: center; gap: 5px; padding: 8px 12px; background: white; border-radius: 6px; border: 1px solid #ddd;">
-                  <input type="checkbox" name="groupBulkDays" value="3" id="groupBulkDay3">
-                  <label for="groupBulkDay3" style="cursor:pointer; margin-right: 5px;">Wed</label>
-                  <select name="groupBulkDayTime" data-day="3" style="padding: 2px 5px; font-size: 0.8rem; border-radius: 4px;">
-                    <option value="1">Time 1</option>
-                    <option value="2">Time 2</option>
-                  </select>
-                </div>
-                <div style="display: flex; align-items: center; gap: 5px; padding: 8px 12px; background: white; border-radius: 6px; border: 1px solid #ddd;">
-                  <input type="checkbox" name="groupBulkDays" value="4" id="groupBulkDay4">
-                  <label for="groupBulkDay4" style="cursor:pointer; margin-right: 5px;">Thu</label>
-                  <select name="groupBulkDayTime" data-day="4" style="padding: 2px 5px; font-size: 0.8rem; border-radius: 4px;">
-                    <option value="1">Time 1</option>
-                    <option value="2">Time 2</option>
-                  </select>
-                </div>
-                <div style="display: flex; align-items: center; gap: 5px; padding: 8px 12px; background: white; border-radius: 6px; border: 1px solid #ddd;">
-                  <input type="checkbox" name="groupBulkDays" value="5" id="groupBulkDay5">
-                  <label for="groupBulkDay5" style="cursor:pointer; margin-right: 5px;">Fri</label>
-                  <select name="groupBulkDayTime" data-day="5" style="padding: 2px 5px; font-size: 0.8rem; border-radius: 4px;">
-                    <option value="1">Time 1</option>
-                    <option value="2">Time 2</option>
-                  </select>
-                </div>
-                <div style="display: flex; align-items: center; gap: 5px; padding: 8px 12px; background: white; border-radius: 6px; border: 1px solid #ddd;">
-                  <input type="checkbox" name="groupBulkDays" value="6" id="groupBulkDay6">
-                  <label for="groupBulkDay6" style="cursor:pointer; margin-right: 5px;">Sat</label>
-                  <select name="groupBulkDayTime" data-day="6" style="padding: 2px 5px; font-size: 0.8rem; border-radius: 4px;">
-                    <option value="1">Time 1</option>
-                    <option value="2">Time 2</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-            <button type="button" onclick="generateBulkSchedule('group')" class="btn" style="background: #9f7aea; color: white; margin-top: 10px;">Generate Schedule Preview</button>
-          </div>
-
-          <h4 style="margin: 20px 0 10px; color: #4a5568;">📋 Scheduled Classes (or add manually)</h4>
-          <div id="groupClassScheduleList"></div>
-          <button type="button" onclick="addGroupScheduleRow()" class="btn btn-primary" style="background:#718096; margin-top:10px;">+ Add Single Class</button>
-
-          <div class="form-group" style="flex-direction: row; align-items: center; gap: 10px; margin-top: 15px;">
-            <input type="checkbox" id="sendGroupScheduleEmail" checked style="width: auto; margin: 0;">
             <label style="margin: 0;">Send Schedule Confirmation Email</label>
           </div>
           <button type="submit" class="btn btn-primary" style="margin-top:10px;">Schedule All Classes</button>
@@ -4420,7 +4322,7 @@ if (dueEl) {
       }
 
       if (filtered.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: #718096;">No students found matching your search</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: #718096;">No students found matching your search</td></tr>';
         return;
       }
 
@@ -4429,7 +4331,7 @@ if (dueEl) {
         const assessmentBadge = s.assessment_due
           ? `<span style="background: #f59e0b; color: white; padding: 2px 6px; border-radius: 4px; font-size: 10px; margin-left: 5px; cursor: pointer;" onclick="showTab('monthlyAssessment', event); setTimeout(() => document.getElementById('assessmentStudent').value = '${s.id}', 100);" title="Due for assessment (${assessmentReason})">📊 Due</span>`
           : '';
-        return `<tr><td><strong>${s.name}</strong>${assessmentBadge}</td><td>${getAgeDisplay(s)}</td><td>${s.program_name}</td><td>${s.class_type}</td><td>${s.completed_sessions}/${s.remaining_sessions}</td><td>${s.makeup_credits||0}</td><td><button onclick="openStudentModal(${s.id})" class="btn btn-sm btn-primary">View</button> <button onclick="editStudent(${s.id})" class="btn btn-sm btn-warning">Edit</button> <button onclick="askStudentReview(${s.id})" class="btn btn-sm" style="background:#4285f4;color:white;">⭐ Ask Review</button> <button onclick="deleteStudent(${s.id})" class="btn btn-sm btn-danger">Delete</button></td></tr>`;
+        return `<tr><td><strong>${s.name}</strong>${assessmentBadge}</td><td>${getAgeDisplay(s)}</td><td>${s.program_name}</td><td>${s.class_type}</td><td>${s.completed_sessions}/${s.remaining_sessions}</td><td>${s.makeup_credits||0}</td><td><button onclick="toggleStudentStatus(${s.id}, ${!s.is_active})" class="btn btn-sm" style="background: ${s.is_active ? '#e53e3e' : '#38a169'}; color: white;">${s.is_active ? 'Deactivate' : 'Activate'}</button></td><td><button onclick="openStudentModal(${s.id})" class="btn btn-sm btn-primary">View</button> <button onclick="editStudent(${s.id})" class="btn btn-sm btn-warning">Edit</button> <button onclick="askStudentReview(${s.id})" class="btn btn-sm" style="background:#4285f4;color:white;">⭐ Ask Review</button> <button onclick="deleteStudent(${s.id})" class="btn btn-sm btn-danger">Delete</button></td></tr>`;
       }).join('');
     }
 
@@ -4690,48 +4592,39 @@ if (dueEl) {
     }
     addScheduleRow();
 
-    // Bulk Schedule Generator - supports number of sessions and dual time options
-    function generateBulkSchedule(type) {
-      const isPrivate = type === 'private';
-      const startDateEl = document.getElementById(isPrivate ? 'bulkStartDate' : 'groupBulkStartDate');
-      const numSessionsEl = document.getElementById(isPrivate ? 'bulkNumSessions' : 'groupBulkNumSessions');
-      const time1El = document.getElementById(isPrivate ? 'bulkClassTime1' : 'groupBulkClassTime1');
-      const time2El = document.getElementById(isPrivate ? 'bulkClassTime2' : 'groupBulkClassTime2');
-      const daysCheckboxes = document.querySelectorAll(isPrivate ? 'input[name="bulkDays"]:checked' : 'input[name="groupBulkDays"]:checked');
-      const dayTimeSelects = document.querySelectorAll(isPrivate ? 'select[name="bulkDayTime"]' : 'select[name="groupBulkDayTime"]');
-      const container = document.getElementById(isPrivate ? 'classScheduleList' : 'groupClassScheduleList');
+    function generateBulkSchedule() {
+      const startDateEl = document.getElementById('bulkStartDate');
+      const numSessionsEl = document.getElementById('bulkNumSessions');
+      const time1El = document.getElementById('bulkClassTime1');
+      const time2El = document.getElementById('bulkClassTime2');
+      const daysCheckboxes = document.querySelectorAll('input[name="bulkDays"]:checked');
+      const dayTimeSelects = document.querySelectorAll('select[name="bulkDayTime"]');
+      const container = document.getElementById('classScheduleList');
 
-      // Validation
       if (!startDateEl.value) return alert('Please select a start date');
       if (!numSessionsEl.value || numSessionsEl.value < 1) return alert('Please enter number of sessions (at least 1)');
       if (!time1El.value) return alert('Please select Time Option 1');
       if (daysCheckboxes.length === 0) return alert('Please select at least one day of the week');
 
       const startDate = new Date(startDateEl.value);
-      const numSessions = parseInt(numSessionsEl.value);
+      const numSessions = parseInt(numSessionsEl.value, 10);
       const time1 = time1El.value;
-      const time2 = time2El.value || time1; // Fallback to time1 if time2 not set
+      const time2 = time2El.value || time1;
+      const selectedDays = Array.from(daysCheckboxes).map(cb => parseInt(cb.value, 10));
 
-      // Get selected days with their time preference (0=Sun, 1=Mon, etc.)
-      const selectedDays = Array.from(daysCheckboxes).map(cb => parseInt(cb.value));
-
-      // Build day to time mapping
       const dayTimeMap = {};
       dayTimeSelects.forEach(select => {
-        const day = parseInt(select.getAttribute('data-day'));
-        const timeOption = select.value;
-        dayTimeMap[day] = timeOption === '2' ? time2 : time1;
+        const day = parseInt(select.getAttribute('data-day'), 10);
+        dayTimeMap[day] = select.value === '2' ? time2 : time1;
       });
 
-      // Clear existing schedule
       container.innerHTML = '';
 
-      // Generate dates until we have the required number of sessions
       let currentDate = new Date(startDate);
       let count = 0;
       const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-      const maxIterations = 365; // Safety limit - max 1 year
       let iterations = 0;
+      const maxIterations = 365;
 
       while (count < numSessions && iterations < maxIterations) {
         if (selectedDays.includes(currentDate.getDay())) {
@@ -4742,12 +4635,11 @@ if (dueEl) {
           const row = document.createElement('div');
           row.className = 'schedule-row';
           row.style.cssText = 'display: flex; align-items: center; gap: 10px; margin-bottom: 8px; padding: 8px; background: #f7fafc; border-radius: 6px;';
-          const dayClass = isPrivate ? 'day-label-private' : 'day-label-group';
           row.innerHTML = `
-            <span style="min-width: 50px; font-weight: bold;" class="${dayClass}">${dayName}</span>
+            <span style="min-width: 50px; font-weight: bold;">${dayName}</span>
             <input type="date" name="date" value="${dateStr}" required style="flex: 1;">
             <input type="time" name="time" value="${timeForDay}" required style="flex: 1;">
-            ${isPrivate ? '<label style="display: none; align-items: center; gap: 4px; white-space: nowrap; cursor: pointer; font-size: 0.85rem; color: #6b46c1; min-width: fit-content;"><input type="checkbox" name="use_makeup" onchange="updateMakeupCheckboxStates()" style="width: auto; margin: 0;"> Makeup</label>' : ''}
+            <label style="display: none; align-items: center; gap: 4px; white-space: nowrap; cursor: pointer; font-size: 0.85rem; color: #6b46c1; min-width: fit-content;"><input type="checkbox" name="use_makeup" onchange="updateMakeupCheckboxStates()" style="width: auto; margin: 0;"> Makeup</label>
             <button type="button" onclick="this.parentElement.remove(); updateMakeupCheckboxStates();" class="btn btn-sm btn-danger">×</button>
           `;
           container.appendChild(row);
@@ -4757,7 +4649,7 @@ if (dueEl) {
         iterations++;
       }
 
-      if (isPrivate) updateMakeupCheckboxStates();
+      updateMakeupCheckboxStates();
 
       if (count === 0) {
         alert('No classes generated. Check your start date and selected days.');
@@ -4766,13 +4658,6 @@ if (dueEl) {
       } else {
         alert(`✅ Generated ${count} class${count > 1 ? 'es' : ''} preview. Review below and click "Schedule All Classes" to confirm.`);
       }
-    }
-
-    function clearBulkSchedule(type) {
-      const isPrivate = type === 'private';
-      const container = document.getElementById(isPrivate ? 'classScheduleList' : 'groupClassScheduleList');
-      container.innerHTML = '';
-      addScheduleRow();
     }
 
     document.getElementById('schedulePrivateForm').addEventListener('submit', async (e) => {
@@ -5866,7 +5751,9 @@ if (dueEl) {
 
         if (sessionType === 'Group') {
           const attRes = await fetch(`/api/sessions/${sessionId}/group-attendance`);
-          const students = await attRes.json();
+          let students = await attRes.json();
+          // Filter out inactive students
+          students = students.filter(s => s.is_active);
           content += `<h3 style="margin-top:20px;">Group Attendance</h3>
           <p style="color:#718096; font-size:0.85rem; margin-bottom:10px;">⚠️ Excused = Absent with makeup credit | ✗ Unexcused = Absent without makeup credit</p>
           <table><thead><tr><th>Student</th><th>Current Status</th><th>Action</th></tr></thead><tbody>` + students.map(s => {
@@ -6130,8 +6017,8 @@ if (dueEl) {
       try {
         const res = await fetch('/api/groups');
         allGroups = await res.json();
-        document.getElementById('groupsBody').innerHTML = allGroups.map(g => `<tr><td><strong>${g.group_name}</strong></td><td>${g.program_name}</td><td>${g.duration}</td><td>${g.enrolled_students||0}</td><td>${g.max_students}</td><td><button onclick="viewGroupDetails(${g.id})" class="btn btn-sm btn-primary">View</button> <button onclick="editGroup(${g.id})" class="btn btn-sm btn-warning">Edit</button> <button onclick="openEnrollModal(${g.id})" class="btn btn-sm btn-success">Enroll</button> <button onclick="goToGroupSchedule(${g.id})" class="btn btn-sm" style="background:#9f7aea;color:white;">📆 Schedule</button> <button onclick="deleteGroup(${g.id})" class="btn btn-sm btn-danger">Delete</button></td></tr>`).join('');
-        document.getElementById('scheduleGroup').innerHTML = '<option value="">Select group...</option>' + allGroups.map(g => `<option value="${g.id}">${g.group_name}</option>`).join('');
+        document.getElementById('groupsBody').innerHTML = allGroups.map(g => `<tr><td><strong>${g.group_name}</strong></td><td>${g.program_name}</td><td>${g.duration}</td><td>${g.enrolled_students||0}</td><td>${g.max_students}</td><td><button onclick="viewGroupDetails(${g.id})" class="btn btn-sm btn-primary">View</button> <button onclick="editGroup(${g.id})" class="btn btn-sm btn-warning">Edit</button> <button onclick="openEnrollModal(${g.id})" class="btn btn-sm btn-success">Enroll</button> <button onclick="goToGroupSchedule(${g.id})" class="btn btn-sm" style="background:#9f7aea;color:white;">🔀 Merge</button> <button onclick="deleteGroup(${g.id})" class="btn btn-sm btn-danger">Delete</button></td></tr>`).join('');
+        document.getElementById('groupEnrollGroup').innerHTML = '<option value="">Select group...</option>' + allGroups.map(g => `<option value="${g.id}">${g.group_name}</option>`).join('');
       } catch(e) {
         console.error(e);
       }
@@ -6274,7 +6161,7 @@ if (dueEl) {
           alert('✅ ' + result.message);
           loadUpcomingClasses();
           loadStudents();
-          document.getElementById('scheduleGroup').dispatchEvent(new Event('change'));
+          loadGroups();
         } else {
           alert('❌ ' + result.error);
         }
@@ -6477,226 +6364,100 @@ async function saveEditedPayment() {
     
 
     function goToGroupSchedule(groupId) {
-      showTab('schedule');
-      const typeSelect = document.getElementById('scheduleType');
-      typeSelect.value = 'group';
-      handleScheduleTypeChange();
-      // Pre-select the group after the dropdown is populated
+      showTab('groups');
       setTimeout(() => {
-        const groupSelect = document.getElementById('scheduleGroup');
-        if (groupSelect) {
-          groupSelect.value = groupId;
-          groupSelect.dispatchEvent(new Event('change'));
-        }
-      }, 300);
+        const groupSelect = document.getElementById('groupEnrollGroup');
+        if (!groupSelect) return;
+        groupSelect.value = groupId;
+        loadGroupEnrollments();
+        groupSelect.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 200);
     }
 
-    function handleScheduleTypeChange() {
-      const type = document.getElementById('scheduleType').value;
-      document.getElementById('schedulePrivateForm').style.display = type === 'private' ? 'block' : 'none';
-      document.getElementById('scheduleGroupForm').style.display = type === 'group' ? 'block' : 'none';
-      if(type==='group' && document.getElementById('groupClassScheduleList').children.length===0) addGroupScheduleRow();
-    }
+    // ===== NEW GROUP ENROLLMENT FUNCTIONS =====
 
-    function addGroupScheduleRow() {
-      const container = document.getElementById('groupClassScheduleList');
-      const row = document.createElement('div');
-      row.className = 'schedule-row';
-      row.innerHTML = `<input type="date" name="date" required><input type="time" name="time" required><button type="button" onclick="this.parentElement.remove()" class="btn btn-sm btn-danger">×</button>`;
-      container.appendChild(row);
-    }
-
-    // When group is selected, load students and show per-student session count inputs
-    document.getElementById('scheduleGroup').addEventListener('change', async function() {
-      const groupId = this.value;
-      const container = document.getElementById('groupStudentSessionCounts');
-      const inputsDiv = document.getElementById('studentSessionInputs');
-      const numSessionsEl = document.getElementById('groupBulkNumSessions');
+    async function loadGroupEnrollments() {
+      const groupId = document.getElementById('groupEnrollGroup').value;
+      const section = document.getElementById('groupEnrollSection');
+      const studentsList = document.getElementById('enrollableStudentsList');
 
       if (!groupId) {
-        container.style.display = 'none';
-        inputsDiv.innerHTML = '';
+        section.style.display = 'none';
+        return;
+      }
+
+      section.style.display = 'block';
+
+      try {
+        const matchesRes = await fetch(`/api/groups/${groupId}/matching-private-sessions`);
+        const matches = await matchesRes.json();
+
+        if (!Array.isArray(matches) || matches.length === 0) {
+          studentsList.innerHTML = '<p style="color: #718096; font-style: italic;">No matching private slots found yet. Schedule students individually first, then come back here when 2 or more students share the same date and time.</p>';
+          return;
+        }
+
+        studentsList.innerHTML = matches.map(slot => {
+          const dateLabel = new Date(slot.session_date).toLocaleDateString();
+          const studentBadges = slot.students.map(st => `
+            <span style="display:inline-block; background:#faf5ff; color:#6b46c1; border:1px solid #d6bcfa; padding:5px 10px; border-radius:999px; font-size:0.82rem; font-weight:600; margin:4px 6px 0 0;">
+              ${st.student_name} <span style="opacity:0.8;">#${st.session_number || '-'}</span>
+            </span>
+          `).join('');
+
+          return `
+          <div style="padding: 16px; margin-bottom: 12px; background: white; border-radius: 10px; border: 1px solid #B05D9E; box-shadow:0 2px 8px rgba(0,0,0,0.04);">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; gap:12px; flex-wrap:wrap;">
+              <div>
+                <h4 style="margin: 0; color: #4a5568;">🕒 ${dateLabel} at ${slot.session_time}</h4>
+                <div style="font-size: 0.85rem; color: #718096; margin-top: 5px;">
+                  ${slot.student_count} students already booked individually at this same slot
+                </div>
+              </div>
+              <span style="background: #e6fffa; color: #234e52; padding: 5px 10px; border-radius: 12px; font-size: 0.8rem; font-weight: 700;">
+                Ready to merge
+              </span>
+            </div>
+            <div style="font-size: 0.9rem; color: #2d3748;">
+              ${studentBadges}
+            </div>
+          </div>
+        `;
+        }).join('');
+
+      } catch(e) {
+        console.error('Error loading group enrollments:', e);
+        studentsList.innerHTML = '<p style="color: #e74c3c;">Error loading enrollment data</p>';
+      }
+    }
+
+    async function enrollStudentsInGroup() {
+      const groupId = document.getElementById('groupEnrollGroup').value;
+
+      if (!confirm('Merge all matching private slots in this group into group classes?\n\nOnly slots where 2 or more students already share the exact same date and time will be merged. Individual session counts and makeup balances will stay unchanged.')) {
         return;
       }
 
       try {
-        const res = await fetch(`/api/groups/${groupId}/students`);
-        const students = await res.json();
-
-        if (students.length === 0) {
-          container.style.display = 'none';
-          inputsDiv.innerHTML = '';
-          return;
-        }
-
-        inputsDiv.innerHTML = students.map(s => {
-          const makeupCount = parseInt(s.makeup_credits) || 0;
-          const remaining   = s.remaining_sessions || 0;
-
-          // Status badge & row style based on payment state
-          let statusBadge, defaultSessions, rowBg, rowBorder;
-          if (remaining > 0) {
-            statusBadge     = '<span style="background:#c6f6d5;color:#276749;font-size:0.72rem;font-weight:700;padding:2px 8px;border-radius:10px;">📗 Paid</span>';
-            defaultSessions = remaining;
-            rowBg = '#f0fff4'; rowBorder = '#48bb78';
-          } else if (makeupCount > 0) {
-            statusBadge     = '<span style="background:#feebc8;color:#7b341e;font-size:0.72rem;font-weight:700;padding:2px 8px;border-radius:10px;">🎫 Makeup only</span>';
-            defaultSessions = 0;
-            rowBg = '#fffaf0'; rowBorder = '#ed8936';
-          } else {
-            statusBadge     = '<span style="background:#fed7d7;color:#742a2a;font-size:0.72rem;font-weight:700;padding:2px 8px;border-radius:10px;">⏸ Not paid</span>';
-            defaultSessions = 0;
-            rowBg = '#fff5f5'; rowBorder = '#fc8181';
-          }
-
-          return `
-          <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;padding:10px 14px;background:${rowBg};border-radius:8px;border:1px solid ${rowBorder};flex-wrap:wrap;">
-            <span style="flex:1;font-weight:600;min-width:130px;">👤 ${s.name}</span>
-            ${statusBadge}
-            <span style="color:#718096;font-size:0.82rem;">Remaining: <strong>${remaining}</strong></span>
-            <label style="font-size:0.82rem;color:#4a5568;white-space:nowrap;">Sessions to book:</label>
-            <input type="number" class="student-session-count" data-student-id="${s.id}"
-              value="${defaultSessions}" min="0" max="100"
-              style="width:62px;padding:4px 8px;border:1px solid #cbd5e0;border-radius:4px;text-align:center;"
-              onchange="updateGroupMaxSessions()">
-            ${makeupCount > 0 ? `
-            <span style="color:#6b46c1;font-size:0.82rem;font-weight:600;">🎫 ${makeupCount} makeup available</span>
-            <label style="font-size:0.82rem;color:#6b46c1;white-space:nowrap;">Use:</label>
-            <input type="number" class="student-makeup-count" data-student-id="${s.id}"
-              value="${remaining === 0 ? makeupCount : 0}" min="0" max="${makeupCount}"
-              style="width:52px;padding:4px 8px;border:1px solid #9f7aea;border-radius:4px;text-align:center;color:#6b46c1;"
-              onchange="updateGroupMaxSessions()">
-            ` : ''}
-            <button type="button" onclick="addStudentToExistingSessions(${groupId}, ${s.id}, '${s.name.replace(/'/g, "\\'")}', ${remaining}, ${makeupCount})"
-              class="btn-sm" style="background:#3182ce;color:white;border:none;padding:5px 11px;border-radius:6px;cursor:pointer;font-size:0.75rem;white-space:nowrap;"
-              title="Student paid later? Add them to already scheduled upcoming sessions">+ Add to Existing</button>
-          </div>`;
-        }).join('');
-        container.style.display = 'block';
-
-        // Check if any students have pending private sessions - show convert button
-        const convertBtn = document.getElementById('convertPrivateBtn');
-        let hasPrivate = false;
-        for (const s of students) {
-          const sessRes = await fetch(`/api/sessions/${s.id}`);
-          const sessData = await sessRes.json();
-          if (sessData.some && sessData.some(sess => sess.session_type === 'Private' && (sess.status === 'Pending' || sess.status === 'Scheduled'))) {
-            hasPrivate = true;
-            break;
-          }
-        }
-        convertBtn.style.display = hasPrivate ? 'inline-block' : 'none';
-
-        // Auto-set the number of sessions to the max of all student counts
-        updateGroupMaxSessions();
-      } catch (err) {
-        console.error('Error loading group students:', err);
-      }
-    });
-
-    // Update the bulk session count to the max of all per-student counts
-    function updateGroupMaxSessions() {
-      const inputs = document.querySelectorAll('.student-session-count');
-      if (inputs.length === 0) return;
-      let max = 0;
-      inputs.forEach(inp => {
-        const studentId = inp.dataset.studentId;
-        const sessionCount = parseInt(inp.value) || 0;
-        const makeupInp = document.querySelector(`.student-makeup-count[data-student-id="${studentId}"]`);
-        const makeupCount = makeupInp ? (parseInt(makeupInp.value) || 0) : 0;
-        const total = sessionCount + makeupCount;
-        if (total > max) max = total;
-      });
-      const numSessionsEl = document.getElementById('groupBulkNumSessions');
-      numSessionsEl.value = max;
-    }
-
-    // Convert existing private sessions to group sessions
-    async function convertPrivateToGroup() {
-      const groupId = document.getElementById('scheduleGroup').value;
-      if (!groupId) return alert('Select a group first');
-
-      if (!confirm('This will convert all pending private sessions of students in this group into group sessions. Sessions at the same date & time will be merged. Continue?')) return;
-
-      try {
-        const res = await fetch(`/api/groups/${groupId}/convert-private-sessions`, {
+        const res = await fetch(`/api/groups/${groupId}/merge-matching-sessions`, {
           method: 'POST',
-          headers: {'Content-Type': 'application/json'}
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({})
         });
+
         const result = await res.json();
         if (res.ok) {
           alert('✅ ' + result.message);
-          document.getElementById('convertPrivateBtn').style.display = 'none';
+          loadGroupEnrollments(); // Refresh the list
           loadUpcomingClasses();
           loadCalendar();
         } else {
           alert('❌ Failed: ' + result.error);
         }
-      } catch (err) {
+      } catch(err) {
         alert('❌ Error: ' + err.message);
       }
     }
-
-    document.getElementById('scheduleGroupForm').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const groupId = document.getElementById('scheduleGroup').value;
-      if (!groupId) return alert('Select a group');
-      const rows = document.querySelectorAll('#groupClassScheduleList .schedule-row');
-      const classes = [];
-      rows.forEach(row => {
-        const date = row.querySelector('input[name="date"]').value;
-        const time = row.querySelector('input[name="time"]').value;
-        if (date && time) classes.push({ date, time });
-      });
-      if (classes.length === 0) return alert('Add at least one class');
-      const sendEmail = document.getElementById('sendGroupScheduleEmail').checked;
-
-      // Collect per-student session counts and makeup counts
-      const studentInputs = document.querySelectorAll('.student-session-count');
-      let student_sessions = [];
-      if (studentInputs.length > 0) {
-        studentInputs.forEach(inp => {
-          const studentId = parseInt(inp.dataset.studentId);
-          const count = parseInt(inp.value) || 0;
-          const makeupInp = document.querySelector(`.student-makeup-count[data-student-id="${studentId}"]`);
-          const makeup_count = makeupInp ? (parseInt(makeupInp.value) || 0) : 0;
-          if (count > 0 || makeup_count > 0) {
-            student_sessions.push({ student_id: studentId, count: count + makeup_count, makeup_count });
-          }
-        });
-      }
-
-      const submitBtn = e.target.querySelector('button[type="submit"]');
-      const originalText = submitBtn ? submitBtn.textContent : '';
-      if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Scheduling...'; }
-
-      try {
-        const body = { group_id: groupId, classes, send_email: sendEmail };
-        if (student_sessions.length > 0) body.student_sessions = student_sessions;
-
-        const res = await fetch('/api/schedule/group-classes', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify(body)
-        });
-        const result = await res.json();
-        if(res.ok) {
-          alert('✅ ' + result.message);
-          e.target.reset();
-          document.getElementById('groupClassScheduleList').innerHTML = '';
-          document.getElementById('groupStudentSessionCounts').style.display = 'none';
-          document.getElementById('studentSessionInputs').innerHTML = '';
-          loadUpcomingClasses();
-          loadCalendar(); // Refresh calendar with new sessions
-        } else {
-          alert('❌ Failed: ' + result.error);
-        }
-      } catch(err) {
-        alert('❌ Error: ' + err.message);
-      } finally {
-        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = originalText; }
-      }
-    });
 
     function uploadMaterial(id, type) {
       const inp = document.getElementById(type==='ppt'?'pptFile':type==='recording'?'recFile':'hwFile');
@@ -7441,6 +7202,23 @@ async function saveEditedPayment() {
         }
       } catch (err) {
         alert('Error updating resource');
+      }
+    }
+
+    async function toggleStudentStatus(id, newStatus) {
+      try {
+        const res = await fetch(`/api/students/${id}/status`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ is_active: newStatus })
+        });
+        if (res.ok) {
+          loadStudents(); // Reload student list
+        } else {
+          alert('Failed to update student status');
+        }
+      } catch (err) {
+        alert('Error: ' + err.message);
       }
     }
 

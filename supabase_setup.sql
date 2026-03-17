@@ -35,6 +35,16 @@ CREATE TABLE groups (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Group timings table (for recurring class schedules)
+CREATE TABLE group_timings (
+  id SERIAL PRIMARY KEY,
+  group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+  session_date DATE NOT NULL,
+  session_time TIME NOT NULL,
+  day_of_week INTEGER CHECK (day_of_week >= 0 AND day_of_week <= 6),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Students table
 CREATE TABLE students (
   id SERIAL PRIMARY KEY,

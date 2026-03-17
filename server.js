@@ -4409,6 +4409,38 @@ cron.schedule('0 9 * * *', async () => {
 
         const makeupCredits = parseInt(student.available_makeup_credits) || 0;
 
+        // "0 remaining" can mean the final class is already scheduled, not actually finished.
+        // Only send the slots-releasing email when the student has no unresolved sessions left.
+        if (current === 0) {
+          const unresolvedSessions = await pool.query(`
+            SELECT 1
+            FROM (
+              SELECT s.id
+              FROM sessions s
+              WHERE s.student_id = $1
+                AND s.session_type = 'Private'
+                AND s.status IN ('Pending', 'Scheduled')
+
+              UNION
+
+              SELECT s.id
+              FROM sessions s
+              INNER JOIN session_attendance sa
+                ON sa.session_id = s.id
+               AND sa.student_id = $1
+              WHERE s.session_type = 'Group'
+                AND s.status IN ('Pending', 'Scheduled')
+                AND COALESCE(sa.attendance, 'Pending') = 'Pending'
+            ) unresolved
+            LIMIT 1
+          `, [student.id]);
+
+          if (unresolvedSessions.rows.length > 0) {
+            console.log(`⏭️ Skipping slots-releasing email for ${student.name}: unresolved session(s) still scheduled`);
+            continue;
+          }
+        }
+
         // Use different email content for 0 remaining (slots releasing)
         let emailHTML, subject;
         if (current === 0) {
@@ -5592,8 +5624,14 @@ app.post('/api/groups/:groupId/add-to-sessions', async (req, res) => {
 
     const totalToAdd = num_sessions ? parseInt(num_sessions) : upcomingSessions.rows.length;
     const sessionsToAdd = upcomingSessions.rows.slice(0, totalToAdd);
-    const makeupNum = parseInt(makeup_count) || 0;
-    const regularCount = sessionsToAdd.length - makeupNum;
+    let makeupNum = parseInt(makeup_count) || 0;
+    let regularCount = sessionsToAdd.length - makeupNum;
+
+    // If student has no remaining sessions, force all sessions to be makeup
+    if (student.rows[0].remaining_sessions <= 0 && regularCount > 0) {
+      makeupNum = sessionsToAdd.length;
+      regularCount = 0;
+    }
 
     // Validate makeup credits
     if (makeupNum > 0) {
@@ -5804,22 +5842,19 @@ app.post('/api/schedule/private-classes', async (req, res) => {
 app.post('/api/schedule/group-classes', async (req, res) => {
   const client = await pool.connect();
   try {
-    const { group_id, classes, send_email, student_sessions } = req.body;
+    const { group_id, classes, send_email, student_sessions, makeup_sessions } = req.body;
     const group = (await client.query('SELECT * FROM groups WHERE id = $1', [group_id])).rows[0];
     if(!group) return res.status(404).json({ error: 'Group not found' });
 
     const count = (await client.query('SELECT COUNT(*) as count FROM sessions WHERE group_id = $1', [group_id])).rows[0].count;
     let sessionNumber = parseInt(count)+1;
 
-    // Build per-student session count and makeup count maps
-    // student_sessions: [{student_id, count, makeup_count}] - each student gets their first N sessions
-    const hasPerStudentCounts = student_sessions && Array.isArray(student_sessions) && student_sessions.length > 0;
-    const studentCountMap = {};
+    // Handle makeup_sessions: [{student_id, count}] - students using makeup credits
+    const hasMakeupSessions = makeup_sessions && Array.isArray(makeup_sessions) && makeup_sessions.length > 0;
     const studentMakeupMap = {}; // { student_id: number of sessions to use as makeup }
-    if (hasPerStudentCounts) {
-      for (const ss of student_sessions) {
-        studentCountMap[ss.student_id] = parseInt(ss.count);
-        studentMakeupMap[ss.student_id] = parseInt(ss.makeup_count) || 0;
+    if (hasMakeupSessions) {
+      for (const ms of makeup_sessions) {
+        studentMakeupMap[ms.student_id] = parseInt(ms.count);
       }
     }
 
@@ -5835,6 +5870,15 @@ app.post('/api/schedule/group-classes', async (req, res) => {
           const studentName = (await client.query('SELECT name FROM students WHERE id = $1', [studentId])).rows[0]?.name || studentId;
           return res.status(400).json({ error: `Not enough makeup credits for ${studentName}. Need ${needed} but only ${available.rows[0].count} available.` });
         }
+      }
+    }
+
+    // Handle student_sessions: [{student_id, count}] - per-student session limits (-1 = all sessions)
+    const hasPerStudentCounts = student_sessions && Array.isArray(student_sessions) && student_sessions.length > 0;
+    const studentCountMap = {}; // { student_id: max_sessions (-1 for all) }
+    if (hasPerStudentCounts) {
+      for (const ss of student_sessions) {
+        studentCountMap[ss.student_id] = parseInt(ss.count);
       }
     }
 
@@ -5878,10 +5922,17 @@ app.post('/api/schedule/group-classes', async (req, res) => {
 
       const students = await client.query('SELECT id FROM students WHERE group_id = $1 AND is_active = true', [group_id]);
       for(const s of students.rows) {
-        if (hasPerStudentCounts) {
-          const studentMax = studentCountMap[s.id];
-          if (studentMax === undefined || sessionIndex > studentMax) continue;
-        }
+        // Check if student should be scheduled for this session
+        const makeupCount = studentMakeupMap[s.id] || 0;
+        const sessionIndex = i + 1;
+
+        // If student has makeup sessions specified, only schedule for first N sessions
+        if (makeupCount > 0 && sessionIndex > makeupCount) continue;
+
+        // If student has per-student session limit, check that too
+        const studentMax = studentCountMap[s.id];
+        if (studentMax !== undefined && studentMax !== -1 && sessionIndex > studentMax) continue;
+
         await client.query('INSERT INTO session_attendance (session_id, student_id, attendance) VALUES ($1, $2, \'Pending\')', [sessionId, s.id]);
 
         // Track this student's session count
@@ -5889,12 +5940,7 @@ app.post('/api/schedule/group-classes', async (req, res) => {
         studentSessionCounter[s.id]++;
 
         // Check if this session is a makeup session for this student
-        // Makeup sessions are the LAST N sessions (where N = makeup_count)
-        // i.e., sessions beyond (total - makeup_count) are makeup
-        const totalForStudent = studentCountMap[s.id] || classes.length;
-        const makeupForStudent = studentMakeupMap[s.id] || 0;
-        const regularCount = totalForStudent - makeupForStudent;
-        const isMakeup = makeupForStudent > 0 && studentSessionCounter[s.id] > regularCount;
+        const isMakeup = makeupCount > 0 && sessionIndex <= makeupCount;
 
         if (isMakeup && studentMakeupCredits[s.id] && studentMakeupIndex[s.id] < studentMakeupCredits[s.id].length) {
           const creditId = studentMakeupCredits[s.id][studentMakeupIndex[s.id]];
@@ -5936,15 +5982,28 @@ app.post('/api/schedule/group-classes', async (req, res) => {
     if (send_email !== false) {
       const students = await client.query('SELECT * FROM students WHERE group_id = $1 AND is_active = true', [group_id]);
       for (const student of students.rows) {
-        const rows = hasPerStudentCounts
-          ? (studentEmailRows[student.id] || [])
-          : scheduledSessions;
-        if (rows.length === 0) continue;
+        // Determine which classes this student is scheduled for
+        let studentClasses = [];
+        const makeupCount = studentMakeupMap[student.id] || 0;
+        const studentMax = studentCountMap[student.id];
+
+        if (makeupCount > 0) {
+          // Student has makeup sessions - send only their scheduled classes
+          studentClasses = studentEmailRows[student.id] || [];
+        } else if (studentMax !== undefined && studentMax !== -1) {
+          // Student has custom session limit - send only their scheduled classes
+          studentClasses = studentEmailRows[student.id] || [];
+        } else {
+          // Student has paid sessions for all classes - send all classes
+          studentClasses = scheduledSessions;
+        }
+
+        if (studentClasses.length === 0) continue;
 
         const scheduleHTML = getScheduleEmail({
           parent_name: student.parent_name,
           student_name: student.name,
-          schedule_rows: rows.join(''),
+          schedule_rows: studentClasses.join(''),
           timezone_label: getTimezoneLabel(student.parent_timezone || student.timezone || group.timezone || 'Asia/Kolkata')
         });
 
@@ -6080,6 +6139,206 @@ app.post('/api/groups/:groupId/convert-private-sessions', async (req, res) => {
       success: true,
       message: `Converted ${converted} private session(s) to group sessions for ${students.map(s => s.name).join(', ')}`,
       converted
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// ===== NEW GROUP TIMINGS ENDPOINTS =====
+
+// Set recurring class timings for a group
+app.post('/api/groups/:groupId/set-timings', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const groupId = req.params.groupId;
+    const { startDate, numWeeks, time1, time2, selectedDays } = req.body;
+
+    const group = (await client.query('SELECT * FROM groups WHERE id = $1', [groupId])).rows[0];
+    if (!group) return res.status(404).json({ error: 'Group not found' });
+
+    await client.query('BEGIN');
+
+    // Clear existing timings for this group
+    await client.query('DELETE FROM group_timings WHERE group_id = $1', [groupId]);
+
+    // Insert new timings
+    const start = new Date(startDate);
+    for (let week = 0; week < numWeeks; week++) {
+      for (const dayInfo of selectedDays) {
+        const classDate = new Date(start);
+        classDate.setDate(start.getDate() + week * 7 + dayInfo.day);
+
+        const time = dayInfo.timeSlot === 1 ? time1 : (time2 || time1);
+
+        await client.query(`
+          INSERT INTO group_timings (group_id, session_date, session_time, day_of_week)
+          VALUES ($1, $2, $3, $4)
+        `, [groupId, classDate.toISOString().split('T')[0], time, dayInfo.day]);
+      }
+    }
+
+    await client.query('COMMIT');
+    res.json({ success: true, message: 'Group timings saved successfully' });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// Get group timings
+app.get('/api/groups/:groupId/timings', async (req, res) => {
+  try {
+    const groupId = req.params.groupId;
+    const timings = (await pool.query(`
+      SELECT * FROM group_timings
+      WHERE group_id = $1
+      ORDER BY session_date, session_time
+    `, [groupId])).rows;
+
+    res.json(timings);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ===== NEW GROUP ENROLLMENT ENDPOINTS =====
+
+app.get('/api/groups/:groupId/matching-private-sessions', async (req, res) => {
+  try {
+    const rows = (await pool.query(`
+      SELECT s.id as session_id, s.student_id, s.session_date, s.session_time, s.session_number, s.status,
+             st.name as student_name, st.parent_name, st.parent_email
+      FROM sessions s
+      INNER JOIN students st ON st.id = s.student_id
+      WHERE st.group_id = $1
+        AND st.is_active = true
+        AND s.session_type = 'Private'
+        AND s.group_id IS NULL
+        AND s.status IN ('Pending', 'Scheduled')
+      ORDER BY s.session_date, s.session_time, st.name
+    `, [req.params.groupId])).rows;
+
+    const grouped = new Map();
+    for (const row of rows) {
+      const key = `${row.session_date}|${row.session_time}`;
+      if (!grouped.has(key)) {
+        grouped.set(key, {
+          session_date: row.session_date,
+          session_time: row.session_time,
+          students: []
+        });
+      }
+      grouped.get(key).students.push({
+        session_id: row.session_id,
+        student_id: row.student_id,
+        session_number: row.session_number,
+        status: row.status,
+        student_name: row.student_name,
+        parent_name: row.parent_name,
+        parent_email: row.parent_email
+      });
+    }
+
+    const matches = Array.from(grouped.values())
+      .filter(slot => slot.students.length >= 2)
+      .map(slot => ({
+        ...slot,
+        student_count: slot.students.length
+      }));
+
+    res.json(matches);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Enroll students in group classes (convert individual sessions to group)
+app.post('/api/groups/:groupId/enroll-students', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const groupId = req.params.groupId;
+    const group = (await client.query('SELECT * FROM groups WHERE id = $1', [groupId])).rows[0];
+    if (!group) return res.status(404).json({ error: 'Group not found' });
+
+    // Get all active students in this group
+    const students = (await client.query('SELECT id, name FROM students WHERE group_id = $1 AND is_active = true', [groupId])).rows;
+    if (students.length === 0) return res.json({ success: true, message: 'No active students in this group', enrolled: 0 });
+
+    const studentIds = students.map(s => s.id);
+
+    await client.query('BEGIN');
+
+    // Get current max session_number for this group
+    const countResult = (await client.query('SELECT COUNT(*) as count FROM sessions WHERE group_id = $1', [groupId])).rows[0];
+    let sessionNumber = parseInt(countResult.count) + 1;
+
+    let enrolled = 0;
+
+    // Find individual sessions that match group timings
+    const groupTimings = (await client.query('SELECT * FROM group_timings WHERE group_id = $1 ORDER BY session_date, session_time', [groupId])).rows;
+
+    for (const timing of groupTimings) {
+      // Check if there's already a group session for this timing
+      const existingGroupSession = (await client.query(`
+        SELECT id FROM sessions
+        WHERE group_id = $1 AND session_date = $2 AND session_time = $3 AND session_type = 'Group'
+      `, [groupId, timing.session_date, timing.session_time])).rows[0];
+
+      if (existingGroupSession) continue; // Already exists
+
+      // Find individual sessions at this time for group students
+      const individualSessions = (await client.query(`
+        SELECT s.*, sa.student_id
+        FROM sessions s
+        INNER JOIN session_attendance sa ON sa.session_id = s.id
+        WHERE s.session_date = $1 AND s.session_time = $2
+          AND sa.student_id = ANY($3)
+          AND s.session_type = 'Private'
+          AND s.status IN ('Pending', 'Scheduled')
+      `, [timing.session_date, timing.session_time, studentIds])).rows;
+
+      if (individualSessions.length === 0) continue; // No individual sessions to convert
+
+      // Create group session
+      const groupSession = (await client.query(`
+        INSERT INTO sessions (group_id, session_type, session_number, session_date, session_time, class_link, status)
+        VALUES ($1, 'Group', $2, $3, $4, $5, 'Pending')
+        RETURNING id
+      `, [groupId, sessionNumber, timing.session_date, timing.session_time, DEFAULT_CLASS])).rows[0];
+
+      // Convert individual sessions to group attendance
+      for (const session of individualSessions) {
+        // Move materials to group session
+        await client.query(`
+          UPDATE materials SET session_id = $1 WHERE session_id = $2 AND student_id = $3
+        `, [groupSession.id, session.id, session.student_id]);
+
+        // Create group attendance record
+        await client.query(`
+          INSERT INTO session_attendance (session_id, student_id, attendance)
+          VALUES ($1, $2, $3)
+          ON CONFLICT (session_id, student_id) DO UPDATE SET attendance = EXCLUDED.attendance
+        `, [groupSession.id, session.student_id, session.attendance || 'Pending']);
+
+        // Delete the individual session
+        await client.query('DELETE FROM sessions WHERE id = $1', [session.id]);
+      }
+
+      sessionNumber++;
+      enrolled++;
+    }
+
+    await client.query('COMMIT');
+    res.json({
+      success: true,
+      message: `Successfully enrolled students in ${enrolled} group classes`,
+      enrolled
     });
   } catch (err) {
     await client.query('ROLLBACK');
@@ -9291,6 +9550,17 @@ app.get('/api/students/:id/full', async (req, res) => {
   }
 });
 
+app.put('/api/students/:id/status', async (req, res) => {
+  const { id } = req.params;
+  const { is_active } = req.body;
+  try {
+    await pool.query('UPDATE students SET is_active = $1 WHERE id = $2', [is_active, id]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Parent profile update (limited fields for parent self-edit)
 app.put('/api/students/:id/profile', async (req, res) => {
   const { parent_name, parent_email, primary_contact, alternate_contact, date_of_birth } = req.body;
@@ -11555,15 +11825,158 @@ app.get('/api/monthly-assessment/:id', async (req, res) => {
 app.get('/api/students/:id/assessments', async (req, res) => {
   try {
     const result = await pool.query(`
-      SELECT * FROM monthly_assessments
-      WHERE student_id = $1
-        AND assessment_type = 'monthly'
-        AND (deferred IS NULL OR deferred = FALSE)
-      ORDER BY year DESC, month DESC
+      WITH current_student AS (
+        SELECT id, parent_email, name
+        FROM students
+        WHERE id = $1
+      )
+      SELECT
+        a.*,
+        s.name as student_name,
+        d.child_name as demo_child_name,
+        d.parent_email as demo_parent_email,
+        d.parent_name as demo_parent_name,
+        d.demo_date as demo_date,
+        CASE
+          WHEN a.assessment_type = 'monthly' THEN 'monthly'
+          WHEN a.certificate_title IN ('Student of the Week', 'Student of the Month', 'Student of the Year') THEN 'award'
+          ELSE 'demo'
+        END as portal_item_type,
+        CASE
+          WHEN a.assessment_type = 'monthly' THEN 'monthly'
+          ELSE 'demo'
+        END as certificate_page_type,
+        COALESCE(a.year, EXTRACT(YEAR FROM a.created_at)::int) as period_year,
+        COALESCE(a.month, EXTRACT(MONTH FROM a.created_at)::int) as period_month
+      FROM monthly_assessments a
+      LEFT JOIN students s ON a.student_id = s.id
+      LEFT JOIN demo_leads d ON a.demo_lead_id = d.id
+      CROSS JOIN current_student cs
+      WHERE (
+          a.student_id = cs.id
+          OR (
+            a.assessment_type = 'demo'
+            AND a.demo_lead_id IS NOT NULL
+            AND cs.parent_email IS NOT NULL
+            AND LOWER(COALESCE(d.parent_email, '')) = LOWER(cs.parent_email)
+          )
+        )
+        AND (a.assessment_type <> 'monthly' OR a.deferred IS NULL OR a.deferred = FALSE)
+      ORDER BY
+        COALESCE(a.year, EXTRACT(YEAR FROM a.created_at)::int) DESC,
+        COALESCE(a.month, EXTRACT(MONTH FROM a.created_at)::int) DESC,
+        a.created_at DESC
     `, [req.params.id]);
     res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/groups/:groupId/merge-matching-sessions', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const groupId = req.params.groupId;
+    const group = (await client.query('SELECT * FROM groups WHERE id = $1', [groupId])).rows[0];
+    if (!group) return res.status(404).json({ error: 'Group not found' });
+
+    await client.query('BEGIN');
+
+    const rows = (await client.query(`
+      SELECT s.id as session_id, s.student_id, s.session_date, s.session_time, s.session_number, s.status, s.class_link,
+             st.name as student_name
+      FROM sessions s
+      INNER JOIN students st ON st.id = s.student_id
+      WHERE st.group_id = $1
+        AND st.is_active = true
+        AND s.session_type = 'Private'
+        AND s.group_id IS NULL
+        AND s.status IN ('Pending', 'Scheduled')
+      ORDER BY s.session_date, s.session_time, st.name
+    `, [groupId])).rows;
+
+    const grouped = new Map();
+    for (const row of rows) {
+      const key = `${row.session_date}|${row.session_time}`;
+      if (!grouped.has(key)) grouped.set(key, []);
+      grouped.get(key).push(row);
+    }
+
+    const sessionCountResult = await client.query('SELECT COUNT(*) as count FROM sessions WHERE group_id = $1', [groupId]);
+    let nextSessionNumber = parseInt(sessionCountResult.rows[0].count || 0, 10) + 1;
+    let mergedSlots = 0;
+    let mergedStudents = 0;
+    const affectedStudents = new Set();
+
+    for (const slotRows of grouped.values()) {
+      if (slotRows.length < 2) continue;
+
+      const { session_date, session_time } = slotRows[0];
+      let groupSession = (await client.query(`
+        SELECT id
+        FROM sessions
+        WHERE group_id = $1
+          AND session_type = 'Group'
+          AND session_date = $2
+          AND session_time = $3
+        LIMIT 1
+      `, [groupId, session_date, session_time])).rows[0];
+
+      if (!groupSession) {
+        groupSession = (await client.query(`
+          INSERT INTO sessions (group_id, session_type, session_number, session_date, session_time, class_link, status)
+          VALUES ($1, 'Group', $2, $3, $4, $5, 'Pending')
+          RETURNING id
+        `, [groupId, nextSessionNumber, session_date, session_time, slotRows[0].class_link || DEFAULT_CLASS])).rows[0];
+        nextSessionNumber++;
+      }
+
+      for (const row of slotRows) {
+        await client.query(`
+          UPDATE materials
+          SET session_id = $1, group_id = $2
+          WHERE session_id = $3 AND student_id = $4
+        `, [groupSession.id, groupId, row.session_id, row.student_id]);
+
+        await client.query(`
+          UPDATE session_materials
+          SET session_id = $1
+          WHERE session_id = $2
+        `, [groupSession.id, row.session_id]);
+
+        await client.query(`
+          INSERT INTO session_attendance (session_id, student_id, attendance)
+          VALUES ($1, $2, 'Pending')
+          ON CONFLICT (session_id, student_id)
+          DO UPDATE SET attendance = EXCLUDED.attendance
+        `, [groupSession.id, row.student_id]);
+
+        await client.query('DELETE FROM sessions WHERE id = $1', [row.session_id]);
+        affectedStudents.add(String(row.student_id));
+        mergedStudents++;
+      }
+
+      mergedSlots++;
+    }
+
+    await client.query('COMMIT');
+
+    affectedStudents.forEach(id => clearStudentSessionsCache(id));
+    clearAdminDashboardCache();
+
+    res.json({
+      success: true,
+      mergedSlots,
+      mergedStudents,
+      message: mergedSlots > 0
+        ? `Merged ${mergedSlots} matching slot${mergedSlots > 1 ? 's' : ''} into group classes for ${mergedStudents} student session${mergedStudents > 1 ? 's' : ''}`
+        : 'No matching private sessions found to merge'
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
   }
 });
 

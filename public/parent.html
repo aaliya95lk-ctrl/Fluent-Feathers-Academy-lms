@@ -61,7 +61,35 @@
     header h1 { color: #B05D9E; font-size: 24px; }
     .login-section { background: white; padding: 40px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); max-width: 500px; margin: 50px auto; text-align: center; }
     .info-card { background: white; padding: 25px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); margin-bottom: 25px; border-left: 5px solid #B05D9E; }
-    .tabs { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
+    .tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-bottom: 20px; }
+    .tab-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      background: #ffffff;
+      border: 1px solid #eadcf6;
+      border-radius: 14px;
+      padding: 12px;
+      box-shadow: 0 2px 10px rgba(176,93,158,0.08);
+    }
+    .tab-group-label {
+      padding: 7px 12px;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 800;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+    .tab-group-label.learning {
+      background: linear-gradient(135deg, #ede9fe 0%, #ddd6fe 100%);
+      color: #6b21a8;
+    }
+    .tab-group-label.extras {
+      background: linear-gradient(135deg, #fce7f3 0%, #fbcfe8 100%);
+      color: #9d174d;
+    }
     .tab-btn { padding: 12px 20px; background: white; border: 2px solid #e2e8f0; border-radius: 8px; cursor: pointer; font-weight: 600; transition: all 0.2s; position: relative; }
     .tab-btn.active { background: #B05D9E; color: white; border-color: #B05D9E; }
     .tab-btn .red-dot { position: absolute; top: 4px; right: 4px; width: 10px; height: 10px; background: #e53e3e; border-radius: 50%; display: none; }
@@ -85,6 +113,158 @@
     #studentSelector { margin-bottom: 20px; padding: 20px; background: #fff3cd; border: 1px solid #ffeeba; border-radius: 8px; text-align: center; display: none; }
     .makeup-card { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white; padding: 20px; border-radius: 10px; margin-bottom: 20px; text-align: center; }
     .makeup-card h3 { margin-bottom: 10px; }
+    .makeup-summary-strip {
+      background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+      color: white;
+      border-radius: 14px;
+      padding: 18px 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 8px 24px rgba(245, 87, 108, 0.28);
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .makeup-summary-strip:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 28px rgba(245, 87, 108, 0.36);
+    }
+    .makeup-summary-inner {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+    }
+    .makeup-summary-left {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      min-width: 0;
+      flex: 1;
+    }
+    .makeup-summary-icon {
+      font-size: 2rem;
+      flex-shrink: 0;
+    }
+    .makeup-summary-info {
+      min-width: 0;
+      flex: 1;
+    }
+    .makeup-summary-title {
+      font-size: 1rem;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    .makeup-summary-detail {
+      font-size: 0.82rem;
+      color: rgba(255,255,255,0.88);
+      line-height: 1.4;
+    }
+    .makeup-summary-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+    .makeup-summary-count {
+      background: rgba(255,255,255,0.22);
+      border: 1px solid rgba(255,255,255,0.26);
+      border-radius: 999px;
+      padding: 8px 14px;
+      font-size: 0.9rem;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .makeup-summary-btn {
+      background: rgba(255,255,255,0.18);
+      color: white;
+      border: 1px solid rgba(255,255,255,0.3);
+      border-radius: 999px;
+      padding: 8px 14px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .makeup-history-stats {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    .makeup-history-stat {
+      border-radius: 12px;
+      padding: 16px;
+      color: white;
+    }
+    .makeup-history-stat .num {
+      font-size: 1.6rem;
+      font-weight: 800;
+      margin-bottom: 4px;
+    }
+    .makeup-history-stat .label {
+      font-size: 0.82rem;
+      opacity: 0.92;
+    }
+    .assessment-group {
+      background: white;
+      border: 1px solid #e2e8f0;
+      border-radius: 14px;
+      margin-bottom: 16px;
+      overflow: hidden;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+    }
+    .assessment-group summary {
+      list-style: none;
+      cursor: pointer;
+      padding: 18px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      background: linear-gradient(135deg, #faf5ff 0%, #f3e8ff 100%);
+    }
+    .assessment-group summary::-webkit-details-marker {
+      display: none;
+    }
+    .assessment-group-title {
+      font-size: 1rem;
+      font-weight: 800;
+      color: #6b21a8;
+    }
+    .assessment-group-meta {
+      font-size: 0.82rem;
+      color: #7c3aed;
+      font-weight: 600;
+    }
+    .assessment-item {
+      border-top: 1px solid #edf2f7;
+      background: white;
+    }
+    .assessment-item summary {
+      list-style: none;
+      cursor: pointer;
+      padding: 16px 18px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      background: white;
+    }
+    .assessment-item summary::-webkit-details-marker {
+      display: none;
+    }
+    .assessment-item-body {
+      padding: 0 18px 18px;
+    }
+    .assessment-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 10px;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      white-space: nowrap;
+    }
 
     /* Badges - Cute Compact Design */
     .badges-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 12px; margin-top: 15px; }
@@ -143,7 +323,8 @@
       header h1 { font-size: 18px; }
       .section { padding: 15px; overflow-x: hidden; }
       .info-card { padding: 15px; overflow-x: hidden; }
-      .tabs { justify-content: center; }
+      .tabs { grid-template-columns: 1fr; }
+      .tab-group { width: 100%; justify-content: center; }
       .tab-btn { padding: 10px 15px; font-size: 0.9rem; }
 
       /* Prevent horizontal overflow on body */
@@ -220,6 +401,9 @@
       .challenge-summary-inner { flex-direction: column; text-align: center; gap: 8px; }
       .challenge-summary-left { justify-content: center; }
       .challenge-summary-strip { padding: 12px 16px; }
+      .makeup-summary-inner { flex-direction: column; align-items: flex-start; }
+      .makeup-summary-right { width: 100%; justify-content: space-between; }
+      .makeup-history-stats { grid-template-columns: 1fr; }
     }
 
     @media screen and (max-width: 480px) {
@@ -227,6 +411,7 @@
       header p { font-size: 10px !important; }
       #headerLogo { height: 35px !important; }
       .tab-btn { padding: 8px 10px; font-size: 0.8rem; }
+      .tab-group-label { font-size: 0.68rem; padding: 6px 10px; }
       table { min-width: 500px; }
       th, td { padding: 6px 4px; font-size: 0.8rem; }
       .badges-grid { grid-template-columns: repeat(2, 1fr); }
@@ -259,6 +444,9 @@
       .badge-summary-count { font-size: 0.9rem; }
       .badge-summary-latest { font-size: 0.7rem; }
       .badge-summary-btn { padding: 6px 10px; font-size: 0.75rem; }
+      .makeup-summary-icon { font-size: 1.5rem; }
+      .makeup-summary-count { padding: 7px 12px; font-size: 0.8rem; }
+      .makeup-summary-btn { padding: 7px 12px; font-size: 0.75rem; }
 
       /* Session progress card - 2 columns on very small screens */
       #sessionProgressCard > div { grid-template-columns: repeat(2, 1fr) !important; gap: 8px !important; }
@@ -594,17 +782,19 @@
         </div>
       </div>
 
-      <div id="makeupCreditCard" class="section" style="display: none;">
-        <div style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white; padding: 20px; border-radius: 10px; margin-bottom: 20px; text-align: center;">
-          <h3 style="margin-bottom: 10px;">🎁 Makeup Credits Available</h3>
-          <div style="font-size: 2rem; font-weight: bold;" id="makeupCount">0</div>
-          <p style="opacity: 0.9; margin-top: 5px;">Contact your teacher to schedule makeup classes</p>
-        </div>
-
-        <!-- Makeup Credit History -->
-        <h3 style="color: #B05D9E; margin-bottom: 15px;">📋 Makeup Credit History</h3>
-        <div id="makeupCreditsHistory">
-          <p style="text-align: center; color: #718096;">Loading history...</p>
+      <div id="makeupCreditCard" class="makeup-summary-strip" onclick="showTab('makeup', event)">
+        <div class="makeup-summary-inner">
+          <div class="makeup-summary-left">
+            <div class="makeup-summary-icon">🎁</div>
+            <div class="makeup-summary-info">
+              <div class="makeup-summary-title">Makeup Credits</div>
+              <div class="makeup-summary-detail" id="makeupSummaryText">Track available, scheduled, and used makeup classes in one place.</div>
+            </div>
+          </div>
+          <div class="makeup-summary-right">
+            <div class="makeup-summary-count"><span id="makeupCount">0</span> available</div>
+            <button class="makeup-summary-btn" onclick="event.stopPropagation(); showTab('makeup', event)">View Details →</button>
+          </div>
         </div>
       </div>
 
@@ -652,16 +842,23 @@
       </div>
 
       <div class="tabs">
-        <button class="tab-btn active" onclick="showTab('upcoming', event)">📅 Upcoming</button>
-        <button class="tab-btn" onclick="showTab('past', event)">📚 Past Classes</button>
-        <button class="tab-btn" onclick="showTab('assessments', event)">📊 Report Cards</button>
-        <button class="tab-btn" id="tabBtnAchievements" onclick="showTab('achievements', event)">🏆 Achievements<span class="red-dot" id="dotAchievements"></span></button>
-        <button class="tab-btn" id="tabBtnChallenges" onclick="showTab('challenges', event)">🎯 Challenges<span class="red-dot" id="dotChallenges"></span></button>
-        <button class="tab-btn" id="tabBtnAnnouncements" onclick="showTab('announcements', event)">📢 News<span class="red-dot" id="dotAnnouncements"></span></button>
-        <button class="tab-btn" id="tabBtnEvents" onclick="showTab('events', event)">🎉 Events<span class="red-dot" id="dotEvents"></span></button>
-        <button class="tab-btn" id="tabBtnResources" onclick="showTab('resources', event)">📚 Resources<span class="red-dot" id="dotResources"></span></button>
-        <button class="tab-btn" id="tabBtnPayments" onclick="showTab('payments', event)">💳 Payments<span class="red-dot" id="dotPayments"></span></button>
-        <button class="tab-btn" onclick="showTab('profile', event)">👤 Profile</button>
+        <div class="tab-group">
+          <span class="tab-group-label learning">Learning</span>
+          <button class="tab-btn active" onclick="showTab('upcoming', event)">📅 Upcoming</button>
+          <button class="tab-btn" onclick="showTab('past', event)">📚 Past Classes</button>
+          <button class="tab-btn" onclick="showTab('makeup', event)">🎁 Makeup</button>
+          <button class="tab-btn" onclick="showTab('assessments', event)">📊 Report Cards</button>
+          <button class="tab-btn" id="tabBtnAnnouncements" onclick="showTab('announcements', event)">📢 News<span class="red-dot" id="dotAnnouncements"></span></button>
+        </div>
+        <div class="tab-group">
+          <span class="tab-group-label extras">Extras</span>
+          <button class="tab-btn" id="tabBtnAchievements" onclick="showTab('achievements', event)">🏆 Achievements<span class="red-dot" id="dotAchievements"></span></button>
+          <button class="tab-btn" id="tabBtnChallenges" onclick="showTab('challenges', event)">🎯 Challenges<span class="red-dot" id="dotChallenges"></span></button>
+          <button class="tab-btn" id="tabBtnEvents" onclick="showTab('events', event)">🎉 Events<span class="red-dot" id="dotEvents"></span></button>
+          <button class="tab-btn" id="tabBtnResources" onclick="showTab('resources', event)">📚 Resources<span class="red-dot" id="dotResources"></span></button>
+          <button class="tab-btn" id="tabBtnPayments" onclick="showTab('payments', event)">💳 Payments<span class="red-dot" id="dotPayments"></span></button>
+          <button class="tab-btn" onclick="showTab('profile', event)">👤 Profile</button>
+        </div>
       </div>
 
       <div id="upcomingTab" class="tab-content active">
@@ -803,6 +1000,32 @@
           <h3 style="margin-top: 30px; margin-bottom: 15px;">📋 Payment History</h3>
           <div id="paymentHistoryContainer">
             <p style="text-align: center; color: #718096;">Loading payment history...</p>
+          </div>
+        </div>
+      </div>
+
+      <div id="makeupTab" class="tab-content">
+        <div class="section">
+          <h2 style="color: #B05D9E; margin-bottom: 8px;">🎁 Makeup Credits</h2>
+          <p style="color: #718096; margin-bottom: 18px;">This page shows the full makeup credit history, including available credits, scheduled makeup classes, and used credits.</p>
+
+          <div class="makeup-history-stats">
+            <div class="makeup-history-stat" style="background: linear-gradient(135deg, #38a169 0%, #2f855a 100%);">
+              <div class="num" id="makeupAvailableCount">0</div>
+              <div class="label">Available Credits</div>
+            </div>
+            <div class="makeup-history-stat" style="background: linear-gradient(135deg, #805ad5 0%, #6b46c1 100%);">
+              <div class="num" id="makeupScheduledCount">0</div>
+              <div class="label">Scheduled Makeup Classes</div>
+            </div>
+            <div class="makeup-history-stat" style="background: linear-gradient(135deg, #718096 0%, #4a5568 100%);">
+              <div class="num" id="makeupUsedCount">0</div>
+              <div class="label">Used Credits</div>
+            </div>
+          </div>
+
+          <div id="makeupCreditsHistory">
+            <p style="text-align: center; color: #718096;">Loading history...</p>
           </div>
         </div>
       </div>
@@ -2518,82 +2741,120 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
 
         // Count available credits (not used and not scheduled) - case insensitive check
         const availableCredits = history.filter(c => c.status && c.status.toLowerCase() === 'available').length;
-        const hasHistory = history.length > 0;
+        const scheduledCredits = history.filter(c => c.status && c.status.toLowerCase() === 'scheduled').length;
+        const usedCredits = history.filter(c => c.status && c.status.toLowerCase() === 'used').length;
 
         // Update top card makeup display
         const topMakeupDisplay = document.getElementById('displayMakeup');
         if (topMakeupDisplay) topMakeupDisplay.textContent = availableCredits;
+        document.getElementById('makeupCount').textContent = availableCredits;
+        document.getElementById('makeupAvailableCount').textContent = availableCredits;
+        document.getElementById('makeupScheduledCount').textContent = scheduledCredits;
+        document.getElementById('makeupUsedCount').textContent = usedCredits;
 
-        if (hasHistory) {
-          document.getElementById('makeupCreditCard').style.display = 'block';
-          document.getElementById('makeupCount').textContent = availableCredits;
-
-          // Display history
-          const historyContainer = document.getElementById('makeupCreditsHistory');
+        const summaryText = document.getElementById('makeupSummaryText');
+        if (summaryText) {
           if (history.length === 0) {
-            historyContainer.innerHTML = '<p style="text-align: center; color: #718096;">No makeup credit history</p>';
+            summaryText.textContent = 'No makeup credit history yet.';
+          } else if (availableCredits > 0) {
+            summaryText.textContent = `You currently have ${availableCredits} available makeup credit${availableCredits > 1 ? 's' : ''}. Tap to view full history.`;
+          } else if (scheduledCredits > 0) {
+            summaryText.textContent = `${scheduledCredits} makeup class${scheduledCredits > 1 ? 'es are' : ' is'} already scheduled. Tap to view details.`;
           } else {
-            historyContainer.innerHTML = history.map(c => {
-              let statusBadge, statusText;
-              const statusLower = (c.status || '').toLowerCase();
-              if (statusLower === 'available') {
-                statusBadge = 'background: #38a169; color: white;';
-                statusText = 'Available';
-              } else if (statusLower === 'scheduled') {
-                statusBadge = 'background: #805ad5; color: white;';
-                const rawSchedDate = c.scheduled_session_date || c.scheduled_date;
-                const rawSchedTime = c.scheduled_session_time || c.scheduled_time;
-                let schedBadgeDate = '';
-                if (rawSchedDate && rawSchedTime) {
-                  const localDt = new Date(rawSchedDate.split('T')[0] + 'T' + rawSchedTime + 'Z');
-                  schedBadgeDate = localDt.toLocaleDateString();
-                } else if (rawSchedDate) {
-                  schedBadgeDate = new Date(rawSchedDate).toLocaleDateString();
+            summaryText.textContent = 'View the full makeup credit history and past usage details.';
+          }
+        }
+
+        // Display history
+        const historyContainer = document.getElementById('makeupCreditsHistory');
+        if (history.length === 0) {
+          historyContainer.innerHTML = '<p style="text-align: center; color: #718096;">No makeup credit history</p>';
+        } else {
+          historyContainer.innerHTML = history.map(c => {
+            let statusBadge, statusText;
+            const statusLower = (c.status || '').toLowerCase();
+            if (statusLower === 'available') {
+              statusBadge = 'background: #38a169; color: white;';
+              statusText = 'Available';
+            } else if (statusLower === 'scheduled') {
+              statusBadge = 'background: #805ad5; color: white;';
+              const rawSchedDate = c.scheduled_session_date || c.scheduled_date;
+              const rawSchedTime = c.scheduled_session_time || c.scheduled_time;
+              let schedBadgeDate = '';
+              if (rawSchedDate && rawSchedTime) {
+                try {
+                  const dateStr = rawSchedDate.split('T')[0];
+                  const localDt = new Date(dateStr + 'T' + rawSchedTime + 'Z');
+                  if (!isNaN(localDt.getTime())) {
+                    schedBadgeDate = localDt.toLocaleDateString();
+                  } else {
+                    schedBadgeDate = rawSchedDate + ' ' + rawSchedTime;
+                  }
+                } catch (e) {
+                  schedBadgeDate = rawSchedDate + ' ' + rawSchedTime;
                 }
-                statusText = 'Scheduled' + (schedBadgeDate ? ' - ' + schedBadgeDate : '');
-              } else if (statusLower === 'used') {
-                statusBadge = 'background: #718096; color: white;';
-                statusText = 'Used';
-              } else {
-                statusBadge = 'background: #e2e8f0; color: #4a5568;';
-                statusText = c.status || 'Unknown';
+              } else if (rawSchedDate) {
+                schedBadgeDate = rawSchedDate;
               }
+              statusText = 'Scheduled' + (schedBadgeDate ? ' - ' + schedBadgeDate : '');
+            } else if (statusLower === 'used') {
+              statusBadge = 'background: #718096; color: white;';
+              statusText = 'Used';
+            } else {
+              statusBadge = 'background: #e2e8f0; color: #4a5568;';
+              statusText = c.status || 'Unknown';
+            }
 
-              const earnedDate = c.created_at ? new Date(c.created_at).toLocaleDateString() : 'N/A';
-              const addedBy = c.added_by === 'admin' ? 'Added by Teacher' : c.added_by === 'system' ? 'From Cancellation' : '';
-              const bgColor = statusLower === 'scheduled' ? 'linear-gradient(135deg, #e9d8fd 0%, #faf5ff 100%)' : '#f7fafc';
-              const borderColor = statusLower === 'available' ? '#38a169' : statusLower === 'scheduled' ? '#805ad5' : '#718096';
+            const earnedDate = c.created_at ? new Date(c.created_at).toLocaleDateString() : 'N/A';
+            const addedBy = c.added_by === 'admin' ? 'Added by Teacher' : c.added_by === 'system' ? 'From Cancellation' : '';
+            const bgColor = statusLower === 'scheduled' ? 'linear-gradient(135deg, #e9d8fd 0%, #faf5ff 100%)' : '#f7fafc';
+            const borderColor = statusLower === 'available' ? '#38a169' : statusLower === 'scheduled' ? '#805ad5' : '#718096';
 
-              let scheduledDiv = '';
-              if (statusLower === 'scheduled' && (c.scheduled_session_date || c.scheduled_date)) {
-                const rawDate2 = (c.scheduled_session_date || c.scheduled_date).split('T')[0];
-                const rawTime2 = c.scheduled_session_time || c.scheduled_time;
-                let schedDateStr, schedTimeStr;
-                if (rawDate2 && rawTime2) {
-                  const localDt2 = new Date(rawDate2 + 'T' + rawTime2 + 'Z');
-                  schedDateStr = localDt2.toLocaleDateString();
-                  schedTimeStr = ' at ' + localDt2.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                } else {
-                  schedDateStr = new Date(rawDate2).toLocaleDateString();
-                  schedTimeStr = '';
+            let scheduledDiv = '';
+            if (statusLower === 'scheduled' && (c.scheduled_session_date || c.scheduled_date || c.scheduled_time)) {
+              const rawDate2 = (c.scheduled_session_date || c.scheduled_date || '').split('T')[0];
+              const rawTime2 = c.scheduled_session_time || c.scheduled_time;
+              let schedDateStr = '', schedTimeStr = '';
+              if (rawDate2) {
+                try {
+                  const dateObj = new Date(rawDate2);
+                  if (!isNaN(dateObj.getTime())) {
+                    schedDateStr = dateObj.toLocaleDateString();
+                  } else {
+                    schedDateStr = rawDate2;
+                  }
+                } catch (e) {
+                  schedDateStr = rawDate2;
                 }
+              }
+              if (rawTime2) {
+                try {
+                  const timeObj = new Date('1970-01-01T' + rawTime2 + 'Z');
+                  if (!isNaN(timeObj.getTime())) {
+                    schedTimeStr = ' at ' + timeObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                  } else {
+                    schedTimeStr = ' at ' + rawTime2;
+                  }
+                } catch (e) {
+                  schedTimeStr = ' at ' + rawTime2;
+                }
+              }
+              if (schedDateStr || schedTimeStr) {
                 scheduledDiv = '<div style="margin-top: 8px; background: #805ad5; color: white; padding: 6px 12px; border-radius: 6px; font-size: 0.85rem; word-break: break-word;">Makeup Class: ' + schedDateStr + schedTimeStr + '</div>';
               }
+            }
 
-              return '<div style="background: ' + bgColor + '; border-left: 4px solid ' + borderColor + '; padding: 15px; border-radius: 8px; margin-bottom: 12px;">' +
-                '<div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 10px;">' +
-                  '<div>' +
-                    '<div style="font-weight: 600; color: #2d3748; margin-bottom: 5px;">' + (c.reason || 'Makeup Credit') + '</div>' +
-                    '<div style="font-size: 0.85rem; color: #718096;">Earned: ' + earnedDate + (addedBy ? ' - ' + addedBy : '') + '</div>' +
-                    scheduledDiv +
-                  '</div>' +
-                  '<span style="' + statusBadge + ' padding: 4px 12px; border-radius: 12px; font-size: 0.8rem; font-weight: 600; white-space: nowrap; flex-shrink: 0;">' + statusText + '</span>' +
+            return '<div style="background: ' + bgColor + '; border-left: 4px solid ' + borderColor + '; padding: 15px; border-radius: 8px; margin-bottom: 12px;">' +
+              '<div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 10px;">' +
+                '<div>' +
+                  '<div style="font-weight: 600; color: #2d3748; margin-bottom: 5px;">' + (c.reason || 'Makeup Credit') + '</div>' +
+                  '<div style="font-size: 0.85rem; color: #718096;">Earned: ' + earnedDate + (addedBy ? ' - ' + addedBy : '') + '</div>' +
+                  scheduledDiv +
                 '</div>' +
-              '</div>';
-            }).join('');
-          }
-        } else {
-          document.getElementById('makeupCreditCard').style.display = 'none';
+                '<span style="' + statusBadge + ' padding: 4px 12px; border-radius: 12px; font-size: 0.8rem; font-weight: 600; white-space: nowrap; flex-shrink: 0;">' + statusText + '</span>' +
+              '</div>' +
+            '</div>';
+          }).join('');
         }
       } catch(e) {
         console.error('Error loading makeup credits:', e);
@@ -4319,30 +4580,27 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
         const container = document.getElementById('assessmentsContainer');
 
         if (assessments.length === 0) {
-          container.innerHTML = '<p style="text-align: center; color: #718096; padding: 20px;">No monthly assessments yet. Your teacher will share progress reports soon! 📊</p>';
+          container.innerHTML = '<p style="text-align: center; color: #718096; padding: 20px;">No assessments, awards, or certificates yet. Your teacher will share them here soon. 📊</p>';
           return;
         }
 
         const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-
-        // ── Build progress chart if 2+ assessments have skill_ratings ──────
-        const ratedAssessments = assessments.filter(a => a.skill_ratings);
+        const ratedAssessments = assessments.filter(a => a.portal_item_type === 'monthly' && a.skill_ratings);
         let chartHTML = '';
         if (ratedAssessments.length >= 1) {
-          // Get all categories present
           let allCats = new Set();
           ratedAssessments.forEach(a => {
-            let r = {}; try { r = typeof a.skill_ratings === 'string' ? JSON.parse(a.skill_ratings) : a.skill_ratings; } catch(e) {}
+            let r = {};
+            try { r = typeof a.skill_ratings === 'string' ? JSON.parse(a.skill_ratings) : a.skill_ratings; } catch(e) {}
             Object.keys(r).forEach(k => allCats.add(k));
           });
           allCats = Array.from(allCats);
-          // Use latest assessment for the chart
-          const latestRatings = (() => { let r={}; try { r = typeof ratedAssessments[0].skill_ratings==='string' ? JSON.parse(ratedAssessments[0].skill_ratings) : ratedAssessments[0].skill_ratings; } catch(e){} return r; })();
+          const latestRatings = (() => { let r = {}; try { r = typeof ratedAssessments[0].skill_ratings === 'string' ? JSON.parse(ratedAssessments[0].skill_ratings) : ratedAssessments[0].skill_ratings; } catch(e) {} return r; })();
           const catIcons = { 'Phonics':'🔤','Reading':'📖','Spoken English':'🗣️','Grammar':'📝','Vocabulary':'📚','Creative Writing':'✍️','Spellings':'🔠','Handwriting':'✏️','Public Speaking':'🎤' };
           const bars = allCats.map(cat => {
             const val = latestRatings[cat] || 0;
             const pct = (val / 5) * 100;
-            const prev = ratedAssessments.length > 1 ? (() => { let r={}; try{r=typeof ratedAssessments[1].skill_ratings==='string'?JSON.parse(ratedAssessments[1].skill_ratings):ratedAssessments[1].skill_ratings;}catch(e){} return r[cat]||0; })() : 0;
+            const prev = ratedAssessments.length > 1 ? (() => { let r = {}; try { r = typeof ratedAssessments[1].skill_ratings === 'string' ? JSON.parse(ratedAssessments[1].skill_ratings) : ratedAssessments[1].skill_ratings; } catch(e) {} return r[cat] || 0; })() : 0;
             const trend = val > prev ? '▲' : val < prev ? '▼' : '';
             const trendColor = val > prev ? '#38a169' : val < prev ? '#e53e3e' : '#718096';
             return `
@@ -4356,119 +4614,157 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
               </div>
             </div>`;
           }).join('');
+          const latestMonth = ratedAssessments[0].month ? `${monthNames[ratedAssessments[0].month - 1]} ${ratedAssessments[0].year}` : 'Latest Report';
           chartHTML = `
           <div style="background:white;border:1px solid #e2e8f0;border-radius:12px;padding:22px;margin-bottom:18px;box-shadow:0 2px 8px rgba(0,0,0,0.06);">
-            <h3 style="margin:0 0 16px;color:#2d3748;font-size:16px;">📈 Skills Progress — ${monthNames[ratedAssessments[0].month-1]} ${ratedAssessments[0].year}</h3>
+            <h3 style="margin:0 0 16px;color:#2d3748;font-size:16px;">📈 Skills Progress — ${latestMonth}</h3>
             ${bars}
-            ${ratedAssessments.length > 1 ? `<p style="font-size:11px;color:#a0aec0;margin:8px 0 0;">▲▼ = compared to previous assessment</p>` : ''}
+            ${ratedAssessments.length > 1 ? `<p style="font-size:11px;color:#a0aec0;margin:8px 0 0;">▲▼ = compared to previous monthly report</p>` : ''}
           </div>`;
         }
-        container.innerHTML = chartHTML + assessments.map(a => {
-          const skills = a.skills ? JSON.parse(a.skills) : [];
-          let skillRatings = null;
-          if (a.skill_ratings) { try { skillRatings = typeof a.skill_ratings==='string' ? JSON.parse(a.skill_ratings) : a.skill_ratings; } catch(e){} }
+
+        const grouped = {};
+        assessments.forEach(a => {
+          const month = parseInt(a.period_month || a.month || (new Date(a.created_at).getMonth() + 1), 10);
+          const year = parseInt(a.period_year || a.year || new Date(a.created_at).getFullYear(), 10);
+          const groupKey = `${year}-${String(month).padStart(2, '0')}`;
+          if (!grouped[groupKey]) grouped[groupKey] = { month, year, items: [] };
+          grouped[groupKey].items.push(a);
+        });
+
+        const groupKeys = Object.keys(grouped).sort((a, b) => b.localeCompare(a));
+
+        container.innerHTML = chartHTML + groupKeys.map((groupKey, groupIndex) => {
+          const group = grouped[groupKey];
+          const groupTitle = `${monthNames[group.month - 1]} ${group.year}`;
+          const itemsHTML = group.items.map((a, itemIndex) => {
+            const skills = a.skills ? JSON.parse(a.skills) : [];
+            let skillRatings = null;
+            if (a.skill_ratings) { try { skillRatings = typeof a.skill_ratings === 'string' ? JSON.parse(a.skill_ratings) : a.skill_ratings; } catch(e) {} }
+
+            const isMonthly = a.portal_item_type === 'monthly';
+            const isAward = a.portal_item_type === 'award';
+            const itemIcon = isMonthly ? '📊' : isAward ? '🏆' : '🎯';
+            const itemTitle = isMonthly
+              ? `Monthly Progress Report${a.month && a.year ? ` - ${monthNames[a.month - 1]} ${a.year}` : ''}`
+              : isAward ? (a.certificate_title || 'Student Award') : 'Demo Assessment';
+            const badgeStyle = isMonthly
+              ? 'background:#ede9fe;color:#6b21a8;'
+              : isAward ? 'background:#fef3c7;color:#92400e;' : 'background:#d1fae5;color:#065f46;';
+            const badgeText = isMonthly ? 'Monthly Report' : isAward ? 'Award Certificate' : 'Demo Assessment';
+            const certPage = a.certificate_page_type === 'monthly' ? 'monthly-certificate' : 'demo-certificate';
+            const certUrl = a.certificate_title ? `/${certPage}.html?id=${a.id}` : '';
+            const issuedLabel = new Date(a.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+            const certificateLabel = (isMonthly && a.month && a.year) ? `${monthNames[a.month - 1]} ${a.year}` : issuedLabel;
+
+            return `
+            <details class="assessment-item" ${groupIndex === 0 && itemIndex === 0 ? 'open' : ''}>
+              <summary>
+                <div style="display:flex;gap:12px;align-items:flex-start;min-width:0;flex:1;">
+                  <div style="font-size:1.5rem;line-height:1;">${itemIcon}</div>
+                  <div style="min-width:0;flex:1;">
+                    <div style="font-size:1rem;font-weight:700;color:#2d3748;margin-bottom:4px;">${itemTitle}</div>
+                    <div style="font-size:0.82rem;color:#718096;">Issued ${issuedLabel}</div>
+                  </div>
+                </div>
+                <span class="assessment-pill" style="${badgeStyle}">${badgeText}</span>
+              </summary>
+              <div class="assessment-item-body">
+                ${a.certificate_title ? `
+                <div style="background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%); border: 2px solid #f59e0b; border-radius: 15px; padding: 25px; text-align: center; margin-bottom: 15px;">
+                  <div style="font-size: 50px; margin-bottom: 10px;">${isAward ? '🏆' : isMonthly ? '📜' : '🎓'}</div>
+                  <h3 style="color: #92400e; font-size: 22px; margin: 0 0 15px; font-family: 'Georgia', serif;">${a.certificate_title}</h3>
+                  <p style="color: #b45309; font-size: 14px; margin: 0 0 8px;">Presented to</p>
+                  <h2 style="color: #C41E3A; font-size: 26px; margin: 0 0 15px; font-family: 'Georgia', serif; text-transform: uppercase;">${currentStudent.name}</h2>
+                  <p style="color: #78716c; font-size: 13px; margin: 0;">${certificateLabel}</p>
+                </div>
+
+                <div id="certificate-${a.id}" style="position: absolute; left: -9999px; width: 800px;">
+                  <div style="position: relative; width: 800px;">
+                    <img src="https://res.cloudinary.com/dmqipms4f/image/upload/v1769931490/Pink_and_Red_Playful_Student_Certificate_kry0o6.png" style="width: 100%; display: block;" crossorigin="anonymous">
+                    <div style="position: absolute; top: 26%; left: 50%; transform: translateX(-50%); text-align: center; width: 75%;">
+                      <h2 style="margin: 0; color: #C41E3A; font-size: 24px; font-weight: bold; font-family: 'Georgia', serif; background: linear-gradient(135deg, #D4AF37 0%, #F4E4A6 50%, #D4AF37 100%); padding: 8px 25px; border-radius: 8px; border: 2px solid #B8860B; display: inline-block;">${a.certificate_title}</h2>
+                    </div>
+                    <div style="position: absolute; top: 52%; left: 50%; transform: translateX(-50%); text-align: center; width: 75%;">
+                      <h1 style="margin: 0; color: #C41E3A; font-size: 28px; font-weight: bold; font-family: 'Georgia', serif; text-transform: uppercase;">${currentStudent.name}</h1>
+                    </div>
+                    <div style="position: absolute; top: 75%; left: 78%; transform: translateX(-50%); text-align: center;">
+                      <p style="margin: 0; color: #555; font-size: 14px; font-weight: 600;">${certificateLabel}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-bottom:15px;">
+                  ${certUrl ? `<a href="${certUrl}" target="_blank" style="background: linear-gradient(135deg, #38b2ac 0%, #319795 100%); color: white; text-decoration: none; padding: 10px 18px; border-radius: 20px; font-size: 12px; font-weight: 600; box-shadow: 0 4px 15px rgba(56, 178, 172, 0.3);">👁 View Certificate</a>` : ''}
+                  <button onclick="downloadAssessmentCertificate(${a.id}, '${currentStudent.name.replace(/'/g, "\\'")}', '${a.certificate_title.replace(/'/g, "\\'")}', '${certificateLabel.replace(/'/g, "\\'")}')"
+                          style="background: linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%); color: white; border: none; padding: 10px 20px; border-radius: 20px; cursor: pointer; font-size: 12px; font-weight: 600; box-shadow: 0 4px 15px rgba(139, 92, 246, 0.3);">
+                    📥 Download Certificate PDF
+                  </button>
+                </div>
+                ` : ''}
+
+                ${skillRatings ? `
+                <div style="margin-bottom:20px;">
+                  <h4 style="color:#2d3748;font-size:16px;margin:0 0 12px;">⭐ Skills Assessment</h4>
+                  <div style="display:flex;flex-direction:column;gap:8px;">
+                    ${Object.entries(skillRatings).map(([cat,val])=>`
+                    <div style="display:flex;align-items:center;gap:10px;">
+                      <span style="font-size:12px;font-weight:600;color:#4a5568;min-width:120px;">${cat}</span>
+                      <span style="color:#f59e0b;font-size:18px;letter-spacing:2px;">${'★'.repeat(val)}${'☆'.repeat(5-val)}</span>
+                    </div>`).join('')}
+                  </div>
+                </div>
+                ` : skills.length > 0 ? `
+                <div style="margin-bottom: 20px;">
+                  <h4 style="color: #2d3748; font-size: 16px; margin: 0 0 12px;">📝 Skills Assessed</h4>
+                  <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                    ${skills.map(skill => `<span style="background: #f7fafc; padding: 8px 12px; border-radius: 6px; border-left: 3px solid #B05D9E; font-size: 12px; color: #4a5568; font-weight: 600;">✓ ${skill}</span>`).join('')}
+                  </div>
+                </div>
+                ` : ''}
+
+                ${a.performance_summary ? `
+                <div style="margin-bottom: 20px;">
+                  <h4 style="color: #2d3748; font-size: 16px; margin: 0 0 10px;">💬 Teacher's Feedback</h4>
+                  <div style="background: #e6fffa; padding: 15px; border-radius: 8px; border-left: 3px solid #38b2ac;">
+                    <p style="margin: 0; color: #2d3748; font-size: 14px; line-height: 1.6;">${a.performance_summary}</p>
+                  </div>
+                </div>
+                ` : ''}
+
+                ${a.areas_of_improvement ? `
+                <div style="margin-bottom: 20px;">
+                  <h4 style="color: #2d3748; font-size: 16px; margin: 0 0 10px;">📌 Areas to Focus On</h4>
+                  <div style="background: #fff5f5; padding: 15px; border-radius: 8px; border-left: 3px solid #fc8181;">
+                    <p style="margin: 0; color: #2d3748; font-size: 14px; line-height: 1.6;">${a.areas_of_improvement}</p>
+                  </div>
+                </div>
+                ` : ''}
+
+                ${a.teacher_comments ? `
+                <div style="margin-bottom: 20px;">
+                  <h4 style="color: #2d3748; font-size: 16px; margin: 0 0 10px;">🗣️ Teacher's Comments</h4>
+                  <div style="background: #fef5e7; padding: 15px; border-radius: 8px; border-left: 3px solid #f6ad55;">
+                    <p style="margin: 0; color: #2d3748; font-size: 14px; line-height: 1.6; font-style: italic;">"${a.teacher_comments}"</p>
+                  </div>
+                </div>
+                ` : ''}
+
+                <div style="text-align: center; padding: 15px; background: #f7fafc; border-radius: 8px; margin-top: 20px;">
+                  <p style="margin: 0; color: #B05D9E; font-size: 13px; font-weight: 600;">📅 Issued: ${issuedLabel}</p>
+                </div>
+              </div>
+            </details>`;
+          }).join('');
 
           return `
-          <div style="background: white; border: 1px solid #e2e8f0; padding: 25px; margin-bottom: 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.08);">
-            <!-- Header -->
-            <div style="background: linear-gradient(135deg, #B05D9E 0%, #764ba2 100%); padding: 20px; margin: -25px -25px 20px -25px; border-radius: 12px 12px 0 0; text-align: center;">
-              <div style="font-size: 40px; margin-bottom: 8px;">📊</div>
-              <h3 style="margin: 0; color: white; font-size: 22px;">Monthly Progress Report</h3>
-              <p style="margin: 5px 0 0; color: rgba(255,255,255,0.95); font-size: 16px; font-weight: 600;">${monthNames[a.month - 1]} ${a.year}</p>
-            </div>
-
-            ${a.certificate_title ? `
-            <!-- Award Card Display -->
-            <div style="background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%); border: 2px solid #f59e0b; border-radius: 15px; padding: 25px; text-align: center; margin-bottom: 15px;">
-              <div style="font-size: 50px; margin-bottom: 10px;">🏆</div>
-              <h3 style="color: #92400e; font-size: 22px; margin: 0 0 15px; font-family: 'Georgia', serif;">${a.certificate_title}</h3>
-              <p style="color: #b45309; font-size: 14px; margin: 0 0 8px;">Presented to</p>
-              <h2 style="color: #C41E3A; font-size: 26px; margin: 0 0 15px; font-family: 'Georgia', serif; text-transform: uppercase;">${currentStudent.name}</h2>
-              <p style="color: #78716c; font-size: 13px; margin: 0;">${monthNames[a.month - 1]} ${a.year}</p>
-            </div>
-
-            <!-- Hidden Certificate for PDF Generation -->
-            <div id="certificate-${a.id}" style="position: absolute; left: -9999px; width: 800px;">
-              <div style="position: relative; width: 800px;">
-                <img src="https://res.cloudinary.com/dmqipms4f/image/upload/v1769931490/Pink_and_Red_Playful_Student_Certificate_kry0o6.png" style="width: 100%; display: block;" crossorigin="anonymous">
-                <div style="position: absolute; top: 26%; left: 50%; transform: translateX(-50%); text-align: center; width: 75%;">
-                  <h2 style="margin: 0; color: #C41E3A; font-size: 24px; font-weight: bold; font-family: 'Georgia', serif; background: linear-gradient(135deg, #D4AF37 0%, #F4E4A6 50%, #D4AF37 100%); padding: 8px 25px; border-radius: 8px; border: 2px solid #B8860B; display: inline-block;">${a.certificate_title}</h2>
-                </div>
-                <div style="position: absolute; top: 52%; left: 50%; transform: translateX(-50%); text-align: center; width: 75%;">
-                  <h1 style="margin: 0; color: #C41E3A; font-size: 28px; font-weight: bold; font-family: 'Georgia', serif; text-transform: uppercase;">${currentStudent.name}</h1>
-                </div>
-                <div style="position: absolute; top: 75%; left: 78%; transform: translateX(-50%); text-align: center;">
-                  <p style="margin: 0; color: #555; font-size: 14px; font-weight: 600;">${monthNames[a.month - 1]} ${a.year}</p>
-                </div>
-              </div>
-            </div>
-
-            <!-- Download Button -->
-            <div style="text-align: center; margin-bottom: 15px;">
-              <button onclick="downloadCertificate(${a.id}, '${currentStudent.name.replace(/'/g, "\\'")}', '${a.certificate_title.replace(/'/g, "\\'")}', '${monthNames[a.month - 1]}', ${a.year})"
-                      style="background: linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%); color: white; border: none; padding: 10px 20px; border-radius: 20px; cursor: pointer; font-size: 12px; font-weight: 600; box-shadow: 0 4px 15px rgba(139, 92, 246, 0.3);">
-                📥 Download Certificate PDF
-              </button>
-            </div>
-            ` : ''}
-
-            ${skillRatings ? `
-            <!-- Star Ratings -->
-            <div style="margin-bottom:20px;">
-              <h4 style="color:#2d3748;font-size:16px;margin:0 0 12px;">⭐ Skills Assessment</h4>
-              <div style="display:flex;flex-direction:column;gap:8px;">
-                ${Object.entries(skillRatings).map(([cat,val])=>`
-                <div style="display:flex;align-items:center;gap:10px;">
-                  <span style="font-size:12px;font-weight:600;color:#4a5568;min-width:120px;">${cat}</span>
-                  <span style="color:#f59e0b;font-size:18px;letter-spacing:2px;">${'★'.repeat(val)}${'☆'.repeat(5-val)}</span>
-                </div>`).join('')}
-              </div>
-            </div>
-            ` : skills.length > 0 ? `
-            <!-- Skills (legacy checkbox list) -->
-            <div style="margin-bottom: 20px;">
-              <h4 style="color: #2d3748; font-size: 16px; margin: 0 0 12px;">📝 Skills Assessed</h4>
-              <div style="display: flex; flex-wrap: wrap; gap: 8px;">
-                ${skills.map(skill => `<span style="background: #f7fafc; padding: 8px 12px; border-radius: 6px; border-left: 3px solid #B05D9E; font-size: 12px; color: #4a5568; font-weight: 600;">✓ ${skill}</span>`).join('')}
-              </div>
-            </div>
-            ` : ''}
-
-            ${a.performance_summary ? `
-            <div style="margin-bottom: 20px;">
-              <h4 style="color: #2d3748; font-size: 16px; margin: 0 0 10px;">💬 Teacher's Feedback</h4>
-              <div style="background: #e6fffa; padding: 15px; border-radius: 8px; border-left: 3px solid #38b2ac;">
-                <p style="margin: 0; color: #2d3748; font-size: 14px; line-height: 1.6;">${a.performance_summary}</p>
-              </div>
-            </div>
-            ` : ''}
-
-            ${a.areas_of_improvement ? `
-            <div style="margin-bottom: 20px;">
-              <h4 style="color: #2d3748; font-size: 16px; margin: 0 0 10px;">📌 Areas to Focus On</h4>
-              <div style="background: #fff5f5; padding: 15px; border-radius: 8px; border-left: 3px solid #fc8181;">
-                <p style="margin: 0; color: #2d3748; font-size: 14px; line-height: 1.6;">${a.areas_of_improvement}</p>
-              </div>
-            </div>
-            ` : ''}
-
-            ${a.teacher_comments ? `
-            <div style="margin-bottom: 20px;">
-              <h4 style="color: #2d3748; font-size: 16px; margin: 0 0 10px;">🗣️ Teacher's Comments</h4>
-              <div style="background: #fef5e7; padding: 15px; border-radius: 8px; border-left: 3px solid #f6ad55;">
-                <p style="margin: 0; color: #2d3748; font-size: 14px; line-height: 1.6; font-style: italic;">"${a.teacher_comments}"</p>
-              </div>
-            </div>
-            ` : ''}
-
-            <!-- Footer -->
-            <div style="text-align: center; padding: 15px; background: #f7fafc; border-radius: 8px; margin-top: 20px;">
-              <p style="margin: 0; color: #B05D9E; font-size: 13px; font-weight: 600;">
-                📅 Issued: ${new Date(a.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
-              </p>
-            </div>
-          </div>
-          `;
+          <details class="assessment-group" ${groupIndex === 0 ? 'open' : ''}>
+            <summary>
+              <div class="assessment-group-title">📁 ${groupTitle}</div>
+              <div class="assessment-group-meta">${group.items.length} item${group.items.length > 1 ? 's' : ''}</div>
+            </summary>
+            <div>${itemsHTML}</div>
+          </details>`;
         }).join('');
       } catch(e) {
         console.error('Error loading assessments:', e);
@@ -4477,7 +4773,7 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
     }
 
     // Download Certificate as PDF
-    async function downloadCertificate(assessmentId, studentName, certTitle, month, year) {
+    async function downloadAssessmentCertificate(assessmentId, studentName, certTitle, dateLabel) {
       const certElement = document.getElementById(`certificate-${assessmentId}`);
       if (!certElement) {
         alert('Certificate not found');
@@ -4518,7 +4814,7 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
         pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, yOffset, imgWidth, imgHeight);
 
         // Download the PDF
-        const fileName = `Certificate_${studentName.replace(/\s+/g, '_')}_${month}_${year}.pdf`;
+        const fileName = `Certificate_${studentName.replace(/\s+/g, '_')}_${String(dateLabel || 'Certificate').replace(/[^a-zA-Z0-9]+/g, '_')}.pdf`;
         pdf.save(fileName);
 
         btn.innerHTML = '✅ Downloaded!';
@@ -4532,6 +4828,10 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
         btn.innerHTML = originalText;
         btn.disabled = false;
       }
+    }
+
+    async function downloadCertificate(assessmentId, studentName, certTitle, month, year) {
+      return downloadAssessmentCertificate(assessmentId, studentName, certTitle, `${month} ${year}`);
     }
 
     async function loadAnnouncements() {
