@@ -380,7 +380,7 @@ app.get('/join-class', async (req, res) => {
       // Fallback: check if this is a demo session (demo_leads.id)
       const demoResult = await executeQuery(`
         SELECT demo_date AS session_date, demo_time AS session_time,
-               child_name AS student_name, '40 mins' AS duration,
+               child_name AS student_name, '60 mins' AS duration,
                status
         FROM demo_leads
         WHERE id = $1
@@ -395,8 +395,8 @@ app.get('/join-class', async (req, res) => {
       const demoDateStr = demoRow.session_date instanceof Date
         ? demoRow.session_date.toISOString().split('T')[0]
         : String(demoRow.session_date).split('T')[0];
-      const demoStart = new Date(demoDateStr + 'T' + demoRow.session_time + 'Z');
-      const demoEnd = new Date(demoStart.getTime() + 40 * 60 * 1000);
+      const demoStart = new Date(demoDateStr + 'T' + demoRow.session_time);
+      const demoEnd = new Date(demoStart.getTime() + 60 * 60 * 1000);
       const nowDemo = new Date();
       const minsUntilDemo = (demoStart - nowDemo) / (1000 * 60);
 
@@ -2278,7 +2278,7 @@ async function sendEmail(to, subject, html, recipientName, emailType) {
       return false;
     }
 
-    const websiteLink = 'https://tinyurl.com/Fluent-Feathers-Academy';
+    const websiteLink = 'https://sites.google.com/view/fluentfeathersacademybyaaliya/home';
     const websiteFooter = `
       <div style="text-align:center;padding:14px 20px 4px;">
         <a href="${websiteLink}" target="_blank" style="display:inline-block;color:#B05D9E;font-size:14px;font-weight:700;text-decoration:none;">
@@ -4926,14 +4926,14 @@ app.get('/api/calendar/sessions', async (req, res) => {
       ORDER BY s.session_date, s.session_time
     `, [start, end]);
 
-    // Get demo sessions (show all statuses except converted/not interested so conducted demos stay visible)
+    // Get demo sessions (show all statuses except not interested so conducted and converted demos stay visible)
     const demoSessions = await pool.query(`
       SELECT id, demo_date as session_date, demo_time as session_time,
              1 as session_number, status, 'Demo' as session_type,
              child_name as student_name
       FROM demo_leads
       WHERE demo_date >= $1 AND demo_date <= $2
-        AND status NOT IN ('Converted', 'Not Interested')
+        AND status NOT IN ('Not Interested')
       ORDER BY demo_date, demo_time
     `, [start, end]);
 
