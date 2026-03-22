@@ -1,13 +1,23 @@
-﻿
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Parent Portal - Fluent Feathers Academy By Aaliya</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#B05D9E">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Fluent Feathers Academy">
+  <link rel="icon" id="pwaFavicon" href="/logo.png" type="image/png">
+  <link rel="apple-touch-icon" id="pwaAppleTouch" href="/logo.png">
   <!-- PDF Generation Libraries -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging-compat.js"></script>
   <style>
   /* Base styles */
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -1437,6 +1447,8 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
     let selectedRating = 0;
     let checkedFeedbackSessions = new Set();
     let appConfig = { logoUrl: '/logo.png' };
+    let parentPushSetupDone = false;
+    window.__ffParentPushToken = null;
     const PORTAL_AUTO_REFRESH_MS = 5 * 60 * 1000;
     let portalAutoRefreshTimerId = null;
 
@@ -1468,10 +1480,63 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
     if (loadingLogo && appConfig.logoUrl) {
       loadingLogo.src = appConfig.logoUrl;
     }
+
+    const logo = appConfig.logoUrl || '/logo.png';
+    const fav = document.getElementById('pwaFavicon');
+    const apple = document.getElementById('pwaAppleTouch');
+    if (fav) fav.href = logo;
+    if (apple) apple.href = logo;
   } catch (e) {
     console.log('Using default config');
   }
 }
+
+    async function tryRegisterParentPush() {
+      if (parentPushSetupDone) return;
+      try {
+        if (typeof firebase === 'undefined' || !('serviceWorker' in navigator)) return;
+        await loadConfig();
+        if (!appConfig.firebase || !appConfig.firebaseVapidKey) return;
+        const session = JSON.parse(localStorage.getItem('parentSession') || '{}');
+        const email = session.email;
+        if (!email) return;
+
+        if (!('Notification' in window)) return;
+        let perm = Notification.permission;
+        if (perm === 'denied') return;
+        if (perm !== 'granted') {
+          perm = await Notification.requestPermission();
+          if (perm !== 'granted') return;
+        }
+
+        const reg = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+        if (!firebase.apps.length) {
+          firebase.initializeApp(appConfig.firebase);
+        }
+        const messaging = firebase.messaging();
+        const token = await messaging.getToken({
+          vapidKey: appConfig.firebaseVapidKey,
+          serviceWorkerRegistration: reg
+        });
+        if (!token) return;
+        window.__ffParentPushToken = token;
+        await fetch('/api/parent/register-fcm-token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, token })
+        });
+        messaging.onMessage((payload) => {
+          const n = payload.notification;
+          const iconUrl = appConfig.logoUrl || '/logo.png';
+          if (n && n.title && Notification.permission === 'granted') {
+            new Notification(n.title, { body: n.body || '', icon: iconUrl, badge: iconUrl });
+          }
+        });
+        parentPushSetupDone = true;
+      } catch (e) {
+        console.warn('Push setup:', e);
+      }
+    }
 
     const adminToken = sessionStorage.getItem('adminParentToken');
     function authHeaders() {
@@ -2073,6 +2138,8 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
       if (savedTab && document.getElementById(savedTab + 'Tab')) {
         showTab(savedTab);
       }
+
+      tryRegisterParentPush();
     }
 
     // ==================== RED DOT INDICATORS ====================
@@ -5073,6 +5140,7 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
 
     function logout() {
       if(confirm('Are you sure you want to logout?')) {
+        // Do not unregister FCM: parents should still receive push notifications after logout
         // Clear persistent login session
         localStorage.removeItem('parentSession');
         localStorage.removeItem('parentActiveTab');

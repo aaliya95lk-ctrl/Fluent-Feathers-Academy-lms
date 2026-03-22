@@ -14,6 +14,29 @@ const cloudinary = require('cloudinary').v2;
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
 require('dotenv').config();
 
+let firebaseAdmin = null;
+try {
+  const admin = require('firebase-admin');
+  let serviceAccount = null;
+  if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
+    serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
+  } else if (process.env.FIREBASE_SERVICE_ACCOUNT_PATH) {
+    const credPath = path.resolve(process.env.FIREBASE_SERVICE_ACCOUNT_PATH);
+    if (fs.existsSync(credPath)) {
+      serviceAccount = JSON.parse(fs.readFileSync(credPath, 'utf8'));
+    }
+  }
+  if (serviceAccount) {
+    admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
+    firebaseAdmin = admin;
+    console.log('✅ Firebase Admin initialized for push notifications');
+  } else {
+    console.log('ℹ️ FCM server push disabled: set FIREBASE_SERVICE_ACCOUNT_JSON (or FIREBASE_SERVICE_ACCOUNT_PATH)');
+  }
+} catch (e) {
+  console.warn('⚠️ Firebase Admin could not load:', e.message);
+}
+
 const app = express();
 
 const PORT = process.env.PORT || 3000;
@@ -317,6 +340,95 @@ app.use((req, res, next) => {
   }
   next();
 });
+
+// ==================== PWA MANIFEST & FCM SERVICE WORKER (before static) ====================
+const APP_DISPLAY_NAME = process.env.APP_DISPLAY_NAME || 'Fluent Feathers Academy';
+const APP_SHORT_NAME = process.env.APP_SHORT_NAME || 'Fluent Feathers Academy';
+
+/** Same logo as /api/config (LOGO_URL or /logo.png), as an absolute URL for icons & push. */
+function resolveLogoAbsoluteUrl(baseNoSlash) {
+  const base = String(baseNoSlash || '').replace(/\/$/, '') || 'https://fluent-feathers-academy-lms.onrender.com';
+  const logo = process.env.LOGO_URL || '/logo.png';
+  if (logo.startsWith('http')) return logo;
+  return `${base}${logo.startsWith('/') ? '' : '/'}${logo}`;
+}
+
+app.get('/manifest.webmanifest', (req, res) => {
+  try {
+    const proto = req.get('x-forwarded-proto') || req.protocol || 'https';
+    const host = req.get('host') || '';
+    const base = (process.env.APP_URL || `${proto}://${host}`).replace(/\/$/, '');
+    const iconSrc = resolveLogoAbsoluteUrl(base);
+    res.type('application/manifest+json');
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    res.json({
+      id: `${base}/`,
+      name: APP_DISPLAY_NAME,
+      short_name: APP_SHORT_NAME,
+      description: 'Parent portal, class reminders, and school updates.',
+      start_url: `${base}/parent.html`,
+      scope: `${base}/`,
+      display: 'standalone',
+      orientation: 'portrait-primary',
+      background_color: '#f0f4f8',
+      theme_color: process.env.PWA_THEME_COLOR || '#B05D9E',
+      categories: ['education'],
+      icons: [
+        { src: iconSrc, sizes: '512x512', type: 'image/png', purpose: 'any' },
+        { src: iconSrc, sizes: '192x192', type: 'image/png', purpose: 'any' },
+        { src: iconSrc, sizes: '512x512', type: 'image/png', purpose: 'maskable' }
+      ]
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'manifest failed' });
+  }
+});
+
+app.get('/firebase-messaging-sw.js', (req, res) => {
+  const cfg = {
+    apiKey: process.env.FIREBASE_API_KEY || '',
+    authDomain: process.env.FIREBASE_AUTH_DOMAIN || '',
+    projectId: process.env.FIREBASE_PROJECT_ID || '',
+    storageBucket: process.env.FIREBASE_STORAGE_BUCKET || '',
+    messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || '',
+    appId: process.env.FIREBASE_APP_ID || ''
+  };
+  if (!cfg.apiKey || !cfg.projectId) {
+    res.type('application/javascript');
+    return res.send('// Firebase web push not configured');
+  }
+  const proto = req.get('x-forwarded-proto') || req.protocol || 'https';
+  const host = req.get('host') || '';
+  const base = (process.env.APP_URL || `${proto}://${host}`).replace(/\/$/, '');
+  const logoAbs = resolveLogoAbsoluteUrl(base);
+  const js = `importScripts('https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging-compat.js');
+firebase.initializeApp(${JSON.stringify(cfg)});
+const messaging = firebase.messaging();
+messaging.onBackgroundMessage((payload) => {
+  const title = (payload.notification && payload.notification.title) || ${JSON.stringify(APP_DISPLAY_NAME)};
+  const body = (payload.notification && payload.notification.body) || '';
+  const link = (payload.data && payload.data.link) || '/parent.html';
+  const opts = {
+    body: body,
+    icon: ${JSON.stringify(logoAbs)},
+    badge: ${JSON.stringify(logoAbs)},
+    data: { url: link, ...(payload.data || {}) }
+  };
+  self.registration.showNotification(title, opts);
+});
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || '/parent.html';
+  event.waitUntil(clients.openWindow(url));
+});
+`;
+  res.type('application/javascript');
+  res.setHeader('Service-Worker-Allowed', '/');
+  res.setHeader('Cache-Control', 'no-store');
+  res.send(js);
+});
+
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
@@ -693,14 +805,77 @@ const handleUpload = (fieldName) => {
 // Endpoint to get logo URL and storage status for frontend
 app.get('/api/config', (req, res) => {
   try {
+    const firebaseWebConfigured = !!(process.env.FIREBASE_API_KEY && process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_MESSAGING_SENDER_ID && process.env.FIREBASE_APP_ID);
     res.json({
       logoUrl: process.env.LOGO_URL || '/logo.png',
       storageType: useCloudinary ? 'cloudinary' : 'local',
       cloudinaryConfigured: useCloudinary,
-      cloudName: useCloudinary ? cloudName : null
+      cloudName: useCloudinary ? cloudName : null,
+      firebase: firebaseWebConfigured
+        ? {
+            apiKey: process.env.FIREBASE_API_KEY,
+            authDomain: process.env.FIREBASE_AUTH_DOMAIN || '',
+            projectId: process.env.FIREBASE_PROJECT_ID,
+            storageBucket: process.env.FIREBASE_STORAGE_BUCKET || '',
+            messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
+            appId: process.env.FIREBASE_APP_ID
+          }
+        : null,
+      firebaseVapidKey: process.env.FIREBASE_VAPID_KEY || null
     });
   } catch (err) {
     res.status(500).json({ error: 'Failed to load config' });
+  }
+});
+
+app.post('/api/parent/register-fcm-token', async (req, res) => {
+  try {
+    const { email, token } = req.body || {};
+    const normalized = String(email || '').trim().toLowerCase();
+    if (!normalized || !token) {
+      return res.status(400).json({ error: 'email and token required' });
+    }
+    const studentOk = await pool.query(
+      `SELECT 1 FROM students WHERE LOWER(parent_email) = $1 AND is_active = true LIMIT 1`,
+      [normalized]
+    );
+    const credOk = await pool.query(
+      `SELECT 1 FROM parent_credentials WHERE LOWER(parent_email) = $1 LIMIT 1`,
+      [normalized]
+    );
+    if (studentOk.rows.length === 0 && credOk.rows.length === 0) {
+      return res.status(403).json({ error: 'Invalid parent email' });
+    }
+    await pool.query(
+      `INSERT INTO parent_fcm_tokens (parent_email, fcm_token, user_agent)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (fcm_token) DO UPDATE SET parent_email = EXCLUDED.parent_email, user_agent = EXCLUDED.user_agent, updated_at = CURRENT_TIMESTAMP`,
+      [normalized, String(token), req.headers['user-agent'] || null]
+    );
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/parent/register-fcm-token', async (req, res) => {
+  try {
+    const { email, token } = req.body || {};
+    if (!token) {
+      return res.status(400).json({ error: 'token required' });
+    }
+    const normalized = String(email || '').trim().toLowerCase();
+    if (normalized) {
+      await pool.query(
+        `DELETE FROM parent_fcm_tokens WHERE fcm_token = $1 AND LOWER(parent_email) = $2`,
+        [String(token), normalized]
+      );
+    } else {
+      await pool.query(`DELETE FROM parent_fcm_tokens WHERE fcm_token = $1`, [String(token)]);
+    }
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -1999,6 +2174,25 @@ async function runMigrations() {
       console.log('Migration 46 note:', err.message);
     }
 
+    // Migration 47: FCM device tokens for parent push notifications (paired with email)
+    try {
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS parent_fcm_tokens (
+          id SERIAL PRIMARY KEY,
+          parent_email TEXT NOT NULL,
+          fcm_token TEXT NOT NULL UNIQUE,
+          user_agent TEXT,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      await client.query(`CREATE INDEX IF NOT EXISTS idx_parent_fcm_tokens_email ON parent_fcm_tokens (LOWER(parent_email))`);
+      await client.query(`ALTER TABLE parent_fcm_tokens ENABLE ROW LEVEL SECURITY`);
+      await client.query(`DO $$ BEGIN CREATE POLICY "Allow all for service role" ON parent_fcm_tokens FOR ALL USING (true) WITH CHECK (true); EXCEPTION WHEN duplicate_object THEN NULL; END $$`);
+      console.log('✅ Migration 47: Created parent_fcm_tokens for Firebase push');
+    } catch (err) {
+      console.log('Migration 47 note:', err.message);
+    }
+
     console.log('✅ All database migrations completed successfully!');
 
     // Auto-sync badges for students who should have them
@@ -2270,7 +2464,55 @@ async function syncParentTimezoneByEmail(email, timezone) {
   }
 }
 
-async function sendEmail(to, subject, html, recipientName, emailType) {
+function stripHtmlSnippet(html, maxLen = 240) {
+  if (!html || typeof html !== 'string') return '';
+  const t = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  return t.length > maxLen ? t.slice(0, maxLen - 1) + '…' : t;
+}
+
+async function sendPushToParentByEmail(parentEmail, title, body, data = {}) {
+  if (!firebaseAdmin) return;
+  const norm = String(parentEmail || '').trim().toLowerCase();
+  if (!norm) return;
+  let tokens;
+  try {
+    const r = await pool.query(
+      `SELECT fcm_token FROM parent_fcm_tokens WHERE LOWER(parent_email) = $1`,
+      [norm]
+    );
+    tokens = r.rows.map((x) => x.fcm_token).filter(Boolean);
+  } catch (e) {
+    console.warn('FCM token lookup:', e.message);
+    return;
+  }
+  if (tokens.length === 0) return;
+  const appUrl = (process.env.APP_URL || '').replace(/\/$/, '') || 'https://fluent-feathers-academy-lms.onrender.com';
+  const link = `${appUrl}/parent.html`;
+  const logoAbs = resolveLogoAbsoluteUrl(appUrl);
+  const safeTitle = String(title || APP_DISPLAY_NAME).slice(0, 200);
+  const safeBody = String(body || '').slice(0, 240);
+  try {
+    const resp = await firebaseAdmin.messaging().sendEachForMulticast({
+      tokens,
+      notification: { title: safeTitle, body: safeBody },
+      data: { ...data, link, click_action: link },
+      webpush: {
+        notification: { icon: logoAbs, badge: logoAbs },
+        fcmOptions: { link }
+      }
+    });
+    resp.responses.forEach((x, i) => {
+      if (!x.success && x.error && (x.error.code === 'messaging/registration-token-not-registered' || x.error.code === 'messaging/invalid-registration-token')) {
+        pool.query('DELETE FROM parent_fcm_tokens WHERE fcm_token = $1', [tokens[i]]).catch(() => {});
+      }
+    });
+  } catch (e) {
+    console.warn('FCM send error:', e.message);
+  }
+}
+
+async function sendEmail(to, subject, html, recipientName, emailType, options = {}) {
+  let finalHtml;
   try {
     const apiKey = process.env.BREVO_API_KEY;
     if (!apiKey) {
@@ -2286,7 +2528,7 @@ async function sendEmail(to, subject, html, recipientName, emailType) {
         </a>
       </div>
     `;
-    let finalHtml = html;
+    finalHtml = html;
     if (typeof finalHtml === 'string' && !finalHtml.includes(websiteLink)) {
       if (finalHtml.includes('</body>')) {
         finalHtml = finalHtml.replace('</body>', `${websiteFooter}\n</body>`);
@@ -2297,10 +2539,15 @@ async function sendEmail(to, subject, html, recipientName, emailType) {
 
     await axios.post('https://api.brevo.com/v3/smtp/email', { sender: { name: 'Fluent Feathers Academy', email: process.env.EMAIL_USER || 'test@test.com' }, to: [{ email: to, name: recipientName || to }], subject: subject, htmlContent: finalHtml }, { headers: { 'api-key': apiKey, 'Content-Type': 'application/json' } });
     await pool.query(`INSERT INTO email_log (recipient_name, recipient_email, email_type, subject, status, email_body) VALUES ($1, $2, $3, $4, 'Sent', $5)`, [recipientName || '', to, emailType, subject, finalHtml]);
+    if (options.skipPush !== true) {
+      const pushTitle = String(subject || '').replace(/\s*\[[^\]]+\]\s*$/g, '').trim() || 'Fluent Feathers';
+      const pushBody = stripHtmlSnippet(finalHtml);
+      sendPushToParentByEmail(to, pushTitle, pushBody, { emailType: emailType || '' }).catch(() => {});
+    }
     return true;
   } catch (e) {
     console.error('Email Error:', e.message);
-    await pool.query(`INSERT INTO email_log (recipient_name, recipient_email, email_type, subject, status, email_body) VALUES ($1, $2, $3, $4, 'Failed', $5)`, [recipientName || '', to, emailType, subject, finalHtml]);
+    await pool.query(`INSERT INTO email_log (recipient_name, recipient_email, email_type, subject, status, email_body) VALUES ($1, $2, $3, $4, 'Failed', $5)`, [recipientName || '', to, emailType, subject, finalHtml || html || '']);
     return false;
   }
 }
@@ -2494,7 +2741,7 @@ function getDemoConfirmationEmail(data) {
 
   const bioHtml = data.adminBio ? `
     <div style="background: #f7fafc; padding: 25px; border-radius: 12px; margin: 25px 0; border-left: 4px solid #B05D9E;">
-      <h3 style="color: #B05D9E; margin: 0 0 15px; font-size: 18px;">👋 Class Your Instructor</h3>
+      <h3 style="color: #B05D9E; margin: 0 0 15px; font-size: 18px;">👋 Meet Your Instructor</h3>
       <div style="display: flex; align-items: flex-start; gap: 20px;">
         <div style="width: 70px; height: 70px; background: linear-gradient(135deg, #B05D9E 0%, #764ba2 100%); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-size: 28px; font-weight: bold; flex-shrink: 0;">
           ${data.adminName ? data.adminName.charAt(0).toUpperCase() : 'A'}
