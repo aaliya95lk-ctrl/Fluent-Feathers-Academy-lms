@@ -789,6 +789,7 @@
         <div style="display: flex; gap: 10px; align-items: center;">
           <span id="currentChildBadge" style="display: none; background: #e2e8f0; color: #4a5568; padding: 6px 12px; border-radius: 15px; font-size: 0.85rem;">Viewing: <strong id="currentChildName">-</strong></span>
           <button id="switchChildBtn" onclick="showChildSelector()" style="display: none; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 8px 15px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; font-weight: 600; transition: transform 0.2s;" onmouseenter="this.style.transform='scale(1.05)'" onmouseleave="this.style.transform='scale(1)'">👧👦 Switch Child</button>
+          <button id="refreshPortalBtn" type="button" onclick="refreshParentPortal(true)" style="background: linear-gradient(135deg, #38b2ac 0%, #319795 100%); color: white; border: none; padding: 8px 15px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; font-weight: 600;">ðŸ”„ Refresh Portal</button>
           <button onclick="logout()" class="btn btn-danger btn-sm">Logout</button>
         </div>
       </header>
@@ -1575,6 +1576,27 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
       }
     }
 
+    function getPortalInstallEntryRequested() {
+      try {
+        return new URLSearchParams(window.location.search).get('install_app') === '1';
+      } catch (e) {
+        return false;
+      }
+    }
+
+    function highlightInstallSetupEntry() {
+      if (!getPortalInstallEntryRequested()) return;
+      const card = document.getElementById('setupGuideCard');
+      if (!card) return;
+      updateSetupGuide();
+      card.style.display = 'block';
+      card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      card.style.boxShadow = '0 0 0 3px rgba(176, 93, 158, 0.2), 0 12px 28px rgba(0,0,0,0.08)';
+      setTimeout(() => {
+        card.style.boxShadow = '';
+      }, 2200);
+    }
+
     async function triggerPortalInstall() {
       if (isAppKnownInstalled() && !isAppInstalled()) {
         window.location.href = '/parent.html';
@@ -1682,7 +1704,7 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
       updateSetupGuide();
     });
 
-    document.addEventListener('DOMContentLoaded', function() {
+      document.addEventListener('DOMContentLoaded', function() {
       const installBtn = document.getElementById('installAppBtn');
       if (installBtn) installBtn.addEventListener('click', triggerPortalInstall);
       const setupInstallBtn = document.getElementById('setupInstallBtn');
@@ -1696,6 +1718,7 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
       });
       if (!isAppInstalled() && isIosInstallCandidate()) setInstallButtonVisibility(true);
       updateSetupGuide();
+      setTimeout(highlightInstallSetupEntry, 250);
     });
 
     // Load app configuration (logo URL from environment)
@@ -1773,10 +1796,14 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
           body: JSON.stringify({ email, token })
         });
         messaging.onMessage((payload) => {
-          const n = payload.notification;
+          const data = payload.data || {};
+          const n = payload.notification || {};
           const iconUrl = appConfig.logoUrl || '/logo.png';
-          if (n && n.title && Notification.permission === 'granted') {
-            new Notification(n.title, { body: n.body || '', icon: iconUrl, badge: iconUrl });
+          const title = data.title || n.title;
+          const body = data.body || n.body || '';
+          const tag = data.notificationTag || data.type || [title, body].filter(Boolean).join('|').slice(0, 180);
+          if (title && Notification.permission === 'granted') {
+            new Notification(title, { body, icon: iconUrl, badge: iconUrl, tag, renotify: false });
           }
         });
         parentPushSetupDone = true;
@@ -3311,6 +3338,90 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
       fullSessionsCache = { studentId: null, loadedAt: 0, data: null, promise: null };
     }
 
+    async function refreshCurrentStudentProfile() {
+      const session = JSON.parse(localStorage.getItem('parentSession') || '{}');
+      if (!session.email || !currentStudent?.id) return;
+
+      const res = await fetch('/api/parent/check-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: session.email, timezone: getBrowserTimezone() })
+      });
+      const data = await res.json();
+      if (!res.ok || !Array.isArray(data.students)) {
+        throw new Error(data?.error || 'Could not refresh student profile');
+      }
+
+      allMyStudents = data.students;
+      const latestStudent = allMyStudents.find(s => s.id === currentStudent.id) || data.students[0];
+      if (!latestStudent) return;
+      currentStudent = latestStudent;
+      syncPortalTimezoneFromStudent();
+      document.getElementById('displayName').textContent = currentStudent.name;
+      document.getElementById('displayGrade').textContent = getAgeDisplay(currentStudent);
+      document.getElementById('displayTotal').textContent = currentStudent.total_sessions;
+      document.getElementById('displayCompleted').textContent = currentStudent.completed_sessions || 0;
+      document.getElementById('displayMissed').textContent = currentStudent.missed_sessions || 0;
+      document.getElementById('displayRemaining').textContent = currentStudent.remaining_sessions;
+      if (allMyStudents.length > 1) {
+        const currentChildName = document.getElementById('currentChildName');
+        if (currentChildName) currentChildName.textContent = currentStudent.name;
+      }
+    }
+
+    async function refreshParentPortal(showFeedback = false) {
+      if (!currentStudent?.id) return;
+      const refreshBtn = document.getElementById('refreshPortalBtn');
+      const currentTab = localStorage.getItem('parentActiveTab') || 'upcoming';
+      const originalLabel = refreshBtn ? refreshBtn.textContent : '';
+
+      try {
+        if (refreshBtn) {
+          refreshBtn.disabled = true;
+          refreshBtn.textContent = 'Refreshing...';
+          refreshBtn.style.opacity = '0.75';
+          refreshBtn.style.cursor = 'wait';
+        }
+
+        resetSessionsCache();
+        await refreshCurrentStudentProfile();
+
+        await Promise.all([
+          loadUpcoming(false),
+          loadPast(false),
+          loadMakeupCredits(),
+          loadBadges(),
+          loadClassPoints(),
+          loadScoreHistory(),
+          loadChallengeSummary(),
+          loadAnnouncements(),
+          loadEvents(),
+          loadPayments(),
+          loadAssessments(),
+          loadHallOfFame(),
+          loadStudentChallenges(),
+          loadParentResources(),
+          loadHomeworkSessions(),
+          checkRedDots(),
+          checkForFeedback()
+        ]);
+
+        if (currentTab === 'upcoming') loadUpcoming(false);
+        if (currentTab === 'past') loadPast(false);
+        if (showFeedback) alert('Portal refreshed.');
+      } catch (err) {
+        console.error('Portal refresh error:', err);
+        if (showFeedback) alert(err.message || 'Could not refresh portal');
+      } finally {
+        if (refreshBtn) {
+          refreshBtn.disabled = false;
+          refreshBtn.textContent = originalLabel || 'Refresh Portal';
+          refreshBtn.style.opacity = '1';
+          refreshBtn.style.cursor = 'pointer';
+        }
+      }
+    }
+
     async function getStudentSessions({ light = false, forceRefresh = false } = {}) {
       if (!currentStudent?.id) return [];
       const cache = light ? lightSessionsCache : fullSessionsCache;
@@ -3972,11 +4083,8 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
         progressText.textContent = `✅ ${successCount} new file(s) uploaded!${skipMsg}${errorCount > 0 ? ` (${errorCount} failed)` : ''}`;
         setTimeout(() => {
           closeHwSubmitModal();
-          loadPast();
-          loadBadges();
-          loadScoreHistory();
-          loadSubmittedHomework();
-        }, 1800);
+          refreshParentPortal(false);
+        }, 250);
       } else if ((skippedFiles.length + dupCount) > 0 && errorCount === 0) {
         progressText.textContent = `⚠️ All files were already submitted. No duplicates created.`;
         setTimeout(() => closeHwSubmitModal(), 2500);
@@ -4430,10 +4538,7 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
         if (successCount > 0) {
           alert(`✅ ${successCount} ${submissionType.toLowerCase()} file(s) uploaded successfully!${errorCount > 0 ? ` (${errorCount} failed)` : ''}`);
           e.target.reset();
-          loadPast();
-          loadBadges();
-          loadScoreHistory();
-          loadSubmittedHomework();
+          refreshParentPortal(false);
         } else {
           alert('Error uploading files');
         }

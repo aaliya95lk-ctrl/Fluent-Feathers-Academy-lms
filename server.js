@@ -584,17 +584,26 @@ app.get('/firebase-messaging-sw.js', (req, res) => {
 importScripts('https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging-compat.js');
 firebase.initializeApp(${JSON.stringify(cfg)});
 const messaging = firebase.messaging();
+function buildNotificationMeta(payload) {
+  const data = payload.data || {};
+  const notification = payload.notification || {};
+  const title = data.title || notification.title || ${JSON.stringify(APP_DISPLAY_NAME)};
+  const body = data.body || notification.body || '';
+  const link = data.url || data.link || '/parent.html';
+  const tag = data.notificationTag || data.type || [title, body, link].filter(Boolean).join('|').slice(0, 180);
+  return { title, body, link, tag, data };
+}
 messaging.onBackgroundMessage((payload) => {
-  const title = (payload.notification && payload.notification.title) || ${JSON.stringify(APP_DISPLAY_NAME)};
-  const body = (payload.notification && payload.notification.body) || '';
-  const link = (payload.data && payload.data.link) || '/parent.html';
+  const meta = buildNotificationMeta(payload);
   const opts = {
-    body: body,
+    body: meta.body,
     icon: ${JSON.stringify(logoAbs)},
     badge: ${JSON.stringify(logoAbs)},
-    data: { url: link, ...(payload.data || {}) }
+    tag: meta.tag,
+    renotify: false,
+    data: { url: meta.link, notificationTag: meta.tag, ...(meta.data || {}) }
   };
-  self.registration.showNotification(title, opts);
+  self.registration.showNotification(meta.title, opts);
 });
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
@@ -2139,7 +2148,15 @@ async function runMigrations() {
       console.log('Migration 30 note:', err.message);
     }
 
-    // Migration 31: Add performance indexes on frequently queried columns
+    // Migration 31: Track whether final package exhaustion email was already sent
+    try {
+      await client.query(`ALTER TABLE students ADD COLUMN IF NOT EXISTS package_exhausted_notice_sent BOOLEAN DEFAULT false`);
+      console.log('✅ Migration 31: Added package_exhausted_notice_sent column');
+    } catch (err) {
+      console.log('Migration 31 note:', err.message);
+    }
+
+    // Migration 32: Add performance indexes on frequently queried columns
     try {
       await client.query('CREATE INDEX IF NOT EXISTS idx_session_attendance_student_id ON session_attendance(student_id)');
       await client.query('CREATE INDEX IF NOT EXISTS idx_session_attendance_session_id ON session_attendance(session_id)');
@@ -2149,9 +2166,9 @@ async function runMigrations() {
       await client.query('CREATE INDEX IF NOT EXISTS idx_sessions_student_id ON sessions(student_id)');
       await client.query('CREATE INDEX IF NOT EXISTS idx_sessions_group_id ON sessions(group_id)');
       await client.query('CREATE INDEX IF NOT EXISTS idx_sessions_session_date ON sessions(session_date)');
-      console.log('✅ Migration 31: Added performance indexes');
+      console.log('✅ Migration 32: Added performance indexes');
     } catch (err) {
-      console.log('Migration 31 note:', err.message);
+      console.log('Migration 32 note:', err.message);
     }
 
     // Migration 32: Add notes column to sessions table
@@ -2322,6 +2339,14 @@ async function runMigrations() {
     // Migration 43: One-time fix - increment remaining_sessions for existing students who have
     // upcoming scheduled makeup classes that were scheduled before the fix (remaining was never incremented)
     try {
+      const migration43Key = 'migration_43_makeup_remaining_backfill_done';
+      const migration43State = await client.query(
+        `SELECT setting_value FROM admin_settings WHERE setting_key = $1`,
+        [migration43Key]
+      );
+      if (migration43State.rows[0]?.setting_value === 'true') {
+        console.log('Migration 43: makeup remaining-session backfill already applied');
+      } else {
       const fixResult = await client.query(`
         UPDATE students s
         SET remaining_sessions = remaining_sessions + sub.makeup_pending
@@ -2342,6 +2367,13 @@ async function runMigrations() {
         console.log(`✅ Migration 43: Fixed remaining_sessions for ${fixResult.rows.length} student(s) with existing scheduled makeup classes`);
       } else {
         console.log('✅ Migration 43: No students needed remaining_sessions makeup backfill');
+      }
+      await client.query(`
+        INSERT INTO admin_settings (setting_key, setting_value, updated_at)
+        VALUES ($1, 'true', CURRENT_TIMESTAMP)
+        ON CONFLICT (setting_key)
+        DO UPDATE SET setting_value = EXCLUDED.setting_value, updated_at = CURRENT_TIMESTAMP
+      `, [migration43Key]);
       }
     } catch (err) {
       console.log('Migration 43 note:', err.message);
@@ -2750,6 +2782,17 @@ function stripHtmlSnippet(html, maxLen = 240) {
   return t.length > maxLen ? t.slice(0, maxLen - 1) + '…' : t;
 }
 
+function addInstallAppLinksToPortalEmails(html) {
+  if (!html || typeof html !== 'string' || !/href="[^"]*\/parent\.html/i.test(html)) return html;
+  const installHref = `${getAppBaseUrl()}/parent.html?install_app=1`;
+  const installBtn = `<a href="${installHref}" style="display: inline-block; margin-left: 10px; background: linear-gradient(135deg, #B05D9E 0%, #764ba2 100%); color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 25px; font-weight: bold; font-size: 14px;">📲 Install App</a>`;
+
+  return html.replace(/(<a\b[^>]*href="[^"]*\/parent\.html(?:\?[^"]*)?"[^>]*>[\s\S]*?<\/a>)/gi, (match) => {
+    if (/install_app=1/i.test(match) || /Install App/i.test(match)) return match;
+    return `${match}${installBtn}`;
+  });
+}
+
 async function sendPushToParentByEmail(parentEmail, title, body, data = {}) {
   if (!firebaseAdmin) return { sent: 0, reason: 'firebase_disabled' };
   const norm = String(parentEmail || '').trim().toLowerCase();
@@ -2760,7 +2803,7 @@ async function sendPushToParentByEmail(parentEmail, title, body, data = {}) {
       `SELECT fcm_token FROM parent_fcm_tokens WHERE LOWER(parent_email) = $1`,
       [norm]
     );
-    tokens = r.rows.map((x) => x.fcm_token).filter(Boolean);
+    tokens = [...new Set(r.rows.map((x) => x.fcm_token).filter(Boolean))];
   } catch (e) {
     console.warn('FCM token lookup:', e.message);
     return { sent: 0, reason: 'lookup_failed' };
@@ -2768,16 +2811,14 @@ async function sendPushToParentByEmail(parentEmail, title, body, data = {}) {
   if (tokens.length === 0) return { sent: 0, reason: 'no_tokens' };
   const appUrl = (process.env.APP_URL || '').replace(/\/$/, '') || 'https://fluent-feathers-academy-lms.onrender.com';
   const link = `${appUrl}/parent.html`;
-  const logoAbs = resolveLogoAbsoluteUrl(appUrl);
   const safeTitle = String(title || APP_DISPLAY_NAME).slice(0, 200);
   const safeBody = String(body || '').slice(0, 240);
+  const notificationTag = String(data.notificationTag || data.type || `${safeTitle}|${safeBody}|${data.url || link}`).slice(0, 180);
   try {
     const resp = await firebaseAdmin.messaging().sendEachForMulticast({
       tokens,
-      notification: { title: safeTitle, body: safeBody },
-      data: { ...data, link, click_action: link },
+      data: { ...data, title: safeTitle, body: safeBody, link, click_action: link, notificationTag },
       webpush: {
-        notification: { icon: logoAbs, badge: logoAbs },
         fcmOptions: { link }
       }
     });
@@ -2924,7 +2965,7 @@ async function sendPushToAdmins(title, body, data = {}) {
   let tokens;
   try {
     const r = await pool.query(`SELECT fcm_token FROM admin_fcm_tokens`);
-    tokens = r.rows.map((x) => x.fcm_token).filter(Boolean);
+    tokens = [...new Set(r.rows.map((x) => x.fcm_token).filter(Boolean))];
   } catch (e) {
     console.warn('Admin FCM token lookup:', e.message);
     return;
@@ -2932,16 +2973,14 @@ async function sendPushToAdmins(title, body, data = {}) {
   if (tokens.length === 0) return;
   const appUrl = (process.env.APP_URL || '').replace(/\/$/, '') || 'https://fluent-feathers-academy-lms.onrender.com';
   const link = `${appUrl}/admin.html`;
-  const logoAbs = resolveLogoAbsoluteUrl(appUrl);
   const safeTitle = String(title || APP_DISPLAY_NAME).slice(0, 200);
   const safeBody = String(body || '').slice(0, 240);
+  const notificationTag = String(data.notificationTag || data.type || `${safeTitle}|${safeBody}|${data.url || link}`).slice(0, 180);
   try {
     const resp = await firebaseAdmin.messaging().sendEachForMulticast({
       tokens,
-      notification: { title: safeTitle, body: safeBody },
-      data: { ...data, link, click_action: link },
+      data: { ...data, title: safeTitle, body: safeBody, link, click_action: link, notificationTag },
       webpush: {
-        notification: { icon: logoAbs, badge: logoAbs },
         fcmOptions: { link }
       }
     });
@@ -3033,6 +3072,7 @@ async function sendEmail(to, subject, html, recipientName, emailType, options = 
       </div>
     `;
     finalHtml = html;
+    finalHtml = addInstallAppLinksToPortalEmails(finalHtml);
     if (typeof finalHtml === 'string' && !finalHtml.includes(websiteLink)) {
       const madeWithPattern = /(<(p|span)\b[^>]*>\s*Made with[\s\S]*?By Aaliya\s*<\/\2>)/i;
       if (madeWithPattern.test(finalHtml)) {
@@ -3057,6 +3097,74 @@ async function sendEmail(to, subject, html, recipientName, emailType, options = 
     await pool.query(`INSERT INTO email_log (recipient_name, recipient_email, email_type, subject, status, email_body) VALUES ($1, $2, $3, $4, 'Failed', $5)`, [recipientName || '', to, emailType, subject, finalHtml || html || '']);
     return false;
   }
+}
+
+async function resetPackageExhaustedNotice(studentId, dbClient = pool) {
+  if (!studentId) return;
+  await dbClient.query(
+    `UPDATE students SET package_exhausted_notice_sent = false WHERE id = $1`,
+    [studentId]
+  );
+}
+
+async function sendPackageExhaustedNoticeIfNeeded(studentId, dbClient = pool) {
+  if (!studentId) return false;
+
+  const studentResult = await dbClient.query(`
+    SELECT id, name, parent_name, parent_email, program_name, per_session_fee, currency,
+           COALESCE(remaining_sessions, 0) AS remaining_sessions,
+           COALESCE(package_exhausted_notice_sent, false) AS package_exhausted_notice_sent
+    FROM students
+    WHERE id = $1 AND is_active = true
+  `, [studentId]);
+
+  const student = studentResult.rows[0];
+  if (!student || !student.parent_email || student.package_exhausted_notice_sent) return false;
+
+  const counts = await dbClient.query(`
+    SELECT
+      COALESCE(SUM(CASE WHEN LOWER(mc.status) = 'available' THEN 1 ELSE 0 END), 0) AS available_makeup,
+      COALESCE(SUM(CASE WHEN LOWER(mc.status) = 'scheduled' THEN 1 ELSE 0 END), 0) AS scheduled_makeup_pending
+    FROM makeup_classes mc
+    WHERE mc.student_id = $1
+  `, [studentId]);
+
+  const availableMakeup = parseInt(counts.rows[0]?.available_makeup, 10) || 0;
+  const scheduledMakeupPending = parseInt(counts.rows[0]?.scheduled_makeup_pending, 10) || 0;
+  const remainingSessions = parseInt(student.remaining_sessions, 10) || 0;
+
+  if (availableMakeup > 0) return false;
+  if (remainingSessions > scheduledMakeupPending) return false;
+
+  const emailHTML = getPackageExhaustedAfterMakeupEmail({
+    parentName: student.parent_name,
+    studentName: student.name,
+    programName: student.program_name,
+    perSessionFee: student.per_session_fee,
+    currency: student.currency,
+    scheduledMakeupCount: scheduledMakeupPending
+  });
+
+  const subject = scheduledMakeupPending > 0
+    ? `⏰ Final Makeup Classes Booked - Renew to Secure ${student.name}'s Slot`
+    : `🚨 All Classes Completed - Renew to Secure ${student.name}'s Slot`;
+
+  const sent = await sendEmail(
+    student.parent_email,
+    subject,
+    emailHTML,
+    student.parent_name,
+    'Package-Exhausted'
+  );
+
+  if (sent) {
+    await dbClient.query(
+      `UPDATE students SET package_exhausted_notice_sent = true WHERE id = $1`,
+      [studentId]
+    );
+  }
+
+  return sent;
 }
 
 function getWelcomeEmail(data) {
@@ -4201,6 +4309,75 @@ function getSlotsReleasingEmail(data) {
         <p style="margin: 0 0 16px 0; color: rgba(255,255,255,0.85); font-size: 13px;">Track progress, view materials, check scores & more — all in one place.</p>
         <a href="${process.env.APP_URL || 'https://fluent-feathers-academy-lms.onrender.com'}/parent.html" style="display: inline-block; background: #ffffff; color: #667eea; padding: 12px 32px; text-decoration: none; border-radius: 25px; font-weight: bold; font-size: 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.2);">🔗 Open Parent Portal</a>
       </div>
+    </div>
+    <div style="background: #f7fafc; padding: 20px 30px; text-align: center; border-top: 1px solid #e2e8f0;">
+      <p style="margin: 0; color: #718096; font-size: 13px;">
+        Made with ❤️ By Aaliya
+      </p>
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+function getPackageExhaustedAfterMakeupEmail(data) {
+  const { parentName, studentName, programName, perSessionFee, currency, scheduledMakeupCount } = data;
+  const hasScheduledMakeup = scheduledMakeupCount > 0;
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 0; background-color: #f0f4f8; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
+  <div style="max-width: 600px; margin: 20px auto; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.1);">
+    <div style="background: linear-gradient(135deg, #dd6b20 0%, #c05621 100%); padding: 40px 30px; text-align: center;">
+      <div style="font-size: 50px; margin-bottom: 10px;">⏰</div>
+      <h1 style="margin: 0; color: white; font-size: 28px; font-weight: bold;">Renew to Secure the Slot</h1>
+      <p style="color: rgba(255,255,255,0.9); margin: 10px 0 0; font-size: 14px;">Fluent Feathers Academy By Aaliya</p>
+    </div>
+    <div style="padding: 40px 30px;">
+      <p style="margin: 0 0 20px; font-size: 16px; color: #2d3748;">
+        Dear <strong>${parentName}</strong>,
+      </p>
+
+      <div style="background: linear-gradient(135deg, #fff7ed 0%, #feebc8 100%); padding: 25px; border-radius: 12px; border-left: 4px solid #dd6b20; margin: 25px 0;">
+        <p style="margin: 0; font-size: 18px; color: #c05621; font-weight: bold; text-align: center;">
+          ${hasScheduledMakeup
+            ? `${studentName}'s regular sessions are over and all makeup credits are now booked.`
+            : `${studentName}'s regular sessions and makeup credits are now fully used.`}
+        </p>
+      </div>
+
+      <p style="margin: 0 0 20px; font-size: 15px; color: #4a5568; line-height: 1.7;">
+        ${hasScheduledMakeup
+          ? `${studentName} now has ${scheduledMakeupCount} final makeup class${scheduledMakeupCount > 1 ? 'es' : ''} scheduled under <strong>${programName || 'the program'}</strong>. After these are completed, there will be no sessions or makeup credits left in the package.`
+          : `All paid sessions and makeup credits for <strong>${studentName}</strong> under <strong>${programName || 'the program'}</strong> have now been completed.`}
+      </p>
+
+      <div style="background: #fff5f5; padding: 20px; border-radius: 10px; border-left: 4px solid #e53e3e; margin: 25px 0;">
+        <p style="margin: 0; font-size: 15px; color: #742a2a; line-height: 1.7;">
+          <strong>📌 Action needed:</strong> Please renew now if you'd like us to continue holding ${studentName}'s class slot and schedule the next set of sessions without interruption.
+        </p>
+      </div>
+
+      ${perSessionFee ? `
+      <div style="background: #f7fafc; padding: 15px; border-radius: 8px; margin: 20px 0;">
+        <p style="margin: 0; font-size: 14px; color: #4a5568;">
+          <strong>💰 Per Session Fee:</strong> ${currency || '₹'}${perSessionFee}
+        </p>
+      </div>
+      ` : ''}
+
+      <p style="margin: 25px 0; font-size: 15px; color: #4a5568; line-height: 1.7;">
+        To renew, simply reply to this email or contact us directly. We’ll be happy to help secure the next set of classes for ${studentName}.
+      </p>
+
+      <p style="margin: 25px 0 0; font-size: 15px; color: #4a5568;">
+        Warm regards,<br>
+        <strong style="color: #667eea;">Team Fluent Feathers Academy</strong>
+      </p>
     </div>
     <div style="background: #f7fafc; padding: 20px 30px; text-align: center; border-top: 1px solid #e2e8f0;">
       <p style="margin: 0; color: #718096; font-size: 13px;">
@@ -5639,6 +5816,22 @@ let adminPastCache = { data: null, ts: 0 };
 const ADMIN_UPCOMING_TTL_MS = 60 * 1000;      // 1 minute (refreshes quickly)
 const ADMIN_PAST_TTL_MS = 3 * 60 * 1000;     // 3 minutes
 
+function paginateUpcomingClassesPayload(payload, page = 1, limit = 9) {
+  const classes = Array.isArray(payload?.classes) ? payload.classes : [];
+  const currentPage = Math.max(parseInt(page, 10) || 1, 1);
+  const pageSize = Math.min(Math.max(parseInt(limit, 10) || 9, 1), 50);
+  const startIndex = (currentPage - 1) * pageSize;
+
+  return {
+    success: payload?.success !== false,
+    classes: classes.slice(startIndex, startIndex + pageSize),
+    page: currentPage,
+    limit: pageSize,
+    total: classes.length,
+    hasMore: startIndex + pageSize < classes.length
+  };
+}
+
 function clearAdminDashboardCache() {
   adminUpcomingCache = { data: null, ts: 0 };
   adminPastCache = { data: null, ts: 0 };
@@ -5791,10 +5984,13 @@ app.get('/api/calendar/sessions', async (req, res) => {
 });
 
 app.get('/api/dashboard/upcoming-classes', async (req, res) => {
+  const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 9, 1), 50);
+
   // Serve from cache if fresh
   if (adminUpcomingCache.data && (Date.now() - adminUpcomingCache.ts) < ADMIN_UPCOMING_TTL_MS) {
     res.set('X-Cache', 'HIT');
-    return res.json(adminUpcomingCache.data);
+    return res.json(paginateUpcomingClassesPayload(adminUpcomingCache.data, page, limit));
   }
   try {
     // Fire all 4 independent queries in parallel
@@ -5909,7 +6105,7 @@ app.get('/api/dashboard/upcoming-classes', async (req, res) => {
         console.error('Error sorting sessions:', e);
         return 0;
       }
-    }).slice(0, 9); // Show 9 upcoming classes
+    });
 
    // For group sessions, fetch enrolled students with their attendance/cancellation status
    const groupSessionIds = upcoming.filter(s => s.display_type === 'Group').map(s => s.id);
@@ -5944,14 +6140,14 @@ app.get('/api/dashboard/upcoming-classes', async (req, res) => {
    // SUCCESS
   const upcomingResp = { success: true, classes: upcoming };
   adminUpcomingCache = { data: upcomingResp, ts: Date.now() };
-res.json(upcomingResp);
+res.json(paginateUpcomingClassesPayload(upcomingResp, page, limit));
 
   } catch (err) {
     console.error('Error loading upcoming classes:', err);
     // ERROR
   const errResp = { success: false, classes: [] };
   adminUpcomingCache = { data: errResp, ts: Date.now() - ADMIN_UPCOMING_TTL_MS + 10000 }; // retry in 10s
-res.status(500).json(errResp);
+res.status(500).json(paginateUpcomingClassesPayload(errResp, page, limit));
 
   }
 });
@@ -6677,6 +6873,9 @@ app.post('/api/groups/:groupId/add-to-sessions', async (req, res) => {
     }
 
     await client.query('COMMIT');
+    if (makeupNum > 0) {
+      await sendPackageExhaustedNoticeIfNeeded(student_id);
+    }
 
     const studentName = student.rows[0].name;
     const makeupMsg = makeupNum > 0 ? ` (${makeupNum} using makeup credits)` : '';
@@ -6821,12 +7020,16 @@ app.post('/api/schedule/private-classes', async (req, res) => {
       );
     }
 
+    if (makeupClasses.length > 0) {
+      await sendPackageExhaustedNoticeIfNeeded(student_id);
+    }
+
     const makeupMsg = makeupClasses.length > 0 ? ` (${makeupClasses.length} using makeup credits)` : '';
     const emailMsg = emailSent === true ? ' and email sent!' : emailSent === false ? ' (email failed to send)' : '';
     const message = 'Classes scheduled successfully!' + emailMsg + makeupMsg;
     sendPushToAdmins(
       'Class Scheduled',
-      `${student.name}: ${classes.length} private class${classes.length !== 1 ? 'es' : ''} scheduled${makeupClasses.length > 0 ? `, including ${makeupClasses.length} makeup` : ''}.`,
+      `${student.name}: ${classes.length} class${classes.length !== 1 ? 'es' : ''} scheduled${makeupClasses.length > 0 ? `, including ${makeupClasses.length} makeup` : ''}.`,
       { type: 'admin_schedule_private', student_id: String(student_id) }
     ).catch(() => {});
     res.json({ success: true, message, emailSent });
@@ -7026,11 +7229,15 @@ app.post('/api/schedule/group-classes', async (req, res) => {
       makeupMsg = ` (${totalMakeup} makeup credits used across ${makeupUsed.length} student${makeupUsed.length > 1 ? 's' : ''})`;
     }
 
+    for (const [studentId] of makeupUsed) {
+      await sendPackageExhaustedNoticeIfNeeded(parseInt(studentId, 10));
+    }
+
     const emailMsg = send_email !== false && emailsSent > 0 ? ` and emails sent to ${emailsSent} students` : '';
     const message = `Group classes scheduled successfully!${emailMsg}${makeupMsg}`;
     sendPushToAdmins(
-      'Group Classes Scheduled',
-      `${group.group_name}: ${classes.length} group class${classes.length !== 1 ? 'es' : ''} scheduled.`,
+      'Classes Scheduled',
+      `${group.group_name}: ${classes.length} class${classes.length !== 1 ? 'es' : ''} scheduled.`,
       { type: 'admin_schedule_group', group_id: String(group_id) }
     ).catch(() => {});
     res.json({ success: true, message, emailsSent });
@@ -7229,14 +7436,40 @@ app.get('/api/groups/:groupId/matching-private-sessions', async (req, res) => {
       ORDER BY s.session_date, s.session_time, st.name
     `, [req.params.groupId])).rows;
 
+    const existingGroupSessions = (await pool.query(`
+      SELECT s.id, s.session_date, s.session_time
+      FROM sessions s
+      WHERE s.group_id = $1
+        AND s.session_type = 'Group'
+        AND s.status IN ('Pending', 'Scheduled')
+    `, [req.params.groupId])).rows;
+
     const grouped = new Map();
+    for (const sess of existingGroupSessions) {
+      const key = `${sess.session_date}|${sess.session_time}`;
+      if (!grouped.has(key)) {
+        grouped.set(key, {
+          session_date: sess.session_date,
+          session_time: sess.session_time,
+          students: [],
+          existing_group_session_id: sess.id,
+          existing_group_count: 1
+        });
+      } else {
+        grouped.get(key).existing_group_session_id = sess.id;
+        grouped.get(key).existing_group_count = 1;
+      }
+    }
+
     for (const row of rows) {
       const key = `${row.session_date}|${row.session_time}`;
       if (!grouped.has(key)) {
         grouped.set(key, {
           session_date: row.session_date,
           session_time: row.session_time,
-          students: []
+          students: [],
+          existing_group_session_id: null,
+          existing_group_count: 0
         });
       }
       grouped.get(key).students.push({
@@ -7251,10 +7484,10 @@ app.get('/api/groups/:groupId/matching-private-sessions', async (req, res) => {
     }
 
     const matches = Array.from(grouped.values())
-      .filter(slot => slot.students.length >= 2)
+      .filter(slot => slot.students.length + (slot.existing_group_count || 0) >= 2)
       .map(slot => ({
         ...slot,
-        student_count: slot.students.length
+        student_count: slot.students.length + (slot.existing_group_count || 0)
       }));
 
     res.json(matches);
@@ -7698,6 +7931,7 @@ app.post('/api/sessions/:sessionId/cancel', async (req, res) => {
         INSERT INTO makeup_classes (student_id, original_session_id, reason, credit_date, status, added_by, notes)
         VALUES ($1, $2, $3, CURRENT_DATE, 'Available', 'admin', $4)
       `, [session.student_id, session.id, reason || 'Teacher cancelled', notes || '']);
+      await resetPackageExhaustedNotice(session.student_id);
     }
 
     // Decrement remaining_sessions for the student (private sessions only)
@@ -7960,6 +8194,7 @@ app.post('/api/sessions/:sessionId/attendance', async (req, res) => {
             INSERT INTO makeup_classes (student_id, original_session_id, reason, credit_date, status, added_by)
             VALUES ($1, $2, 'Excused absence', CURRENT_DATE, 'Available', 'admin')
           `, [studentId, sessionId]);
+          await resetPackageExhaustedNotice(studentId);
         }
       } else {
         if (!alreadyCounted) {
@@ -8108,6 +8343,7 @@ app.post('/api/sessions/:sessionId/group-attendance', async (req, res) => {
             INSERT INTO makeup_classes (student_id, original_session_id, reason, credit_date, status, added_by)
             VALUES ($1, $2, 'Excused absence (group class)', CURRENT_DATE, 'Available', 'admin')
           `, [record.student_id, sessionId]);
+          await resetPackageExhaustedNotice(record.student_id, client);
 
           // Decrement remaining sessions if coming from Pending
           if (wasPending) {
@@ -9218,6 +9454,7 @@ app.post('/api/sessions/:sessionId/group-cancel-student', async (req, res) => {
           INSERT INTO makeup_classes (student_id, original_session_id, reason, credit_date, status, added_by, notes)
           VALUES ($1, $2, $3, CURRENT_DATE, 'Available', 'admin', $4)
         `, [student_id, sessionId, reason || 'Parent requested cancellation (group class)', notes || '']);
+        await resetPackageExhaustedNotice(student_id, client);
       }
 
       if (wasPending) {
@@ -9345,6 +9582,7 @@ app.post('/api/parent/cancel-class', async (req, res) => {
 
     // Give makeup credit in both cases
     await pool.query(`INSERT INTO makeup_classes (student_id, original_session_id, reason, credit_date, status, added_by) VALUES ($1, $2, $3, CURRENT_DATE, 'Available', 'parent')`, [id, session.id, req.body.reason || 'Parent cancelled']);
+    await resetPackageExhaustedNotice(id);
 
     sendPushToAdmins(
       'Class Cancelled by Parent',
@@ -9427,6 +9665,7 @@ app.post('/api/students/:studentId/makeup-credits', async (req, res) => {
       INSERT INTO makeup_classes (student_id, reason, credit_date, status, added_by, notes)
       VALUES ($1, $2, CURRENT_DATE, 'Available', 'admin', $3)
     `, [studentId, reason || 'Emergency - added by admin', notes || '']);
+    await resetPackageExhaustedNotice(studentId);
 
     // Send email to parent about makeup credit
     if (student && student.parent_email) {
@@ -9569,6 +9808,8 @@ app.put('/api/makeup-credits/:creditId/schedule', async (req, res) => {
 
       await sendEmail(studentData.parent_email, `🎉 Makeup Class Scheduled for ${studentData.name}`, emailHTML, studentData.parent_name, 'Makeup-Schedule');
     }
+
+    await sendPackageExhaustedNoticeIfNeeded(student_id);
 
     res.json({
       success: true,
@@ -9785,7 +10026,8 @@ app.post('/api/students/:id/renewal', async (req, res) => {
         remaining_sessions = remaining_sessions + $1,
         fees_paid = fees_paid + $2,
         renewal_reminder_sent = false,
-        last_reminder_remaining = NULL
+        last_reminder_remaining = NULL,
+        package_exhausted_notice_sent = false
       WHERE id = $3
     `, [sessionsNum, amount, req.params.id]);
     await renumberPrivateSessionsForStudent(req.params.id, client);
@@ -10034,6 +10276,10 @@ app.post('/api/students/:id/add-extra-sessions', async (req, res) => {
         student.parent_name,
         'Schedule'
       );
+    }
+
+    if (deduct_from === 'makeup') {
+      await sendPackageExhaustedNoticeIfNeeded(studentId);
     }
 
     const deductMsg = deduct_from === 'remaining' ? ` (deducted from remaining)` : deduct_from === 'makeup' ? ` (using makeup credits)` : ` (extra - paid separately)`;
@@ -10617,7 +10863,7 @@ app.get('/api/cleanup/orphaned-count', async (req, res) => {
 
 // ==================== EDIT & DELETE STUDENT ====================
 app.put('/api/students/:id', async (req, res) => {
-  const { name, grade, parent_name, parent_email, primary_contact, timezone, parent_timezone, program_name, duration, per_session_fee, currency, date_of_birth, class_link } = req.body;
+  const { name, grade, parent_name, parent_email, primary_contact, timezone, parent_timezone, program_name, class_type, duration, per_session_fee, currency, date_of_birth, class_link } = req.body;
   try {
     const studentTimezone = timezone || parent_timezone || 'Asia/Kolkata';
     const parentTimezone = studentTimezone; // single timezone — admin sets one value for everything
@@ -10625,10 +10871,10 @@ app.put('/api/students/:id', async (req, res) => {
       UPDATE students SET
         name = $1, grade = $2, parent_name = $3, parent_email = $4,
         primary_contact = $5, timezone = $6, parent_timezone = $7, program_name = $8,
-        duration = $9, per_session_fee = $10, currency = $11,
-        date_of_birth = $12, class_link = $13
-      WHERE id = $14
-    `, [name, grade, parent_name, parent_email, primary_contact, studentTimezone, parentTimezone, program_name, duration, per_session_fee, currency, date_of_birth || null, class_link || null, req.params.id]);
+        class_type = $9, duration = $10, per_session_fee = $11, currency = $12,
+        date_of_birth = $13, class_link = $14
+      WHERE id = $15
+    `, [name, grade, parent_name, parent_email, primary_contact, studentTimezone, parentTimezone, program_name, class_type || 'Private', duration, per_session_fee, currency, date_of_birth || null, class_link || null, req.params.id]);
     // Sync parent_credentials so the stored value is authoritative
     if (parent_email) {
       await pool.query(
@@ -13273,8 +13519,6 @@ app.post('/api/groups/:groupId/merge-matching-sessions', async (req, res) => {
     const affectedStudents = new Set();
 
     for (const slotRows of grouped.values()) {
-      if (slotRows.length < 2) continue;
-
       const { session_date, session_time } = slotRows[0];
       let groupSession = (await client.query(`
         SELECT id
@@ -13285,6 +13529,8 @@ app.post('/api/groups/:groupId/merge-matching-sessions', async (req, res) => {
           AND session_time = $3
         LIMIT 1
       `, [groupId, session_date, session_time])).rows[0];
+
+      if (!groupSession && slotRows.length < 2) continue;
 
       if (!groupSession) {
         groupSession = (await client.query(`
@@ -13307,6 +13553,14 @@ app.post('/api/groups/:groupId/merge-matching-sessions', async (req, res) => {
           SET session_id = $1
           WHERE session_id = $2
         `, [groupSession.id, row.session_id]);
+
+        await client.query(`
+          UPDATE makeup_classes
+          SET scheduled_session_id = $1,
+              scheduled_date = $2,
+              scheduled_time = $3
+          WHERE scheduled_session_id = $4
+        `, [groupSession.id, session_date, session_time, row.session_id]);
 
         await client.query(`
           INSERT INTO session_attendance (session_id, student_id, attendance)

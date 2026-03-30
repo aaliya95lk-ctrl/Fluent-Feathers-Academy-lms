@@ -404,6 +404,7 @@
         <div style="display: flex; gap: 10px; align-items: center;">
           <span id="storageStatus" style="padding: 5px 10px; border-radius: 15px; font-size: 11px; font-weight: 600; cursor: help;" title="File storage status">⏳ Checking...</span>
           <button id="adminNotifyBtn" onclick="enableAdminNotifications(true)" class="btn btn-sm" style="background: #38b2ac; color: white; font-size: 12px;">🔔 Enable Notifications</button>
+          <button id="adminRefreshBtn" type="button" onclick="refreshAdminPanel(true)" class="btn btn-sm" style="background: #319795; color: white; font-size: 12px;">🔄 Refresh</button>
           <button id="bulkTimezoneSyncHeaderBtn" onclick="runBulkTimezoneSync('bulkTimezoneSyncHeaderBtn')" class="btn btn-sm" style="background: #d69e2e; color: white; font-size: 12px;" title="Sync parent timezone data across existing records">🌍 Timezone Sync</button>
           <button onclick="openSwitchToLearnerModal()" class="btn btn-sm" style="background: #B05D9E; color: white; font-size: 12px;">👁️ Learner View</button>
           <button onclick="adminLogout()" class="btn btn-sm" style="background: #718096; color: white; font-size: 12px;">Logout</button>
@@ -499,6 +500,9 @@
     </div>
   </div>
   <div id="upcomingClassesGrid" class="upcoming-classes-grid">Loading...</div>
+  <div id="upcomingClassesActions" style="display:none; text-align:center; margin-top:16px;">
+    <button id="upcomingClassesShowMoreBtn" type="button" class="btn" onclick="loadMoreUpcomingClasses()" style="background:#B05D9E; color:white; min-width:160px;">Show More</button>
+  </div>
       </div>
     </div>
 
@@ -3380,6 +3384,9 @@ I'm passionate about helping children develop confidence in communication!"></te
         </div>
         <div class="form-row">
           <div class="form-group"><label>Program Name *</label><input type="text" id="editProgramName" required></div>
+          <div class="form-group"><label>Class Type *</label><select id="editClassType" required><option value="Private">Private</option><option value="Group">Group</option></select></div>
+        </div>
+        <div class="form-row">
           <div class="form-group"><label>Duration *</label><select id="editDuration" required><option value="25 mins">25 mins</option><option value="30 mins">30 mins</option><option value="40 mins">40 mins</option><option value="45 mins">45 mins</option><option value="60 mins">60 mins</option></select></div>
         </div>
         <div class="form-row">
@@ -3807,10 +3814,14 @@ I'm passionate about helping children develop confidence in communication!"></te
           body: JSON.stringify({ token })
         });
         messaging.onMessage((payload) => {
-          const n = payload.notification;
+          const data = payload.data || {};
+          const n = payload.notification || {};
           const iconUrl = appConfig.logoUrl || '/logo.png';
-          if (n && n.title && Notification.permission === 'granted') {
-            new Notification(n.title, { body: n.body || '', icon: iconUrl, badge: iconUrl });
+          const title = data.title || n.title;
+          const body = data.body || n.body || '';
+          const tag = data.notificationTag || data.type || [title, body].filter(Boolean).join('|').slice(0, 180);
+          if (title && Notification.permission === 'granted') {
+            new Notification(title, { body, icon: iconUrl, badge: iconUrl, tag, renotify: false });
           }
         });
         adminPushSetupDone = true;
@@ -3897,6 +3908,10 @@ I'm passionate about helping children develop confidence in communication!"></te
     const tabLoadState = {};
     const TAB_CACHE_TTL_MS = 2 * 60 * 1000;
 
+    function resetAdminTabCache() {
+      Object.keys(tabLoadState).forEach(key => delete tabLoadState[key]);
+    }
+
     function loadTabCached(tabKey, loaderFn, force = false) {
       const now = Date.now();
       const state = tabLoadState[tabKey] || {};
@@ -3917,6 +3932,47 @@ I'm passionate about helping children develop confidence in communication!"></te
 
       tabLoadState[tabKey] = { ...state, inFlight };
       return inFlight;
+    }
+
+    async function refreshAdminPanel(showFeedback = false) {
+      const refreshBtn = document.getElementById('adminRefreshBtn');
+      const originalLabel = refreshBtn ? refreshBtn.textContent : '';
+      const activeTab = localStorage.getItem('adminActiveTab') || 'upcoming';
+
+      try {
+        if (refreshBtn) {
+          refreshBtn.disabled = true;
+          refreshBtn.textContent = 'Refreshing...';
+          refreshBtn.style.opacity = '0.75';
+          refreshBtn.style.cursor = 'wait';
+        }
+
+        resetAdminTabCache();
+
+        await Promise.all([
+          loadDashboardStats(),
+          loadUpcomingClasses(false),
+          loadStudents(),
+          loadGroups(),
+          loadCalendar()
+        ]);
+
+        if (document.getElementById(activeTab + 'Tab')) {
+          await showTab(activeTab);
+        }
+
+        if (showFeedback) alert('Admin panel refreshed.');
+      } catch (err) {
+        console.error('Admin refresh error:', err);
+        if (showFeedback) alert(err.message || 'Could not refresh admin panel');
+      } finally {
+        if (refreshBtn) {
+          refreshBtn.disabled = false;
+          refreshBtn.textContent = originalLabel || 'Refresh';
+          refreshBtn.style.opacity = '1';
+          refreshBtn.style.cursor = 'pointer';
+        }
+      }
     }
 
     document.addEventListener('DOMContentLoaded', async () => {
@@ -4237,6 +4293,77 @@ I'm passionate about helping children develop confidence in communication!"></te
     }
 
     let _upcomingRetryCount = 0;
+    const UPCOMING_CLASSES_PAGE_SIZE = 9;
+    let upcomingClassesPage = 1;
+    let upcomingClassesHasMore = false;
+    let upcomingClassesLoadingMore = false;
+
+    function updateUpcomingClassesActions({ hasMore = false, loading = false, retry = false } = {}) {
+      const actions = document.getElementById('upcomingClassesActions');
+      const btn = document.getElementById('upcomingClassesShowMoreBtn');
+      if (!actions || !btn) return;
+
+      upcomingClassesHasMore = !!hasMore;
+      actions.style.display = (hasMore || retry || loading) ? 'block' : 'none';
+      btn.disabled = loading;
+      btn.style.opacity = loading ? '0.7' : '1';
+      btn.style.cursor = loading ? 'wait' : 'pointer';
+      btn.textContent = loading ? 'Loading...' : (retry ? 'Try Again' : 'Show More');
+    }
+
+    function renderUpcomingClassCards(classes) {
+      return classes.map(cls => {
+        const dateStr = cls.session_date.includes('T') ? cls.session_date.split('T')[0] : cls.session_date;
+        const d = new Date(dateStr + 'T00:00:00');
+        const dayName = d.toLocaleDateString('en-US', { weekday: 'long' });
+
+        const isDemo = cls.session_type === 'Demo';
+        const cardClass = isDemo ? 'class-card class-card-demo' : 'class-card';
+        const typeLabel = isDemo ? '<span style="background: #ffd700; color: #333; padding: 2px 8px; border-radius: 10px; font-size: 0.7rem; margin-left: 5px;">DEMO</span>' : '';
+
+        const isGroup = cls.display_type === 'Group';
+        let studentsHtml = '';
+        if (isGroup && cls.enrolled_students && cls.enrolled_students.length > 0) {
+          const joining = cls.enrolled_students.filter(s => !['Cancelled', 'Cancelled by Parent', 'Excused', 'Unexcused', 'Absent'].includes(s.attendance));
+          const cancelled = cls.enrolled_students.filter(s => ['Cancelled', 'Cancelled by Parent', 'Excused', 'Unexcused', 'Absent'].includes(s.attendance));
+          const dropdownId = 'students-' + cls.id;
+          studentsHtml = `<div style="margin-top: 8px;">
+            <div onclick="var el=document.getElementById('${dropdownId}'); el.style.display = el.style.display==='none'?'block':'none'; this.querySelector('.arrow').textContent = el.style.display==='none'?'▸':'▾';" style="cursor: pointer; background: rgba(255,255,255,0.2); padding: 6px 12px; border-radius: 8px; font-size: 0.8rem; font-weight: 600; display: flex; align-items: center; gap: 6px;">
+              <span class="arrow">▸</span> 👥 ${joining.length} Student${joining.length !== 1 ? 's' : ''} ${cancelled.length > 0 ? `<span style="background: rgba(229,62,62,0.4); padding: 1px 6px; border-radius: 8px; font-size: 0.7rem; margin-left: auto;">❌ ${cancelled.length} cancelled</span>` : ''}
+            </div>
+            <div id="${dropdownId}" style="display: none; margin-top: 6px; padding: 8px 10px; background: rgba(255,255,255,0.12); border-radius: 8px; font-size: 0.8rem;">
+              <div style="display: flex; flex-wrap: wrap; gap: 4px;">
+                ${joining.map(s => `<span style="background: rgba(255,255,255,0.25); padding: 2px 8px; border-radius: 10px; font-size: 0.75rem;">✅ ${s.name}</span>`).join('')}
+              </div>
+              ${cancelled.length > 0 ? `<div style="margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.15);">
+              <div style="display: flex; flex-wrap: wrap; gap: 4px;">
+                ${cancelled.map(s => `<span style="background: rgba(229,62,62,0.3); padding: 2px 8px; border-radius: 10px; font-size: 0.75rem; text-decoration: line-through;">❌ ${s.name}</span>`).join('')}
+              </div></div>` : ''}
+            </div>
+          </div>`;
+        }
+
+        return `<div class="${cardClass}">
+        <h3>${cls.student_name}${typeLabel}</h3>
+        <p>📚 ${cls.class_info || 'N/A'}</p>
+        <p>📅 ${dayName}, ${formatSessionTime(cls)} (IST)</p>
+        <p>🌍 ${isDemo ? 'Demo Class' : 'Student TZ: ' + cls.timezone}</p>
+        ${studentsHtml}
+        <div style="margin-top: 10px; display: flex; gap: 5px; flex-wrap: wrap;">
+         <button type="button"
+      onclick="return joinScheduledClass(${cls.id}, decodeURIComponent('${encodeURIComponent(cls.class_link || 'https://us04web.zoom.us/j/7288533155?pwd=Nng5N2l0aU12L0FQK245c0VVVHJBUT09')}'), decodeURIComponent('${encodeURIComponent(cls.session_type || '')}'))"
+      class="btn btn-sm"
+      style="background:white; color:#B05D9E;">
+Join Class
+</button>
+          ${isDemo ? `<button onclick="showTab('demoStudents', event)" class="btn btn-sm" style="background:rgba(255,255,255,0.3); color:white;">📋 View Demo Leads</button>` : `<button onclick="openSessionModal(${cls.id}, '${cls.session_type}')" class="btn btn-sm" style="background:rgba(255,255,255,0.3); color:white;">⚙️ Manage</button>
+          ${isGroup ? `<button onclick="openGroupStudentCancelModal(${cls.id}, decodeURIComponent('${encodeURIComponent(cls.student_name || '')}'))" class="btn btn-sm" style="background:#dd6b20; color:white;">👥 Cancel Student</button>` : ''}
+          <button onclick="openCancelClassModal(${cls.id}, decodeURIComponent('${encodeURIComponent(cls.student_name || '')}'), '${cls.session_type}')" class="btn btn-sm" style="background:#e53e3e; color:white;">✕ Cancel Class</button>`}
+        </div>
+      </div>`;
+      }).join('');
+    }
+
     function joinScheduledClass(sessionId, classLink, sessionType) {
       const targetUrl = classLink || 'https://us04web.zoom.us/j/7288533155?pwd=Nng5N2l0aU12L0FQK245c0VVVHJBUT09';
       window.open(targetUrl, '_blank', 'noopener');
@@ -4254,11 +4381,16 @@ I'm passionate about helping children develop confidence in communication!"></te
       return false;
     }
 
-    async function loadUpcomingClasses(showLoadingOverlay = true) {
+    async function loadUpcomingClasses(showLoadingOverlay = true, page = 1, append = false) {
       try {
+        const isLoadMore = append || page > 1;
+        if (isLoadMore) {
+          upcomingClassesLoadingMore = true;
+          updateUpcomingClassesActions({ hasMore: upcomingClassesHasMore, loading: true });
+        }
         if (showLoadingOverlay) setDbLoading(true, 'Loading upcoming classes...');
         console.log('🔄 Loading upcoming classes...');
-        const res = await fetchWithTimeout('/api/dashboard/upcoming-classes', 30000);
+        const res = await fetchWithTimeout(`/api/dashboard/upcoming-classes?page=${page}&limit=${UPCOMING_CLASSES_PAGE_SIZE}`, 30000);
         if (!res.ok) {
           throw new Error(`HTTP ${res.status}: ${res.statusText}`);
         }
@@ -4271,78 +4403,47 @@ I'm passionate about helping children develop confidence in communication!"></te
           return;
         }
         if (classes.length === 0) {
-          startAdminNextClassTimer(null);
-          return grid.innerHTML = '<p style="color:#a0aec0; padding:20px; text-align:center;">No upcoming classes scheduled 📅</p>';
+          if (!isLoadMore) {
+            startAdminNextClassTimer(null);
+            updateUpcomingClassesActions({ hasMore: false });
+            return grid.innerHTML = '<p style="color:#a0aec0; padding:20px; text-align:center;">No upcoming classes scheduled 📅</p>';
+          }
+          updateUpcomingClassesActions({ hasMore: false });
+          return;
         }
         _upcomingRetryCount = 0; // reset on success
-        startAdminNextClassTimer(classes[0]);
-        grid.innerHTML = classes.map(cls => {
-          // Get day name
-          const dateStr = cls.session_date.includes('T') ? cls.session_date.split('T')[0] : cls.session_date;
-          const d = new Date(dateStr + 'T00:00:00');
-          const dayName = d.toLocaleDateString('en-US', { weekday: 'long' });
-
-          // Different styling for demo classes
-          const isDemo = cls.session_type === 'Demo';
-          const cardClass = isDemo ? 'class-card class-card-demo' : 'class-card';
-          const typeLabel = isDemo ? '<span style="background: #ffd700; color: #333; padding: 2px 8px; border-radius: 10px; font-size: 0.7rem; margin-left: 5px;">DEMO</span>' : '';
-
-          // Build student list for group sessions (collapsible dropdown)
-          const isGroup = cls.display_type === 'Group';
-          let studentsHtml = '';
-          if (isGroup && cls.enrolled_students && cls.enrolled_students.length > 0) {
-            const joining = cls.enrolled_students.filter(s => !['Cancelled', 'Cancelled by Parent', 'Excused', 'Unexcused', 'Absent'].includes(s.attendance));
-            const cancelled = cls.enrolled_students.filter(s => ['Cancelled', 'Cancelled by Parent', 'Excused', 'Unexcused', 'Absent'].includes(s.attendance));
-            const dropdownId = 'students-' + cls.id;
-            studentsHtml = `<div style="margin-top: 8px;">
-              <div onclick="var el=document.getElementById('${dropdownId}'); el.style.display = el.style.display==='none'?'block':'none'; this.querySelector('.arrow').textContent = el.style.display==='none'?'▸':'▾';" style="cursor: pointer; background: rgba(255,255,255,0.2); padding: 6px 12px; border-radius: 8px; font-size: 0.8rem; font-weight: 600; display: flex; align-items: center; gap: 6px;">
-                <span class="arrow">▸</span> 👥 ${joining.length} Student${joining.length !== 1 ? 's' : ''} ${cancelled.length > 0 ? `<span style="background: rgba(229,62,62,0.4); padding: 1px 6px; border-radius: 8px; font-size: 0.7rem; margin-left: auto;">❌ ${cancelled.length} cancelled</span>` : ''}
-              </div>
-              <div id="${dropdownId}" style="display: none; margin-top: 6px; padding: 8px 10px; background: rgba(255,255,255,0.12); border-radius: 8px; font-size: 0.8rem;">
-                <div style="display: flex; flex-wrap: wrap; gap: 4px;">
-                  ${joining.map(s => `<span style="background: rgba(255,255,255,0.25); padding: 2px 8px; border-radius: 10px; font-size: 0.75rem;">✅ ${s.name}</span>`).join('')}
-                </div>
-                ${cancelled.length > 0 ? `<div style="margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.15);">
-                <div style="display: flex; flex-wrap: wrap; gap: 4px;">
-                  ${cancelled.map(s => `<span style="background: rgba(229,62,62,0.3); padding: 2px 8px; border-radius: 10px; font-size: 0.75rem; text-decoration: line-through;">❌ ${s.name}</span>`).join('')}
-                </div></div>` : ''}
-              </div>
-            </div>`;
-          }
-
-          return `<div class="${cardClass}">
-          <h3>${cls.student_name}${typeLabel}</h3>
-          <p>📚 ${cls.class_info || 'N/A'}</p>
-          <p>📅 ${dayName}, ${formatSessionTime(cls)} (IST)</p>
-          <p>🌍 ${isDemo ? 'Demo Class' : 'Student TZ: ' + cls.timezone}</p>
-          ${studentsHtml}
-          <div style="margin-top: 10px; display: flex; gap: 5px; flex-wrap: wrap;">
-           <button type="button"
-        onclick="return joinScheduledClass(${cls.id}, decodeURIComponent('${encodeURIComponent(cls.class_link || 'https://us04web.zoom.us/j/7288533155?pwd=Nng5N2l0aU12L0FQK245c0VVVHJBUT09')}'), decodeURIComponent('${encodeURIComponent(cls.session_type || '')}'))"
-        class="btn btn-sm"
-        style="background:white; color:#B05D9E;">
-  Join Class
-</button>
-            ${isDemo ? `<button onclick="showTab('demoStudents', event)" class="btn btn-sm" style="background:rgba(255,255,255,0.3); color:white;">📋 View Demo Leads</button>` : `<button onclick="openSessionModal(${cls.id}, '${cls.session_type}')" class="btn btn-sm" style="background:rgba(255,255,255,0.3); color:white;">⚙️ Manage</button>
-            ${isGroup ? `<button onclick="openGroupStudentCancelModal(${cls.id}, decodeURIComponent('${encodeURIComponent(cls.student_name || '')}'))" class="btn btn-sm" style="background:#dd6b20; color:white;">👥 Cancel Student</button>` : ''}
-            <button onclick="openCancelClassModal(${cls.id}, decodeURIComponent('${encodeURIComponent(cls.student_name || '')}'), '${cls.session_type}')" class="btn btn-sm" style="background:#e53e3e; color:white;">✕ Cancel Class</button>`}
-          </div>
-        </div>`;
-        }).join('');
+        if (!isLoadMore) {
+          startAdminNextClassTimer(classes[0]);
+          grid.innerHTML = renderUpcomingClassCards(classes);
+        } else {
+          grid.insertAdjacentHTML('beforeend', renderUpcomingClassCards(classes));
+        }
+        upcomingClassesPage = parseInt(data.page, 10) || page;
+        updateUpcomingClassesActions({ hasMore: !!data.hasMore });
       } catch (err) {
         _upcomingRetryCount++;
         console.warn(`⏳ Upcoming classes load failed (attempt ${_upcomingRetryCount}):`, err.message);
         const grid = document.getElementById('upcomingClassesGrid');
-        if (_upcomingRetryCount <= 4) {
+        const isLoadMore = append || page > 1;
+        if (isLoadMore) {
+          updateUpcomingClassesActions({ hasMore: true, retry: true });
+        } else if (_upcomingRetryCount <= 4) {
           if (grid) grid.innerHTML = `<p style="color:#a0aec0; padding:20px; text-align:center;">⏳ Database warming up… retrying (${_upcomingRetryCount}/4) 🔄</p>`;
           setTimeout(() => loadUpcomingClasses(false), 5000);
         } else {
           _upcomingRetryCount = 0;
+          updateUpcomingClassesActions({ hasMore: false });
           if (grid) grid.innerHTML = '<p style="color:#e53e3e; padding:20px; text-align:center;">Could not load classes. <a href="javascript:void(0);" onclick="_upcomingRetryCount=0; loadUpcomingClasses()" style="color:#B05D9E;">Click to retry</a> 🔃</p>';
         }
       } finally {
+        upcomingClassesLoadingMore = false;
         if (showLoadingOverlay) setDbLoading(false);
       }
+    }
+
+    function loadMoreUpcomingClasses() {
+      if (upcomingClassesLoadingMore || !upcomingClassesHasMore) return;
+      loadUpcomingClasses(false, upcomingClassesPage + 1, true);
     }
 
     // ── Next-Class Countdown Timer (Admin Panel) ───────────────────────────
@@ -4505,9 +4606,10 @@ if (dueEl) {
         document.getElementById('editPrimaryContact').value = student.primary_contact;
         document.getElementById('editTimezone').value = student.timezone || student.parent_timezone || 'Asia/Kolkata';
         document.getElementById('editProgramName').value = student.program_name;
+        document.getElementById('editClassType').value = student.class_type || 'Private';
         document.getElementById('editDuration').value = student.duration;
         document.getElementById('editDateOfBirth').value = student.date_of_birth ? student.date_of_birth.split('T')[0] : '';
-        document.getElementById('editClassLink').value = student.Class_link || '';
+        document.getElementById('editClassLink').value = student.class_link || '';
         document.getElementById('editCurrency').value = student.currency;
         document.getElementById('editPerSessionFee').value = student.per_session_fee;
         document.getElementById('editStudentModal').classList.add('active');
@@ -4527,9 +4629,10 @@ if (dueEl) {
         primary_contact: document.getElementById('editPrimaryContact').value,
         timezone: document.getElementById('editTimezone').value,
         program_name: document.getElementById('editProgramName').value,
+        class_type: document.getElementById('editClassType').value,
         duration: document.getElementById('editDuration').value,
         date_of_birth: document.getElementById('editDateOfBirth').value || null,
-        Class_link: document.getElementById('editClassLink').value || null,
+        class_link: document.getElementById('editClassLink').value || null,
         currency: document.getElementById('editCurrency').value,
         per_session_fee: parseFloat(document.getElementById('editPerSessionFee').value)
       };
@@ -7309,7 +7412,7 @@ async function saveEditedPayment() {
         const matches = await matchesRes.json();
 
         if (!Array.isArray(matches) || matches.length === 0) {
-          studentsList.innerHTML = '<p style="color: #718096; font-style: italic;">No matching private slots found yet. Schedule students individually first, then come back here when 2 or more students share the same date and time.</p>';
+          studentsList.innerHTML = '<p style="color: #718096; font-style: italic;">No merge-ready slots found yet. You can merge when 2 or more private students share the same date and time, or when a private student matches an already-running group slot.</p>';
           return;
         }
 
@@ -7320,6 +7423,12 @@ async function saveEditedPayment() {
               ${st.student_name} <span style="opacity:0.8;">#${st.session_number || '-'}</span>
             </span>
           `).join('');
+          const existingGroupNote = slot.existing_group_session_id
+            ? `<span style="display:inline-block; background:#e6fffa; color:#234e52; border:1px solid #81e6d9; padding:5px 10px; border-radius:999px; font-size:0.82rem; font-weight:600; margin:4px 6px 0 0;">Existing batch already booked at this time</span>`
+            : '';
+          const slotSummary = slot.existing_group_session_id
+            ? `${slot.students.length} private student${slot.students.length !== 1 ? 's' : ''} can join this existing group slot`
+            : `${slot.student_count} students already booked individually at this same slot`;
 
           return `
           <div style="padding: 16px; margin-bottom: 12px; background: white; border-radius: 10px; border: 1px solid #B05D9E; box-shadow:0 2px 8px rgba(0,0,0,0.04);">
@@ -7327,7 +7436,7 @@ async function saveEditedPayment() {
               <div>
                 <h4 style="margin: 0; color: #4a5568;">🕒 ${dateLabel} at ${slot.session_time}</h4>
                 <div style="font-size: 0.85rem; color: #718096; margin-top: 5px;">
-                  ${slot.student_count} students already booked individually at this same slot
+                  ${slotSummary}
                 </div>
               </div>
               <span style="background: #e6fffa; color: #234e52; padding: 5px 10px; border-radius: 12px; font-size: 0.8rem; font-weight: 700;">
@@ -7336,6 +7445,7 @@ async function saveEditedPayment() {
             </div>
             <div style="font-size: 0.9rem; color: #2d3748;">
               ${studentBadges}
+              ${existingGroupNote}
             </div>
           </div>
         `;
