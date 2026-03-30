@@ -468,6 +468,23 @@
       });
     }
 
+    async function fetchJsonWithTimeout(url, options = {}, timeoutMs = 90000) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const res = await fetch(url, { ...options, signal: controller.signal });
+        const data = await res.json().catch(() => ({}));
+        return { res, data };
+      } catch (err) {
+        if (err.name === 'AbortError') {
+          throw new Error('Request timed out. Try a shorter prompt or smaller image, then retry.');
+        }
+        throw err;
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    }
+
     function renderSocialSourcePreview() {
       const container = document.getElementById('socialSourcePreview');
       const meta = document.getElementById('socialSourceMeta');
@@ -513,7 +530,8 @@
         fileName: file.name,
         mediaType: inferredType,
         previewUrl: inferredType === 'image' || inferredType === 'video' ? URL.createObjectURL(file) : '',
-        imageData: inferredType === 'image' ? await fileToDataUrl(file) : ''
+        imageData: inferredType === 'image' && file.size <= 3 * 1024 * 1024 ? await fileToDataUrl(file) : '',
+        imageAssistSkipped: inferredType === 'image' && file.size > 3 * 1024 * 1024
       };
       renderSocialSourcePreview();
     }
@@ -663,8 +681,7 @@
       fd.append('file', socialSourceUpload.file);
       fd.append('uploadType', 'materials');
 
-      const res = await fetch('/api/social-media/upload', { method: 'POST', body: fd });
-      const data = await res.json();
+      const { res, data } = await fetchJsonWithTimeout('/api/social-media/upload', { method: 'POST', body: fd }, 120000);
       if (!res.ok) throw new Error(data.error || 'Source upload failed');
 
       socialSourceUpload = {
@@ -682,8 +699,7 @@
       const fd = new FormData();
       fd.append('file', socialMusicUpload.file);
       fd.append('uploadType', 'materials');
-      const res = await fetch('/api/social-media/upload', { method: 'POST', body: fd });
-      const data = await res.json();
+      const { res, data } = await fetchJsonWithTimeout('/api/social-media/upload', { method: 'POST', body: fd }, 120000);
       if (!res.ok) throw new Error(data.error || 'Music upload failed');
       socialMusicUpload = {
         ...socialMusicUpload,
@@ -728,17 +744,19 @@
           background_music_url: musicInfo && musicInfo.filePath ? musicInfo.filePath : ''
         };
 
-        const res = await fetch('/api/social-media/projects/generate-script', {
+        const { res, data } = await fetchJsonWithTimeout('/api/social-media/projects/generate-script', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
-        });
-        const data = await res.json();
+        }, 95000);
         if (!res.ok) throw new Error(data.error || 'Failed to generate script');
 
         fillSocialMediaReview(data.project);
         await loadSocialMediaProjects(true);
-        alert('Script draft generated. Review and edit it before the video step.');
+        const skippedNote = uploadInfo && uploadInfo.imageAssistSkipped
+          ? ' The uploaded image was kept with the draft, but AI image analysis was skipped because the file is large.'
+          : '';
+        alert(`Script draft generated. Review and edit it before the video step.${skippedNote}`);
       } catch (err) {
         alert('Failed to generate social media script: ' + err.message);
       } finally {
@@ -760,7 +778,7 @@
           throw new Error('Scene plan JSON is invalid. Please fix it before saving.');
         }
 
-        const res = await fetch(`/api/social-media/projects/${projectId}`, {
+        const { res, data } = await fetchJsonWithTimeout(`/api/social-media/projects/${projectId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -779,8 +797,7 @@
             generated_scene_plan: scenePlan,
             status: statusOverride || 'script_reviewed'
           })
-        });
-        const data = await res.json();
+        }, 45000);
         if (!res.ok) throw new Error(data.error || 'Failed to save draft');
 
         fillSocialMediaReview(data.project);
@@ -796,8 +813,7 @@
       if (!projectId) return alert('Generate or open a draft first.');
       await saveSocialMediaDraft('approved_for_video');
       try {
-        const res = await fetch(`/api/social-media/projects/${projectId}/render`, { method: 'POST' });
-        const data = await res.json();
+        const { res, data } = await fetchJsonWithTimeout(`/api/social-media/projects/${projectId}/render`, { method: 'POST' }, 45000);
         if (!res.ok) throw new Error(data.error || 'Render could not start');
         await loadSocialMediaProjects(true);
         const latest = socialMediaProjectsCache.find((item) => String(item.id) === String(projectId));
@@ -827,7 +843,7 @@
         await loadSocialMediaProjects(true);
         const latest = socialMediaProjectsCache.find((item) => String(item.id) === String(currentSocialMediaProject.id));
         if (latest) fillSocialMediaReview(latest);
-      }, 15000);
+      }, 5000);
     });
   </script>
 </body>

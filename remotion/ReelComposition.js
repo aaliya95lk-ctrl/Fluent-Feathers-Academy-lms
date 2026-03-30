@@ -445,6 +445,7 @@ const SceneCard = ({ scene, accentColor, studentName, captionStyle, subtitleTimi
 
 const ReelComposition = (props) => {
   const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
   const {
     title,
     hook,
@@ -464,7 +465,7 @@ const ReelComposition = (props) => {
 
   const palette = paletteByStyle[fitText(contentStyle, 'warm educational').toLowerCase()] || paletteByStyle['warm educational'];
   const [, , accentColor] = palette;
-  const durationOutroFrames = brandingTemplate === 'minimal' ? 0 : 45;
+  const durationOutroFrames = brandingTemplate === 'minimal' ? 0 : Math.round(fps * 1.5);
 
   return React.createElement(
     AbsoluteFill,
@@ -500,8 +501,8 @@ const ReelComposition = (props) => {
     voiceoverAudioUrl ? React.createElement(Audio, { src: voiceoverAudioUrl, volume: 1 }) : null,
     backgroundMusicUrl ? React.createElement(Audio, { src: backgroundMusicUrl, volume: 0.16, loop: true }) : null,
     Array.isArray(scenePlan) ? scenePlan.map((scene, index) => {
-      const start = Math.max(0, Math.floor((Number(scene.start_sec) || 0) * 30));
-      const end = Math.max(start + 1, Math.floor((Number(scene.end_sec) || 0) * 30));
+      const start = Math.max(0, Math.floor((Number(scene.start_sec) || 0) * fps));
+      const end = Math.max(start + 1, Math.floor((Number(scene.end_sec) || 0) * fps));
       const sfxUrl = resolveSfxUrl(scene.sfx, sfxMap);
       return React.createElement(
         Sequence,
@@ -523,7 +524,7 @@ const ReelComposition = (props) => {
     }) : null,
     durationOutroFrames > 0 ? React.createElement(
       Sequence,
-      { from: Math.max(0, (Array.isArray(scenePlan) && scenePlan.length ? Math.floor((Number(scenePlan[scenePlan.length - 1].end_sec) || 0) * 30) : 0) - durationOutroFrames), durationInFrames: durationOutroFrames },
+      { from: Math.max(0, (Array.isArray(scenePlan) && scenePlan.length ? Math.floor((Number(scenePlan[scenePlan.length - 1].end_sec) || 0) * fps) : 0) - durationOutroFrames), durationInFrames: durationOutroFrames },
       React.createElement(OutroCard, { brandingTemplate, logoUrl, title, accentColor })
     ) : null
   );

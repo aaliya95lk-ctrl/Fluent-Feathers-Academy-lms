@@ -622,6 +622,7 @@ async function renderSocialMediaProject(projectId, requestBaseUrl = '') {
         UPDATE social_media_projects
         SET voiceover_status = 'ready',
             voiceover_audio_url = $1,
+            render_progress = GREATEST(render_progress, 18),
             voiceover_error = NULL,
             updated_at = CURRENT_TIMESTAMP
         WHERE id = $2
@@ -630,6 +631,7 @@ async function renderSocialMediaProject(projectId, requestBaseUrl = '') {
       await pool.query(`
         UPDATE social_media_projects
         SET voiceover_status = 'skipped',
+            render_progress = GREATEST(render_progress, 18),
             voiceover_error = $1,
             updated_at = CURRENT_TIMESTAMP
         WHERE id = $2
@@ -645,12 +647,26 @@ async function renderSocialMediaProject(projectId, requestBaseUrl = '') {
       ? getAbsoluteAssetUrl(current.background_music_url, requestBaseUrl)
       : getSocialBackgroundMusicUrl(current.background_music_mode, requestBaseUrl);
 
+    await pool.query(`
+      UPDATE social_media_projects
+      SET render_progress = GREATEST(render_progress, 28),
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+    `, [projectId]);
+
     const serveUrl = await ensureSocialMediaBundle();
     const composition = await remotionRenderer.selectComposition({
       serveUrl,
       id: 'SocialMediaReel',
       inputProps
     });
+
+    await pool.query(`
+      UPDATE social_media_projects
+      SET render_progress = GREATEST(render_progress, 40),
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+    `, [projectId]);
 
     const outputFileName = `social-reel-${projectId}-${Date.now()}.mp4`;
     const outputLocation = path.join(__dirname, 'uploads', 'social-media', outputFileName);
@@ -663,7 +679,7 @@ async function renderSocialMediaProject(projectId, requestBaseUrl = '') {
       inputProps,
       overwrite: true,
       chromiumOptions: { disableWebSecurity: true },
-      ffmpegOverride: ffmpegStaticPath ? () => ffmpegStaticPath : undefined,
+      binariesDirectory: ffmpegStaticPath ? path.dirname(ffmpegStaticPath) : undefined,
       onProgress: ({ renderedFrames, encodedFrames, progress }) => {
         const progressPercent = Math.max(
           10,

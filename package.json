@@ -28,6 +28,16 @@
     "react-dom": "^19.2.4",
     "remotion": "^4.0.441"
   },
+  "overrides": {
+    "brace-expansion": "^1.1.13",
+    "picomatch": "^2.3.2",
+    "path-to-regexp": "0.1.13",
+    "node-forge": "^1.4.0",
+    "loader-utils": "^2.0.4",
+    "@tootallnate/once": "^3.0.1",
+    "retry-request": "^8.0.2",
+    "teeny-request": "^10.1.2"
+  },
   "devDependencies": {
     "nodemon": "^3.0.2"
   }

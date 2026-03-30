@@ -2,14 +2,14 @@ const React = require('react');
 const { Composition, registerRoot } = require('remotion');
 const { ReelComposition } = require('./ReelComposition');
 
-const FPS = 30;
+const FPS = 24;
 
 const RemotionRoot = () => {
   return React.createElement(Composition, {
     id: 'SocialMediaReel',
     component: ReelComposition,
-    width: 1080,
-    height: 1920,
+    width: 720,
+    height: 1280,
     fps: FPS,
     durationInFrames: 900,
     defaultProps: {
