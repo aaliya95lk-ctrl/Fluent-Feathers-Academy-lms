@@ -788,8 +788,8 @@
         </div>
         <div style="display: flex; gap: 10px; align-items: center;">
           <span id="currentChildBadge" style="display: none; background: #e2e8f0; color: #4a5568; padding: 6px 12px; border-radius: 15px; font-size: 0.85rem;">Viewing: <strong id="currentChildName">-</strong></span>
-          <button id="switchChildBtn" onclick="showChildSelector()" style="display: none; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 8px 15px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; font-weight: 600; transition: transform 0.2s;" onmouseenter="this.style.transform='scale(1.05)'" onmouseleave="this.style.transform='scale(1)'">👧👦 Switch Child</button>
-          <button id="refreshPortalBtn" type="button" onclick="refreshParentPortal(true)" style="background: linear-gradient(135deg, #38b2ac 0%, #319795 100%); color: white; border: none; padding: 8px 15px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; font-weight: 600;">ðŸ”„ Refresh Portal</button>
+          <button id="switchChildBtn" onclick="showChildSelector()" style="display: none; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 8px 15px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; font-weight: 600; transition: transform 0.2s;" onmouseenter="this.style.transform='scale(1.05)'" onmouseleave="this.style.transform='scale(1)'">Switch Child</button>
+          <button id="refreshPortalBtn" type="button" onclick="refreshParentPortal(true)" style="background: linear-gradient(135deg, #38b2ac 0%, #319795 100%); color: white; border: none; padding: 8px 15px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; font-weight: 600;">Refresh Portal</button>
           <button onclick="logout()" class="btn btn-danger btn-sm">Logout</button>
         </div>
       </header>
@@ -797,7 +797,7 @@
       <div id="setupGuideCard" class="info-card setup-card" style="display: none;">
         <div style="display:flex; justify-content:space-between; gap:16px; align-items:flex-start; flex-wrap:wrap;">
           <div style="flex:1; min-width:260px;">
-            <h2 style="color:#234e52; margin-bottom:10px;">📲 Parent App Setup</h2>
+            <h2 style="color:#234e52; margin-bottom:10px;">Parent App Setup</h2>
             <p style="color:#2d3748; line-height:1.7; margin:0;">Install the app and enable notifications so you receive class reminders, announcements, and session updates directly on your phone.</p>
             <div style="margin-top:10px;">
               <span id="installStatusPill" class="setup-pill" style="background:#fff7ed;color:#9a3412;">⏳ App install pending</span>

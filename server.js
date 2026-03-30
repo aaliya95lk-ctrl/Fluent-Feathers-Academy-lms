@@ -14,6 +14,17 @@ const cloudinary = require('cloudinary').v2;
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
 require('dotenv').config();
 
+let remotionBundle = null;
+let remotionRenderer = null;
+let ffmpegStaticPath = null;
+try {
+  remotionBundle = require('@remotion/bundler');
+  remotionRenderer = require('@remotion/renderer');
+  ffmpegStaticPath = require('ffmpeg-static');
+} catch (e) {
+  console.warn('⚠️ Remotion rendering modules not fully available:', e.message);
+}
+
 let firebaseAdmin = null;
 try {
   const admin = require('firebase-admin');
@@ -246,6 +257,463 @@ function normalizeStringList(value, maxItems = 5, maxLen = 180) {
     .map((item) => normalizeShortText(item, maxLen))
     .filter(Boolean)
     .slice(0, maxItems);
+}
+
+function detectMediaType(fileName = '', filePath = '') {
+  const source = `${fileName} ${filePath}`.toLowerCase();
+  if (/\.(png|jpe?g|webp|gif|bmp|svg)(\?|$)/.test(source) || source.includes('/image/upload/')) return 'image';
+  if (/\.(mp4|mov|avi|mkv|webm|m4v)(\?|$)/.test(source) || source.includes('/video/upload/')) return 'video';
+  if (/\.(mp3|wav|m4a|aac)(\?|$)/.test(source) || source.includes('/raw/upload/')) return 'audio';
+  return 'document';
+}
+
+async function generateSocialMediaScript({
+  prompt,
+  platform,
+  contentStyle,
+  durationSeconds,
+  studentName,
+  sourceExcerpt,
+  sourceFileName,
+  sourceMediaType,
+  imageData
+}) {
+  const style = normalizeShortText(contentStyle || 'warm educational', 80);
+  const duration = Math.max(10, Math.min(90, parseInt(durationSeconds, 10) || 30));
+  const mediaType = normalizeShortText(sourceMediaType || 'document', 30);
+  const platformName = normalizeShortText(platform || 'Instagram', 40);
+  const student = normalizeShortText(studentName || '', 80);
+  const excerpt = String(sourceExcerpt || '').trim().slice(0, 2500);
+  const fileName = normalizeShortText(sourceFileName || '', 180);
+  const userPrompt = String(prompt || '').trim().slice(0, 2500);
+
+  const instruction = `You help an English learning academy create short-form social media reels for ${platformName}.
+
+Goal:
+- Turn the admin brief into a polished short reel concept.
+- Keep it emotionally engaging, child-safe, parent-safe, and professional.
+- Focus on student creativity, progress, confidence, storytelling, or learning moments.
+- Avoid exaggerated claims and avoid sounding robotic.
+
+Output rules:
+- Return ONLY valid JSON.
+- Keep the voiceover natural and ready for AI narration.
+- Make the reel feel editable in Remotion later with text reveals, typing effects, click sounds, subtle whooshes, and warm background music.
+- Keep the visual directions concrete.
+- Do not include copyrighted song suggestions.
+
+Return JSON in exactly this shape:
+{
+  "title": "short reel title",
+  "hook": "strong opening line for first 2 seconds",
+  "voiceover_script": "full narration script for the reel",
+  "caption": "Instagram caption with CTA",
+  "hashtags": ["#tag1", "#tag2", "#tag3"],
+  "editing_notes": ["short editing instruction", "short editing instruction"],
+  "scene_plan": [
+    {
+      "scene": 1,
+      "start_sec": 0,
+      "end_sec": 4,
+      "visual": "what to show",
+      "on_screen_text": "exact text overlay",
+      "motion": "camera/text motion",
+      "sfx": "sound cue"
+    }
+  ]
+}
+
+Admin brief:
+${userPrompt}
+
+Student name:
+${student || 'Not provided'}
+
+Requested style:
+${style}
+
+Target duration:
+${duration} seconds
+
+Uploaded source type:
+${mediaType}
+
+Uploaded source file name:
+${fileName || 'Not provided'}
+
+Visible text/transcript/summary from source:
+${excerpt || 'Not provided'}
+
+If the uploaded source is a student's creative writing, preserve the child’s idea and improve only the marketing framing around it.
+If details are missing, make reasonable creative assumptions but keep them believable.`;
+
+  const message = imageData
+    ? [{
+        role: 'user',
+        content: [
+          { type: 'text', text: instruction },
+          { type: 'image_url', image_url: { url: imageData } }
+        ]
+      }]
+    : [{ role: 'user', content: instruction }];
+
+  const content = await callGroqChatCompletion({
+    model: imageData ? 'meta-llama/llama-4-scout-17b-16e-instruct' : 'llama-3.3-70b-versatile',
+    messages: message,
+    max_tokens: 2200,
+    temperature: 0.7
+  }, 60000);
+
+  const result = extractJsonObject(content);
+  const scenePlan = Array.isArray(result?.scene_plan)
+    ? result.scene_plan.slice(0, 12).map((scene, index) => ({
+        scene: index + 1,
+        start_sec: Math.max(0, Number(scene?.start_sec) || 0),
+        end_sec: Math.max(0, Number(scene?.end_sec) || Math.min(duration, (index + 1) * 4)),
+        visual: normalizeShortText(scene?.visual || '', 260),
+        on_screen_text: normalizeShortText(scene?.on_screen_text || '', 180),
+        motion: normalizeShortText(scene?.motion || '', 120),
+        sfx: normalizeShortText(scene?.sfx || '', 120)
+      }))
+    : [];
+
+  return {
+    title: normalizeShortText(result?.title || 'Instagram Reel Draft', 120),
+    hook: normalizeShortText(result?.hook || '', 180),
+    voiceover_script: String(result?.voiceover_script || '').trim().slice(0, 4000),
+    caption: String(result?.caption || '').trim().slice(0, 3000),
+    hashtags: normalizeStringList(result?.hashtags, 12, 40).map((tag) => tag.startsWith('#') ? tag : `#${tag.replace(/^#+/, '')}`),
+    editing_notes: normalizeStringList(result?.editing_notes, 12, 160),
+    scene_plan: scenePlan
+  };
+}
+
+function getAbsoluteAssetUrl(filePath, requestBaseUrl = '') {
+  const value = String(filePath || '').trim();
+  if (!value) return '';
+  if (/^https?:\/\//i.test(value)) return value;
+  const base = String(requestBaseUrl || getAppBaseUrl()).replace(/\/$/, '');
+  return `${base}${value.startsWith('/') ? '' : '/'}${value}`;
+}
+
+function createWavToneBuffer({
+  durationMs = 200,
+  sampleRate = 44100,
+  startFreq = 660,
+  endFreq = null,
+  volume = 0.22
+}) {
+  const totalSamples = Math.max(1, Math.floor((durationMs / 1000) * sampleRate));
+  const numChannels = 1;
+  const bitsPerSample = 16;
+  const blockAlign = numChannels * (bitsPerSample / 8);
+  const byteRate = sampleRate * blockAlign;
+  const dataSize = totalSamples * blockAlign;
+  const buffer = Buffer.alloc(44 + dataSize);
+
+  buffer.write('RIFF', 0);
+  buffer.writeUInt32LE(36 + dataSize, 4);
+  buffer.write('WAVE', 8);
+  buffer.write('fmt ', 12);
+  buffer.writeUInt32LE(16, 16);
+  buffer.writeUInt16LE(1, 20);
+  buffer.writeUInt16LE(numChannels, 22);
+  buffer.writeUInt32LE(sampleRate, 24);
+  buffer.writeUInt32LE(byteRate, 28);
+  buffer.writeUInt16LE(blockAlign, 32);
+  buffer.writeUInt16LE(bitsPerSample, 34);
+  buffer.write('data', 36);
+  buffer.writeUInt32LE(dataSize, 40);
+
+  for (let i = 0; i < totalSamples; i++) {
+    const progress = i / totalSamples;
+    const freq = endFreq ? startFreq + (endFreq - startFreq) * progress : startFreq;
+    const fadeIn = Math.min(1, progress * 18);
+    const fadeOut = Math.min(1, (1 - progress) * 14);
+    const envelope = Math.max(0, Math.min(1, fadeIn, fadeOut));
+    const sample = Math.sin((2 * Math.PI * freq * i) / sampleRate) * volume * envelope;
+    buffer.writeInt16LE(Math.max(-1, Math.min(1, sample)) * 32767, 44 + i * 2);
+  }
+
+  return buffer;
+}
+
+function ensureSocialMediaSfxFiles() {
+  const outputDir = path.join(__dirname, 'uploads', 'social-media');
+  const definitions = [
+    { name: 'sfx-click.wav', durationMs: 90, startFreq: 1500, endFreq: 900, volume: 0.22 },
+    { name: 'sfx-whoosh.wav', durationMs: 420, startFreq: 240, endFreq: 1100, volume: 0.17 },
+    { name: 'sfx-chime.wav', durationMs: 600, startFreq: 660, endFreq: 990, volume: 0.16 },
+    { name: 'bg-calm.wav', durationMs: 12000, startFreq: 220, endFreq: 330, volume: 0.06 },
+    { name: 'bg-uplift.wav', durationMs: 12000, startFreq: 330, endFreq: 520, volume: 0.07 }
+  ];
+
+  definitions.forEach((def) => {
+    const outPath = path.join(outputDir, def.name);
+    if (!fs.existsSync(outPath)) {
+      fs.writeFileSync(outPath, createWavToneBuffer(def));
+    }
+  });
+}
+
+function getSocialBackgroundMusicUrl(mode, requestBaseUrl = '') {
+  const selected = String(mode || 'none').trim().toLowerCase();
+  if (selected === 'built_in_calm') return getAbsoluteAssetUrl('/uploads/social-media/bg-calm.wav', requestBaseUrl);
+  if (selected === 'built_in_uplift') return getAbsoluteAssetUrl('/uploads/social-media/bg-uplift.wav', requestBaseUrl);
+  return '';
+}
+
+function normalizeScenePlanForRender(scenePlan, fallbackScript = '', durationSeconds = 30) {
+  const maxDuration = Math.max(10, Math.min(90, parseInt(durationSeconds, 10) || 30));
+  if (Array.isArray(scenePlan) && scenePlan.length > 0) {
+    return scenePlan.map((scene, index) => ({
+      scene: index + 1,
+      start_sec: Math.max(0, Number(scene?.start_sec) || 0),
+      end_sec: Math.max(0.5, Number(scene?.end_sec) || Math.min(maxDuration, (index + 1) * 4)),
+      visual: normalizeShortText(scene?.visual || '', 260),
+      on_screen_text: normalizeShortText(scene?.on_screen_text || '', 180),
+      motion: normalizeShortText(scene?.motion || '', 120),
+      sfx: normalizeShortText(scene?.sfx || '', 120)
+    }));
+  }
+
+  const lines = String(fallbackScript || '')
+    .split(/(?<=[.!?])\s+/)
+    .map((line) => normalizeShortText(line, 180))
+    .filter(Boolean)
+    .slice(0, 6);
+  const sceneDuration = Math.max(3, Math.floor(maxDuration / Math.max(1, lines.length || 1)));
+  return (lines.length ? lines : ['Celebrate this learning moment']).map((line, index) => ({
+    scene: index + 1,
+    start_sec: index * sceneDuration,
+    end_sec: Math.min(maxDuration, (index + 1) * sceneDuration),
+    visual: 'Show source media with animated text overlays',
+    on_screen_text: line,
+    motion: 'Gentle zoom with typewriter text',
+    sfx: 'Soft click'
+  }));
+}
+
+let socialMediaBundlePromise = null;
+const activeSocialMediaRenders = new Map();
+
+async function ensureSocialMediaBundle() {
+  if (!remotionBundle || !remotionBundle.bundle) {
+    throw new Error('Remotion bundler is not installed.');
+  }
+  if (socialMediaBundlePromise) return socialMediaBundlePromise;
+  socialMediaBundlePromise = remotionBundle.bundle({
+    entryPoint: path.join(__dirname, 'remotion', 'index.js'),
+    onProgress: () => {}
+  }).catch((err) => {
+    socialMediaBundlePromise = null;
+    throw err;
+  });
+  return socialMediaBundlePromise;
+}
+
+async function generateOpenAiVoiceover({
+  projectId,
+  script,
+  voiceChoice
+}) {
+  const apiKey = String(process.env.OPENAI_API_KEY || '').trim();
+  if (!apiKey) {
+    return { skipped: true, reason: 'OPENAI_API_KEY not configured' };
+  }
+
+  const cleanScript = String(script || '').trim();
+  if (!cleanScript) {
+    return { skipped: true, reason: 'No script available for voiceover' };
+  }
+
+  const fileName = `voiceover-${projectId}-${Date.now()}.mp3`;
+  const outputPath = path.join(__dirname, 'uploads', 'social-media', fileName);
+  const response = await axios.post(
+    'https://api.openai.com/v1/audio/speech',
+    {
+      model: process.env.OPENAI_TTS_MODEL || 'gpt-4o-mini-tts',
+      voice: String(voiceChoice || process.env.OPENAI_TTS_VOICE || 'coral').trim(),
+      input: cleanScript,
+      instructions: process.env.OPENAI_TTS_INSTRUCTIONS || 'Speak in a warm, confident, educational tone for a polished Instagram reel.',
+      response_format: 'mp3'
+    },
+    {
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      responseType: 'arraybuffer',
+      timeout: 120000
+    }
+  );
+
+  fs.writeFileSync(outputPath, Buffer.from(response.data));
+  return {
+    skipped: false,
+    outputPath,
+    url: `/uploads/social-media/${fileName}`
+  };
+}
+
+async function renderSocialMediaProject(projectId, requestBaseUrl = '') {
+  if (activeSocialMediaRenders.has(projectId)) return activeSocialMediaRenders.get(projectId);
+
+  const renderPromise = (async () => {
+    if (!remotionRenderer || !remotionRenderer.selectComposition || !remotionRenderer.renderMedia) {
+      throw new Error('Remotion renderer is not installed.');
+    }
+
+    const current = (await pool.query(`
+      SELECT *
+      FROM social_media_projects
+      WHERE id = $1
+      LIMIT 1
+    `, [projectId])).rows[0];
+    if (!current) throw new Error('Project not found');
+
+    const scenePlan = normalizeScenePlanForRender(
+      current.generated_scene_plan,
+      current.generated_voiceover_script || current.generated_hook || current.admin_prompt,
+      current.duration_seconds
+    );
+
+    const inputProps = {
+      title: current.title || 'Fluent Feathers Reel',
+      hook: current.generated_hook || '',
+      voiceoverScript: current.generated_voiceover_script || '',
+      caption: current.generated_caption || '',
+      scenePlan,
+      sourceMediaUrl: getAbsoluteAssetUrl(current.source_file_path, requestBaseUrl),
+      sourceMediaType: current.source_media_type || detectMediaType(current.source_file_name, current.source_file_path),
+      durationSeconds: Math.max(10, Math.min(90, parseInt(current.duration_seconds, 10) || 30)),
+      studentName: current.student_name || '',
+      contentStyle: current.content_style || 'warm educational',
+      captionStyle: current.caption_style || 'classic',
+      subtitleTiming: current.subtitle_timing || 'scene',
+      brandingTemplate: current.branding_template || 'academy',
+      logoUrl: getAbsoluteAssetUrl(process.env.LOGO_URL || '/logo.png', requestBaseUrl)
+    };
+
+    await pool.query(`
+      UPDATE social_media_projects
+      SET video_status = 'rendering',
+          render_progress = 5,
+          render_error = NULL,
+          render_started_at = CURRENT_TIMESTAMP,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+    `, [projectId]);
+
+    ensureSocialMediaSfxFiles();
+    let voiceover;
+    try {
+      voiceover = await generateOpenAiVoiceover({
+        projectId,
+        script: current.generated_voiceover_script || current.generated_hook || current.admin_prompt,
+        voiceChoice: current.voice_choice || 'coral'
+      });
+    } catch (err) {
+      voiceover = { skipped: true, reason: String(err.message || err).slice(0, 500) };
+    }
+    if (!voiceover.skipped) {
+      inputProps.voiceoverAudioUrl = getAbsoluteAssetUrl(voiceover.url, requestBaseUrl);
+      await pool.query(`
+        UPDATE social_media_projects
+        SET voiceover_status = 'ready',
+            voiceover_audio_url = $1,
+            voiceover_error = NULL,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = $2
+      `, [voiceover.url, projectId]);
+    } else {
+      await pool.query(`
+        UPDATE social_media_projects
+        SET voiceover_status = 'skipped',
+            voiceover_error = $1,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = $2
+      `, [voiceover.reason, projectId]);
+    }
+
+    inputProps.sfxMap = {
+      click: getAbsoluteAssetUrl('/uploads/social-media/sfx-click.wav', requestBaseUrl),
+      whoosh: getAbsoluteAssetUrl('/uploads/social-media/sfx-whoosh.wav', requestBaseUrl),
+      chime: getAbsoluteAssetUrl('/uploads/social-media/sfx-chime.wav', requestBaseUrl)
+    };
+    inputProps.backgroundMusicUrl = current.background_music_mode === 'upload'
+      ? getAbsoluteAssetUrl(current.background_music_url, requestBaseUrl)
+      : getSocialBackgroundMusicUrl(current.background_music_mode, requestBaseUrl);
+
+    const serveUrl = await ensureSocialMediaBundle();
+    const composition = await remotionRenderer.selectComposition({
+      serveUrl,
+      id: 'SocialMediaReel',
+      inputProps
+    });
+
+    const outputFileName = `social-reel-${projectId}-${Date.now()}.mp4`;
+    const outputLocation = path.join(__dirname, 'uploads', 'social-media', outputFileName);
+
+    await remotionRenderer.renderMedia({
+      composition,
+      serveUrl,
+      codec: 'h264',
+      outputLocation,
+      inputProps,
+      overwrite: true,
+      chromiumOptions: { disableWebSecurity: true },
+      ffmpegOverride: ffmpegStaticPath ? () => ffmpegStaticPath : undefined,
+      onProgress: ({ renderedFrames, encodedFrames, progress }) => {
+        const progressPercent = Math.max(
+          10,
+          Math.min(
+            95,
+            Math.round(
+              Number.isFinite(progress) ? progress * 100 : ((encodedFrames || renderedFrames || 0) / Math.max(1, composition.durationInFrames)) * 100
+            )
+          )
+        );
+        pool.query(`
+          UPDATE social_media_projects
+          SET render_progress = $1,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = $2
+        `, [progressPercent, projectId]).catch(() => {});
+      }
+    });
+
+    const videoUrl = `/uploads/social-media/${outputFileName}`;
+    await pool.query(`
+      UPDATE social_media_projects
+      SET video_status = 'ready',
+          render_progress = 100,
+          rendered_video_url = $1,
+          render_output_path = $2,
+          render_completed_at = CURRENT_TIMESTAMP,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $3
+    `, [videoUrl, outputLocation, projectId]);
+
+    return { success: true, videoUrl };
+  })()
+    .catch(async (err) => {
+      await pool.query(`
+        UPDATE social_media_projects
+        SET video_status = 'failed',
+            render_error = $1,
+            render_progress = 0,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = $2
+      `, [String(err.message || err).slice(0, 1000), projectId]).catch(() => {});
+      throw err;
+    })
+    .finally(() => {
+      activeSocialMediaRenders.delete(projectId);
+    });
+
+  activeSocialMediaRenders.set(projectId, renderPromise);
+  return renderPromise;
 }
 
 function classifyIntegrityRisk(score) {
@@ -895,7 +1363,7 @@ app.use((req, res, next) => {
 });
 
 // Create upload directories
-['uploads', 'uploads/materials', 'uploads/homework'].forEach(dir => {
+['uploads', 'uploads/materials', 'uploads/homework', 'uploads/social-media'].forEach(dir => {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 });
 
@@ -2503,6 +2971,70 @@ async function runMigrations() {
       console.log('✅ Migration 50: Added homework AI/copy-detection fields');
     } catch (err) {
       console.log('Migration 50 note:', err.message);
+    }
+
+    // Migration 51: Social media reel script drafts for admin review-first workflow
+    try {
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS social_media_projects (
+          id SERIAL PRIMARY KEY,
+          title TEXT,
+          admin_prompt TEXT NOT NULL,
+          platform TEXT DEFAULT 'Instagram',
+          content_style TEXT,
+          duration_seconds INTEGER DEFAULT 30,
+          student_name TEXT,
+          source_excerpt TEXT,
+          source_file_name TEXT,
+          source_file_path TEXT,
+          source_media_type TEXT,
+          generated_hook TEXT,
+          generated_voiceover_script TEXT,
+          generated_caption TEXT,
+          generated_hashtags TEXT,
+          generated_editing_notes TEXT,
+          generated_scene_plan JSONB,
+          caption_style TEXT DEFAULT 'classic',
+          subtitle_timing TEXT DEFAULT 'scene',
+          voice_choice TEXT DEFAULT 'coral',
+          branding_template TEXT DEFAULT 'academy',
+          background_music_mode TEXT DEFAULT 'none',
+          background_music_url TEXT,
+          status TEXT DEFAULT 'script_ready',
+          video_status TEXT DEFAULT 'not_started',
+          render_progress INTEGER DEFAULT 0,
+          rendered_video_url TEXT,
+          render_output_path TEXT,
+          render_error TEXT,
+          voiceover_audio_url TEXT,
+          voiceover_status TEXT DEFAULT 'not_started',
+          voiceover_error TEXT,
+          render_started_at TIMESTAMP,
+          render_completed_at TIMESTAMP,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      await client.query(`ALTER TABLE social_media_projects ADD COLUMN IF NOT EXISTS render_progress INTEGER DEFAULT 0`);
+      await client.query(`ALTER TABLE social_media_projects ADD COLUMN IF NOT EXISTS caption_style TEXT DEFAULT 'classic'`);
+      await client.query(`ALTER TABLE social_media_projects ADD COLUMN IF NOT EXISTS subtitle_timing TEXT DEFAULT 'scene'`);
+      await client.query(`ALTER TABLE social_media_projects ADD COLUMN IF NOT EXISTS voice_choice TEXT DEFAULT 'coral'`);
+      await client.query(`ALTER TABLE social_media_projects ADD COLUMN IF NOT EXISTS branding_template TEXT DEFAULT 'academy'`);
+      await client.query(`ALTER TABLE social_media_projects ADD COLUMN IF NOT EXISTS background_music_mode TEXT DEFAULT 'none'`);
+      await client.query(`ALTER TABLE social_media_projects ADD COLUMN IF NOT EXISTS background_music_url TEXT`);
+      await client.query(`ALTER TABLE social_media_projects ADD COLUMN IF NOT EXISTS rendered_video_url TEXT`);
+      await client.query(`ALTER TABLE social_media_projects ADD COLUMN IF NOT EXISTS render_output_path TEXT`);
+      await client.query(`ALTER TABLE social_media_projects ADD COLUMN IF NOT EXISTS render_error TEXT`);
+      await client.query(`ALTER TABLE social_media_projects ADD COLUMN IF NOT EXISTS voiceover_audio_url TEXT`);
+      await client.query(`ALTER TABLE social_media_projects ADD COLUMN IF NOT EXISTS voiceover_status TEXT DEFAULT 'not_started'`);
+      await client.query(`ALTER TABLE social_media_projects ADD COLUMN IF NOT EXISTS voiceover_error TEXT`);
+      await client.query(`ALTER TABLE social_media_projects ADD COLUMN IF NOT EXISTS render_started_at TIMESTAMP`);
+      await client.query(`ALTER TABLE social_media_projects ADD COLUMN IF NOT EXISTS render_completed_at TIMESTAMP`);
+      await client.query(`CREATE INDEX IF NOT EXISTS idx_social_media_projects_updated_at ON social_media_projects (updated_at DESC)`);
+      await client.query(`CREATE INDEX IF NOT EXISTS idx_social_media_projects_status ON social_media_projects (status)`);
+      console.log('✅ Migration 51: Added social media projects table');
+    } catch (err) {
+      console.log('Migration 51 note:', err.message);
     }
 
     console.log('✅ All database migrations completed successfully!');
@@ -13912,6 +14444,302 @@ app.post('/api/resources/upload', (req, res, next) => {
     res.json({ filePath, fileName: req.file.originalname });
   } catch (err) {
     console.error('Resource upload error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Upload source media for admin social media drafts
+app.post('/api/social-media/upload', (req, res, next) => {
+  upload.single('file')(req, res, (err) => {
+    if (err) {
+      console.error('Social media upload error:', err);
+      return res.status(400).json({ error: err.message || 'File upload failed' });
+    }
+    next();
+  });
+}, async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+  try {
+    let filePath;
+    if (req.file.path && (req.file.path.includes('cloudinary') || req.file.path.includes('res.cloudinary.com'))) {
+      filePath = req.file.path;
+    } else if (req.file.filename) {
+      filePath = '/uploads/materials/' + req.file.filename;
+    } else {
+      filePath = req.file.path;
+    }
+    const fileName = req.file.originalname || req.file.filename || 'source-media';
+    res.json({
+      success: true,
+      filePath,
+      fileName,
+      mediaType: detectMediaType(fileName, filePath)
+    });
+  } catch (err) {
+    console.error('Social media source upload error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/social-media/projects', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT id, title, admin_prompt, platform, content_style, duration_seconds, student_name,
+             source_excerpt, source_file_name, source_file_path, source_media_type,
+             generated_hook, generated_voiceover_script, generated_caption, generated_hashtags,
+             generated_editing_notes, generated_scene_plan, caption_style, subtitle_timing,
+             voice_choice, branding_template, background_music_mode, background_music_url,
+             status, video_status,
+             render_progress, rendered_video_url, render_output_path, render_error,
+             voiceover_audio_url, voiceover_status, voiceover_error,
+             render_started_at, render_completed_at,
+             created_at, updated_at
+      FROM social_media_projects
+      ORDER BY updated_at DESC, id DESC
+      LIMIT 50
+    `);
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/social-media/projects/generate-script', express.json({ limit: '20mb' }), async (req, res) => {
+  try {
+    const {
+      project_id,
+      prompt,
+      title,
+      platform,
+      content_style,
+      duration_seconds,
+      student_name,
+      source_excerpt,
+      source_file_name,
+      source_file_path,
+      source_media_type,
+      caption_style,
+      subtitle_timing,
+      voice_choice,
+      branding_template,
+      background_music_mode,
+      background_music_url,
+      image_data
+    } = req.body || {};
+
+    if (!String(prompt || '').trim()) {
+      return res.status(400).json({ error: 'Prompt is required' });
+    }
+
+    if (!getGroqApiKey()) {
+      return res.status(400).json({ error: 'GROQ_API_KEY is not configured on Render. Add it before generating scripts.' });
+    }
+
+    const generated = await generateSocialMediaScript({
+      prompt,
+      platform,
+      contentStyle: content_style,
+      durationSeconds: duration_seconds,
+      studentName: student_name,
+      sourceExcerpt: source_excerpt,
+      sourceFileName: source_file_name,
+      sourceMediaType: source_media_type || detectMediaType(source_file_name, source_file_path),
+      imageData: image_data
+    });
+
+    const values = [
+      normalizeShortText(title || generated.title, 120),
+      String(prompt || '').trim(),
+      normalizeShortText(platform || 'Instagram', 40),
+      normalizeShortText(content_style || '', 80),
+      Math.max(10, Math.min(90, parseInt(duration_seconds, 10) || 30)),
+      normalizeShortText(student_name || '', 80),
+      String(source_excerpt || '').trim().slice(0, 2500),
+      normalizeShortText(source_file_name || '', 180),
+      normalizeShortText(source_file_path || '', 1000),
+      normalizeShortText(source_media_type || detectMediaType(source_file_name, source_file_path), 30),
+      normalizeShortText(caption_style || 'classic', 40),
+      normalizeShortText(subtitle_timing || 'scene', 40),
+      normalizeShortText(voice_choice || 'coral', 40),
+      normalizeShortText(branding_template || 'academy', 40),
+      normalizeShortText(background_music_mode || 'none', 40),
+      normalizeShortText(background_music_url || '', 1000),
+      generated.hook,
+      generated.voiceover_script,
+      generated.caption,
+      generated.hashtags.join(' '),
+      generated.editing_notes.join('\n'),
+      JSON.stringify(generated.scene_plan)
+    ];
+
+    let project;
+    if (project_id) {
+      const updated = await pool.query(`
+        UPDATE social_media_projects
+        SET title = $1,
+            admin_prompt = $2,
+            platform = $3,
+            content_style = $4,
+            duration_seconds = $5,
+            student_name = $6,
+            source_excerpt = $7,
+            source_file_name = $8,
+            source_file_path = $9,
+            source_media_type = $10,
+            caption_style = $11,
+            subtitle_timing = $12,
+            voice_choice = $13,
+            branding_template = $14,
+            background_music_mode = $15,
+            background_music_url = $16,
+            generated_hook = $17,
+            generated_voiceover_script = $18,
+            generated_caption = $19,
+            generated_hashtags = $20,
+            generated_editing_notes = $21,
+            generated_scene_plan = $22::jsonb,
+            status = 'script_ready',
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = $23
+        RETURNING *
+      `, [...values, project_id]);
+      project = updated.rows[0];
+    } else {
+      const inserted = await pool.query(`
+        INSERT INTO social_media_projects (
+          title, admin_prompt, platform, content_style, duration_seconds, student_name,
+          source_excerpt, source_file_name, source_file_path, source_media_type,
+          caption_style, subtitle_timing, voice_choice, branding_template, background_music_mode, background_music_url,
+          generated_hook, generated_voiceover_script, generated_caption, generated_hashtags,
+          generated_editing_notes, generated_scene_plan, status, video_status
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22::jsonb, 'script_ready', 'not_started')
+        RETURNING *
+      `, values);
+      project = inserted.rows[0];
+    }
+
+    res.json({ success: true, project });
+  } catch (err) {
+    console.error('Social media script generation error:', err.response?.data || err.message);
+    res.status(500).json({ error: err.response?.data?.error?.message || err.message });
+  }
+});
+
+app.put('/api/social-media/projects/:id', express.json({ limit: '5mb' }), async (req, res) => {
+  try {
+    const {
+      title,
+      generated_hook,
+      generated_voiceover_script,
+      generated_caption,
+      generated_hashtags,
+      generated_editing_notes,
+      generated_scene_plan,
+      caption_style,
+      subtitle_timing,
+      voice_choice,
+      branding_template,
+      background_music_mode,
+      background_music_url,
+      status,
+      video_status
+    } = req.body || {};
+
+    const scenePlanValue = (() => {
+      if (Array.isArray(generated_scene_plan)) return JSON.stringify(generated_scene_plan);
+      if (typeof generated_scene_plan === 'string' && generated_scene_plan.trim()) return generated_scene_plan;
+      return JSON.stringify([]);
+    })();
+
+    const result = await pool.query(`
+      UPDATE social_media_projects
+      SET title = $1,
+          generated_hook = $2,
+          generated_voiceover_script = $3,
+          generated_caption = $4,
+          generated_hashtags = $5,
+          generated_editing_notes = $6,
+          generated_scene_plan = $7::jsonb,
+          caption_style = COALESCE($8, caption_style),
+          subtitle_timing = COALESCE($9, subtitle_timing),
+          voice_choice = COALESCE($10, voice_choice),
+          branding_template = COALESCE($11, branding_template),
+          background_music_mode = COALESCE($12, background_music_mode),
+          background_music_url = COALESCE($13, background_music_url),
+          status = COALESCE($14, status),
+          video_status = COALESCE($15, video_status),
+          render_error = CASE WHEN COALESCE($15, video_status) = 'not_started' THEN NULL ELSE render_error END,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $16
+      RETURNING *
+    `, [
+      normalizeShortText(title || '', 120),
+      String(generated_hook || '').trim().slice(0, 180),
+      String(generated_voiceover_script || '').trim().slice(0, 4000),
+      String(generated_caption || '').trim().slice(0, 3000),
+      String(generated_hashtags || '').trim().slice(0, 500),
+      String(generated_editing_notes || '').trim().slice(0, 3000),
+      scenePlanValue,
+      caption_style ? normalizeShortText(caption_style, 40) : null,
+      subtitle_timing ? normalizeShortText(subtitle_timing, 40) : null,
+      voice_choice ? normalizeShortText(voice_choice, 40) : null,
+      branding_template ? normalizeShortText(branding_template, 40) : null,
+      background_music_mode ? normalizeShortText(background_music_mode, 40) : null,
+      background_music_url ? normalizeShortText(background_music_url, 1000) : null,
+      status ? normalizeShortText(status, 40) : null,
+      video_status ? normalizeShortText(video_status, 40) : null,
+      req.params.id
+    ]);
+
+    if (!result.rows[0]) return res.status(404).json({ error: 'Project not found' });
+    res.json({ success: true, project: result.rows[0] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/social-media/projects/:id/render', async (req, res) => {
+  try {
+    const projectId = parseInt(req.params.id, 10);
+    if (!projectId) return res.status(400).json({ error: 'Invalid project id' });
+
+    const project = (await pool.query(`
+      SELECT id, status, video_status, generated_voiceover_script, source_file_path
+      FROM social_media_projects
+      WHERE id = $1
+      LIMIT 1
+    `, [projectId])).rows[0];
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+    if (!project.generated_voiceover_script && !project.source_file_path) {
+      return res.status(400).json({ error: 'Add a script or source media before rendering.' });
+    }
+    if (project.video_status === 'rendering') {
+      return res.json({ success: true, queued: false, message: 'Render already in progress.' });
+    }
+
+    await pool.query(`
+      UPDATE social_media_projects
+      SET status = 'approved_for_video',
+          video_status = 'queued',
+          render_progress = 0,
+          render_error = NULL,
+          voiceover_status = 'not_started',
+          voiceover_error = NULL,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+    `, [projectId]);
+
+    const proto = req.get('x-forwarded-proto') || req.protocol || 'https';
+    const host = req.get('host') || '';
+    const requestBaseUrl = `${proto}://${host}`;
+
+    renderSocialMediaProject(projectId, requestBaseUrl).catch((err) => {
+      console.error('Social media render failed:', err.message);
+    });
+
+    res.json({ success: true, queued: true, message: 'Video render started.' });
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });

@@ -380,6 +380,7 @@
         <button class="nav-btn" onclick="showTab('leaderboard', event)">🏆 <span>Leaderboard</span></button>
         <button class="nav-btn" onclick="showTab('challenges', event)">🎯 <span>Challenges</span></button>
         <button class="nav-btn" onclick="showTab('resources', event)">📚 <span>Resources</span></button>
+        <button class="nav-btn" onclick="window.location.href='social-media-admin.html'">🎬 <span>Social Media</span></button>
         <button class="nav-btn" onclick="showTab('emails', event)">📧 <span>Email Logs</span></button>
         <button class="nav-btn" onclick="showTab('financials', event)">💰 <span>Financial Reports</span></button>
         <button class="nav-btn" onclick="window.location.href='profile.html'">👤 <span>My Profile</span></button>
@@ -460,6 +461,7 @@
         <button class="tab-btn" onclick="showTab('monthlyAssessment', event)">📊 Monthly Assessment</button>
         <button class="tab-btn" onclick="showTab('classRatings', event)">⭐ Class Ratings</button>
         <button class="tab-btn" onclick="showTab('resources', event)">📚 Resources</button>
+        <button class="tab-btn" onclick="window.location.href='social-media-admin.html'">🎬 Social Media</button>
         <button class="tab-btn" onclick="showTab('emails', event)">📧 Email Logs</button>
       </div>
 
@@ -1543,6 +1545,144 @@
         </div>
         <div id="resourcesList" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px;">
           <p style="color: #718096; text-align: center; padding: 30px; grid-column: 1/-1;">Loading resources...</p>
+        </div>
+      </div>
+    </div>
+
+    <div id="socialMediaTab" class="tab-content">
+      <div class="section">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:20px; flex-wrap:wrap; margin-bottom:20px;">
+          <div>
+            <h2 style="margin:0 0 8px 0;">🎬 Social Media Studio</h2>
+            <p style="color:#718096; margin:0; max-width:760px;">Write a reel idea, upload student writing, images, or a source video, and generate an AI script first. Review and edit the script here before the video-render step is added.</p>
+          </div>
+          <button type="button" class="btn btn-sm" onclick="loadSocialMediaProjects(true)" style="background:#319795; color:white;">Refresh Drafts</button>
+        </div>
+
+        <div style="display:grid; grid-template-columns:minmax(320px, 420px) minmax(0, 1fr); gap:20px; align-items:start;">
+          <div style="display:flex; flex-direction:column; gap:18px;">
+            <div style="border:1px solid #e2e8f0; border-radius:14px; padding:18px; background:#f8fafc;">
+              <h3 style="margin:0 0 14px 0; color:#2d3748;">Create Script Draft</h3>
+              <form id="socialMediaForm">
+                <div class="form-group">
+                  <label>Working Title</label>
+                  <input type="text" id="socialTitle" placeholder="Example: Creative Writing Reel - Ayra">
+                </div>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label>Platform</label>
+                    <select id="socialPlatform">
+                      <option value="Instagram">Instagram</option>
+                      <option value="Facebook">Facebook</option>
+                      <option value="YouTube Shorts">YouTube Shorts</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label>Style</label>
+                    <select id="socialStyle">
+                      <option value="warm educational">Warm Educational</option>
+                      <option value="proud achievement">Proud Achievement</option>
+                      <option value="fun playful">Fun Playful</option>
+                      <option value="emotional storytelling">Emotional Storytelling</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label>Target Length</label>
+                    <select id="socialDuration">
+                      <option value="15">15 seconds</option>
+                      <option value="30" selected>30 seconds</option>
+                      <option value="45">45 seconds</option>
+                      <option value="60">60 seconds</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label>Student Name</label>
+                    <input type="text" id="socialStudentName" placeholder="Optional">
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label>Main Prompt</label>
+                  <textarea id="socialPrompt" rows="5" required placeholder="Example: Turn this student's creative writing into an emotional Instagram reel that shows confidence, imagination, and progress."></textarea>
+                </div>
+                <div class="form-group">
+                  <label>Text from Writing / Video Summary</label>
+                  <textarea id="socialSourceExcerpt" rows="5" placeholder="Paste the student's writing, key lines, or a summary of what is happening in the source video."></textarea>
+                </div>
+                <div class="form-group">
+                  <label>Upload Source Media</label>
+                  <input type="file" id="socialSourceFile" accept="image/*,video/*,.pdf,.doc,.docx,.txt">
+                  <small id="socialSourceMeta" style="display:block; color:#718096; margin-top:8px;">Optional. Upload an image, video, or writing file to store with the draft.</small>
+                </div>
+                <div id="socialSourcePreview" style="display:none; margin-bottom:14px;"></div>
+                <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                  <button id="generateSocialScriptBtn" type="submit" class="btn btn-primary">Generate Script</button>
+                  <button type="button" class="btn" onclick="resetSocialMediaComposer()" style="background:#edf2f7; color:#2d3748;">Clear</button>
+                </div>
+              </form>
+            </div>
+
+            <div style="border:1px solid #e2e8f0; border-radius:14px; padding:18px; background:white;">
+              <h3 style="margin:0 0 12px 0; color:#2d3748;">Saved Drafts</h3>
+              <div id="socialMediaProjectsList" style="display:flex; flex-direction:column; gap:12px;">
+                <p style="color:#718096; margin:0;">No drafts yet.</p>
+              </div>
+            </div>
+          </div>
+
+          <div style="border:1px solid #e2e8f0; border-radius:14px; padding:18px; background:white; min-height:680px;">
+            <div style="display:flex; justify-content:space-between; gap:16px; align-items:flex-start; flex-wrap:wrap; margin-bottom:16px;">
+              <div>
+                <h3 style="margin:0 0 6px 0; color:#2d3748;">Review Script</h3>
+                <p id="socialProjectStatus" style="margin:0; color:#718096;">Generate a script draft to review it here.</p>
+              </div>
+              <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                <button id="saveSocialScriptBtn" type="button" class="btn btn-sm" onclick="saveSocialMediaDraft()" style="background:#38a169; color:white; display:none;">Save Edits</button>
+                <button id="markSocialReadyBtn" type="button" class="btn btn-sm" onclick="markSocialDraftReadyForVideo()" style="background:#805ad5; color:white; display:none;">Render Video</button>
+              </div>
+            </div>
+
+            <div id="socialVideoStatusCard" style="display:none; margin-bottom:16px; padding:14px 16px; border-radius:12px; background:#f8fafc; border:1px solid #e2e8f0;">
+              <div id="socialVideoStatusText" style="font-weight:700; color:#2d3748; margin-bottom:8px;">Video not started.</div>
+              <div style="height:10px; border-radius:999px; background:#e2e8f0; overflow:hidden;">
+                <div id="socialVideoStatusBar" style="height:100%; width:0%; background:linear-gradient(135deg,#38b2ac 0%, #667eea 100%);"></div>
+              </div>
+              <a id="socialVideoDownloadLink" href="#" target="_blank" style="display:none; margin-top:10px; display:inline-block; color:#2563eb; font-weight:700; text-decoration:none;">Download Rendered Video</a>
+            </div>
+
+            <input type="hidden" id="socialProjectId">
+
+            <div class="form-group">
+              <label>Draft Title</label>
+              <input type="text" id="socialReviewTitle" placeholder="Script title">
+            </div>
+            <div class="form-group">
+              <label>Opening Hook</label>
+              <textarea id="socialReviewHook" rows="2" placeholder="Strong opening line"></textarea>
+            </div>
+            <div class="form-group">
+              <label>Voiceover Script</label>
+              <textarea id="socialReviewVoiceover" rows="10" placeholder="Generated narration will appear here"></textarea>
+            </div>
+            <div class="form-group">
+              <label>Caption</label>
+              <textarea id="socialReviewCaption" rows="6" placeholder="Instagram caption"></textarea>
+            </div>
+            <div class="form-group">
+              <label>Hashtags</label>
+              <input type="text" id="socialReviewHashtags" placeholder="#creativewriting #kidslearning">
+            </div>
+            <div class="form-group">
+              <label>Editing Notes</label>
+              <textarea id="socialReviewEditingNotes" rows="5" placeholder="Suggested effects, sound cues, pacing notes"></textarea>
+            </div>
+            <div class="form-group">
+              <label>Scene Plan</label>
+              <textarea id="socialReviewScenePlan" rows="12" placeholder="Generated scene plan JSON"></textarea>
+              <small style="display:block; color:#718096; margin-top:8px;">You can edit the JSON if needed. This is what the later Remotion render step will follow.</small>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -3726,6 +3866,9 @@ I'm passionate about helping children develop confidence in communication!"></te
     let allStudents = [], allGroups = [];
     let currentStudentId = null;
     let currentGroupId = null;
+    let socialMediaProjectsCache = [];
+    let currentSocialMediaProject = null;
+    let socialSourceUpload = null;
     let actualRevenue = 0;
     let revenueVisible = false;
     let allTimeRevenue = 0;
@@ -3995,7 +4138,11 @@ I'm passionate about helping children develop confidence in communication!"></te
       }
 
       // Restore last active tab from localStorage
-      const savedTab = localStorage.getItem('adminActiveTab');
+      let savedTab = localStorage.getItem('adminActiveTab');
+      if (savedTab === 'socialMedia') {
+        localStorage.setItem('adminActiveTab', 'upcoming');
+        savedTab = 'upcoming';
+      }
       if (savedTab && document.getElementById(savedTab + 'Tab')) {
         showTab(savedTab);
       }
@@ -4060,6 +4207,20 @@ I'm passionate about helping children develop confidence in communication!"></te
         safePreload(() => loadTabCached('financials', () => loadFinancialReports()), 'financial reports');
         safePreload(() => loadTabCached('monthlyAssessment', () => { loadDueAssessments(); loadAssessmentDashboard(); }), 'monthly assessment');
       }, 8000);
+
+      const socialFileInput = document.getElementById('socialSourceFile');
+      if (socialFileInput) socialFileInput.addEventListener('change', handleSocialMediaFileSelection);
+      const socialForm = document.getElementById('socialMediaForm');
+      if (socialForm) socialForm.addEventListener('submit', generateSocialMediaScriptDraft);
+      setInterval(async () => {
+        const socialTab = document.getElementById('socialMediaTab');
+        if (!socialTab || !socialTab.classList.contains('active')) return;
+        if (!currentSocialMediaProject) return;
+        if (!['queued', 'rendering'].includes(currentSocialMediaProject.video_status)) return;
+        await loadSocialMediaProjects(true);
+        const latest = socialMediaProjectsCache.find((item) => String(item.id) === String(currentSocialMediaProject.id));
+        if (latest) fillSocialMediaReview(latest);
+      }, 15000);
     });
 
     function toggleMobileSidebar() {
@@ -4125,6 +4286,7 @@ I'm passionate about helping children develop confidence in communication!"></te
       if (tabName === 'challenges') loadTabCached('challenges', () => loadChallenges());
       if (tabName === 'financials') loadTabCached('financials', () => loadFinancialReports());
       if (tabName === 'monthlyAssessment') loadTabCached('monthlyAssessment', () => { loadDueAssessments(); loadAssessmentDashboard(); });
+      if (tabName === 'socialMedia') loadTabCached('socialMedia', () => loadSocialMediaProjects());
       if (tabName === 'whiteboard') {
         setTimeout(initWhiteboard, 100); // Small delay to ensure canvas is visible
       }
@@ -11772,6 +11934,341 @@ async function saveEditedPayment() {
       } finally {
         btn.disabled = false;
         btn.textContent = defaultText;
+      }
+    }
+
+    function escapeHtmlInline(value) {
+      return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function formatSocialMediaDate(value) {
+      if (!value) return '-';
+      try {
+        return new Date(value).toLocaleString('en-IN', {
+          day: 'numeric',
+          month: 'short',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+      } catch (e) {
+        return value;
+      }
+    }
+
+    async function fileToDataUrl(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }
+
+    function renderSocialSourcePreview() {
+      const container = document.getElementById('socialSourcePreview');
+      const meta = document.getElementById('socialSourceMeta');
+      if (!container || !meta) return;
+
+      if (!socialSourceUpload) {
+        container.style.display = 'none';
+        container.innerHTML = '';
+        meta.textContent = 'Optional. Upload an image, video, or writing file to store with the draft.';
+        return;
+      }
+
+      meta.textContent = `${socialSourceUpload.fileName} • ${socialSourceUpload.mediaType}`;
+      let preview = '';
+      if (socialSourceUpload.mediaType === 'image' && socialSourceUpload.previewUrl) {
+        preview = `<img src="${socialSourceUpload.previewUrl}" alt="Source preview" style="max-width:100%; max-height:220px; border-radius:12px; border:1px solid #e2e8f0;">`;
+      } else if (socialSourceUpload.mediaType === 'video' && socialSourceUpload.previewUrl) {
+        preview = `<video src="${socialSourceUpload.previewUrl}" controls style="max-width:100%; max-height:220px; border-radius:12px; border:1px solid #e2e8f0;"></video>`;
+      } else {
+        preview = `<div style="padding:12px 14px; border:1px dashed #cbd5e0; border-radius:12px; color:#4a5568; background:#f8fafc;">Stored file: <strong>${escapeHtmlInline(socialSourceUpload.fileName)}</strong></div>`;
+      }
+
+      container.style.display = 'block';
+      container.innerHTML = preview;
+    }
+
+    async function handleSocialMediaFileSelection(event) {
+      const file = event.target.files && event.target.files[0];
+      if (!file) {
+        socialSourceUpload = null;
+        renderSocialSourcePreview();
+        return;
+      }
+
+      const inferredType = file.type.startsWith('image/')
+        ? 'image'
+        : file.type.startsWith('video/')
+          ? 'video'
+          : 'document';
+
+      socialSourceUpload = {
+        file,
+        fileName: file.name,
+        mediaType: inferredType,
+        previewUrl: inferredType === 'image' || inferredType === 'video' ? URL.createObjectURL(file) : '',
+        imageData: inferredType === 'image' ? await fileToDataUrl(file) : ''
+      };
+      renderSocialSourcePreview();
+    }
+
+    function resetSocialMediaComposer() {
+      currentSocialMediaProject = null;
+      socialSourceUpload = null;
+      const form = document.getElementById('socialMediaForm');
+      if (form) form.reset();
+      const projectIdInput = document.getElementById('socialProjectId');
+      if (projectIdInput) projectIdInput.value = '';
+      ['socialReviewTitle', 'socialReviewHook', 'socialReviewVoiceover', 'socialReviewCaption', 'socialReviewHashtags', 'socialReviewEditingNotes', 'socialReviewScenePlan']
+        .forEach((id) => {
+          const el = document.getElementById(id);
+          if (el) el.value = '';
+        });
+      const status = document.getElementById('socialProjectStatus');
+      if (status) status.textContent = 'Generate a script draft to review it here.';
+      const saveBtn = document.getElementById('saveSocialScriptBtn');
+      const readyBtn = document.getElementById('markSocialReadyBtn');
+      if (saveBtn) saveBtn.style.display = 'none';
+      if (readyBtn) readyBtn.style.display = 'none';
+      const statusCard = document.getElementById('socialVideoStatusCard');
+      const statusText = document.getElementById('socialVideoStatusText');
+      const statusBar = document.getElementById('socialVideoStatusBar');
+      const downloadLink = document.getElementById('socialVideoDownloadLink');
+      if (statusCard) statusCard.style.display = 'none';
+      if (statusText) statusText.textContent = 'Video not started.';
+      if (statusBar) statusBar.style.width = '0%';
+      if (downloadLink) {
+        downloadLink.style.display = 'none';
+        downloadLink.href = '#';
+      }
+      renderSocialSourcePreview();
+    }
+
+    function updateSocialVideoStatus(project) {
+      const card = document.getElementById('socialVideoStatusCard');
+      const text = document.getElementById('socialVideoStatusText');
+      const bar = document.getElementById('socialVideoStatusBar');
+      const link = document.getElementById('socialVideoDownloadLink');
+      if (!card || !text || !bar || !link) return;
+
+      const status = project && project.video_status ? project.video_status : 'not_started';
+      const progress = Math.max(0, Math.min(100, parseInt(project && project.render_progress, 10) || 0));
+      card.style.display = 'block';
+      bar.style.width = `${progress}%`;
+
+      if (status === 'ready') {
+        text.textContent = project.voiceover_status === 'ready'
+          ? 'Video rendered with AI voiceover and ready to download.'
+          : 'Video rendered and ready to download.';
+        link.style.display = 'inline-block';
+        link.href = project.rendered_video_url || '#';
+      } else if (status === 'rendering' || status === 'queued') {
+        const voiceoverNote = project.voiceover_status === 'ready' ? ' Voiceover ready.' : project.voiceover_status === 'skipped' ? ' Voiceover skipped.' : '';
+        text.textContent = status === 'queued' ? `Video render queued.${voiceoverNote}` : `Rendering video... ${progress}%.${voiceoverNote}`;
+        link.style.display = 'none';
+        link.href = '#';
+      } else if (status === 'failed') {
+        text.textContent = `Render failed: ${project.render_error || 'Unknown error'}`;
+        link.style.display = 'none';
+        link.href = '#';
+      } else {
+        text.textContent = 'Video not started yet.';
+        link.style.display = 'none';
+        link.href = '#';
+      }
+    }
+
+    function fillSocialMediaReview(project) {
+      currentSocialMediaProject = project;
+      document.getElementById('socialProjectId').value = project.id || '';
+      document.getElementById('socialReviewTitle').value = project.title || '';
+      document.getElementById('socialReviewHook').value = project.generated_hook || '';
+      document.getElementById('socialReviewVoiceover').value = project.generated_voiceover_script || '';
+      document.getElementById('socialReviewCaption').value = project.generated_caption || '';
+      document.getElementById('socialReviewHashtags').value = project.generated_hashtags || '';
+      document.getElementById('socialReviewEditingNotes').value = project.generated_editing_notes || '';
+      const scenePlanValue = Array.isArray(project.generated_scene_plan)
+        ? JSON.stringify(project.generated_scene_plan, null, 2)
+        : typeof project.generated_scene_plan === 'string'
+          ? project.generated_scene_plan
+          : JSON.stringify(project.generated_scene_plan || [], null, 2);
+      document.getElementById('socialReviewScenePlan').value = scenePlanValue;
+
+      const status = document.getElementById('socialProjectStatus');
+      if (status) status.textContent = `Draft #${project.id} • ${project.status || 'script_ready'} • updated ${formatSocialMediaDate(project.updated_at)}`;
+      document.getElementById('saveSocialScriptBtn').style.display = 'inline-block';
+      document.getElementById('markSocialReadyBtn').style.display = 'inline-block';
+      updateSocialVideoStatus(project);
+    }
+
+    function renderSocialMediaProjects(projects) {
+      const container = document.getElementById('socialMediaProjectsList');
+      if (!container) return;
+      if (!projects || projects.length === 0) {
+        container.innerHTML = '<p style="color:#718096; margin:0;">No drafts yet.</p>';
+        return;
+      }
+
+      container.innerHTML = projects.map((project) => `
+        <button type="button" onclick="openSocialMediaDraft(${project.id})" style="text-align:left; border:1px solid #e2e8f0; border-radius:12px; padding:12px 14px; background:${currentSocialMediaProject && currentSocialMediaProject.id === project.id ? '#faf5ff' : 'white'}; cursor:pointer;">
+          <div style="display:flex; justify-content:space-between; gap:10px; align-items:flex-start;">
+            <div>
+              <div style="font-weight:700; color:#2d3748; margin-bottom:4px;">${escapeHtmlInline(project.title || 'Untitled Draft')}</div>
+              <div style="font-size:0.82rem; color:#718096; line-height:1.5;">${escapeHtmlInline((project.generated_hook || project.admin_prompt || '').slice(0, 120))}</div>
+            </div>
+            <span style="white-space:nowrap; background:#edf2f7; color:#4a5568; border-radius:999px; padding:4px 8px; font-size:0.72rem; font-weight:700;">${escapeHtmlInline(project.status || 'script_ready')}</span>
+          </div>
+          <div style="margin-top:8px; font-size:0.76rem; color:#a0aec0;">${formatSocialMediaDate(project.updated_at)}</div>
+        </button>
+      `).join('');
+    }
+
+    async function loadSocialMediaProjects(force = false) {
+      try {
+        const res = await fetch(`/api/social-media/projects${force ? `?t=${Date.now()}` : ''}`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to load drafts');
+        socialMediaProjectsCache = Array.isArray(data) ? data : [];
+        renderSocialMediaProjects(socialMediaProjectsCache);
+      } catch (err) {
+        const container = document.getElementById('socialMediaProjectsList');
+        if (container) container.innerHTML = `<p style="color:#e53e3e; margin:0;">${escapeHtmlInline(err.message)}</p>`;
+      }
+    }
+
+    function openSocialMediaDraft(projectId) {
+      const project = socialMediaProjectsCache.find((item) => String(item.id) === String(projectId));
+      if (!project) return;
+      fillSocialMediaReview(project);
+      renderSocialMediaProjects(socialMediaProjectsCache);
+    }
+
+    async function uploadSocialSourceIfNeeded() {
+      if (!socialSourceUpload || !socialSourceUpload.file || socialSourceUpload.filePath) return socialSourceUpload;
+      const fd = new FormData();
+      fd.append('file', socialSourceUpload.file);
+      fd.append('uploadType', 'materials');
+
+      const res = await fetch('/api/social-media/upload', { method: 'POST', body: fd });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Source upload failed');
+
+      socialSourceUpload = {
+        ...socialSourceUpload,
+        filePath: data.filePath,
+        fileName: data.fileName || socialSourceUpload.fileName,
+        mediaType: data.mediaType || socialSourceUpload.mediaType
+      };
+      renderSocialSourcePreview();
+      return socialSourceUpload;
+    }
+
+    async function generateSocialMediaScriptDraft(event) {
+      event.preventDefault();
+      const btn = document.getElementById('generateSocialScriptBtn');
+      const originalText = btn.textContent;
+      try {
+        btn.disabled = true;
+        btn.textContent = 'Generating...';
+
+        const prompt = document.getElementById('socialPrompt').value.trim();
+        if (!prompt) throw new Error('Prompt is required');
+
+        const uploadInfo = await uploadSocialSourceIfNeeded();
+        const payload = {
+          project_id: document.getElementById('socialProjectId').value || null,
+          title: document.getElementById('socialTitle').value.trim(),
+          platform: document.getElementById('socialPlatform').value,
+          content_style: document.getElementById('socialStyle').value,
+          duration_seconds: parseInt(document.getElementById('socialDuration').value, 10),
+          student_name: document.getElementById('socialStudentName').value.trim(),
+          prompt,
+          source_excerpt: document.getElementById('socialSourceExcerpt').value.trim(),
+          source_file_name: uploadInfo && uploadInfo.fileName ? uploadInfo.fileName : '',
+          source_file_path: uploadInfo && uploadInfo.filePath ? uploadInfo.filePath : '',
+          source_media_type: uploadInfo && uploadInfo.mediaType ? uploadInfo.mediaType : '',
+          image_data: uploadInfo && uploadInfo.mediaType === 'image' ? uploadInfo.imageData : ''
+        };
+
+        const res = await fetch('/api/social-media/projects/generate-script', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to generate script');
+
+        fillSocialMediaReview(data.project);
+        await loadSocialMediaProjects(true);
+        alert('Script draft generated. Review and edit it before the video step.');
+      } catch (err) {
+        alert('Failed to generate social media script: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = originalText;
+      }
+    }
+
+    async function saveSocialMediaDraft(statusOverride = null) {
+      const projectId = document.getElementById('socialProjectId').value;
+      if (!projectId) return alert('Generate or open a draft first.');
+
+      try {
+        const scenePlanRaw = document.getElementById('socialReviewScenePlan').value.trim();
+        let scenePlan;
+        try {
+          scenePlan = scenePlanRaw ? JSON.parse(scenePlanRaw) : [];
+        } catch (err) {
+          throw new Error('Scene plan JSON is invalid. Please fix it before saving.');
+        }
+
+        const res = await fetch(`/api/social-media/projects/${projectId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: document.getElementById('socialReviewTitle').value.trim(),
+            generated_hook: document.getElementById('socialReviewHook').value.trim(),
+            generated_voiceover_script: document.getElementById('socialReviewVoiceover').value.trim(),
+            generated_caption: document.getElementById('socialReviewCaption').value.trim(),
+            generated_hashtags: document.getElementById('socialReviewHashtags').value.trim(),
+            generated_editing_notes: document.getElementById('socialReviewEditingNotes').value.trim(),
+            generated_scene_plan: scenePlan,
+            status: statusOverride || 'script_reviewed'
+          })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to save draft');
+
+        fillSocialMediaReview(data.project);
+        await loadSocialMediaProjects(true);
+        alert(statusOverride === 'approved_for_video' ? 'Draft approved for the video phase.' : 'Draft saved.');
+      } catch (err) {
+        alert(err.message || 'Could not save draft');
+      }
+    }
+
+    async function markSocialDraftReadyForVideo() {
+      const projectId = document.getElementById('socialProjectId').value;
+      if (!projectId) return alert('Generate or open a draft first.');
+      await saveSocialMediaDraft('approved_for_video');
+      try {
+        const res = await fetch(`/api/social-media/projects/${projectId}/render`, { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Render could not start');
+        await loadSocialMediaProjects(true);
+        const latest = socialMediaProjectsCache.find((item) => String(item.id) === String(projectId));
+        if (latest) fillSocialMediaReview(latest);
+        alert(data.message || 'Video render started.');
+      } catch (err) {
+        alert('Failed to start video render: ' + err.message);
       }
     }
 
