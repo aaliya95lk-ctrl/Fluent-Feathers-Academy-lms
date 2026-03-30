@@ -16,11 +16,9 @@ require('dotenv').config();
 
 let remotionBundle = null;
 let remotionRenderer = null;
-let ffmpegStaticPath = null;
 try {
   remotionBundle = require('@remotion/bundler');
   remotionRenderer = require('@remotion/renderer');
-  ffmpegStaticPath = require('ffmpeg-static');
 } catch (e) {
   console.warn('⚠️ Remotion rendering modules not fully available:', e.message);
 }
@@ -679,7 +677,6 @@ async function renderSocialMediaProject(projectId, requestBaseUrl = '') {
       inputProps,
       overwrite: true,
       chromiumOptions: { disableWebSecurity: true },
-      binariesDirectory: ffmpegStaticPath ? path.dirname(ffmpegStaticPath) : undefined,
       onProgress: ({ renderedFrames, encodedFrames, progress }) => {
         const progressPercent = Math.max(
           10,
