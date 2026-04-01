@@ -7061,14 +7061,26 @@ app.get('/api/students', async (req, res) => {
   try {
     const r = await executeQuery(`
       SELECT s.*,
+        COALESCE(pt.parent_push_enabled, false) AS parent_push_enabled,
+        COALESCE(pt.parent_push_device_count, 0) AS parent_push_device_count,
+        pt.parent_push_last_seen_at,
         COUNT(DISTINCT m.id) as makeup_credits,
         GREATEST(COALESCE(s.missed_sessions, 0), COALESCE((SELECT COUNT(*) FROM sessions WHERE student_id = s.id AND status IN ('Missed', 'Excused', 'Unexcused')), 0)) as missed_sessions,
         (SELECT MAX(created_at) FROM monthly_assessments WHERE student_id = s.id AND assessment_type = 'monthly') as last_assessment_date,
         (SELECT COUNT(*) FROM monthly_assessments WHERE student_id = s.id AND assessment_type = 'monthly') as total_assessments
       FROM students s
+      LEFT JOIN (
+        SELECT
+          LOWER(parent_email) AS email_key,
+          true AS parent_push_enabled,
+          COUNT(*)::int AS parent_push_device_count,
+          MAX(updated_at) AS parent_push_last_seen_at
+        FROM parent_fcm_tokens
+        GROUP BY LOWER(parent_email)
+      ) pt ON pt.email_key = LOWER(s.parent_email)
       LEFT JOIN makeup_classes m ON s.id = m.student_id AND m.status = 'Available'
       WHERE s.is_active = true
-      GROUP BY s.id
+      GROUP BY s.id, pt.parent_push_enabled, pt.parent_push_device_count, pt.parent_push_last_seen_at
       ORDER BY s.created_at DESC
     `);
 
@@ -13580,6 +13592,68 @@ app.put('/api/students/:id/expectations', async (req, res) => {
     res.json({ success: true, message: 'Expectations updated' });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// Ask parent to fill expectations from the parent portal
+app.post('/api/students/:id/expectations/request', async (req, res) => {
+  try {
+    const studentResult = await pool.query(
+      `SELECT name, parent_name, parent_email
+       FROM students
+       WHERE id = $1 AND is_active = true`,
+      [req.params.id]
+    );
+    const student = studentResult.rows[0];
+    if (!student) {
+      return res.status(404).json({ success: false, error: 'Student not found' });
+    }
+    if (!student.parent_email) {
+      return res.status(400).json({ success: false, error: 'No parent email found for this student' });
+    }
+
+    const portalUrl = `${getAppBaseUrl()}/parent.html`;
+    const emailHtml = `
+      <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 14px; overflow: hidden;">
+        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 28px 24px; color: white; text-align: center;">
+          <h1 style="margin: 0; font-size: 28px;">Parent Expectations</h1>
+          <p style="margin: 10px 0 0; font-size: 15px; opacity: 0.95;">Help us understand your goals for ${escapeHtml(student.name)}.</p>
+        </div>
+        <div style="padding: 28px 24px;">
+          <p style="font-size: 16px; color: #2d3748; margin: 0 0 16px;">Dear <strong>${escapeHtml(student.parent_name || 'Parent')}</strong>,</p>
+          <p style="font-size: 15px; line-height: 1.7; color: #4a5568; margin: 0 0 14px;">
+            We would love to know what you hope ${escapeHtml(student.name)} will gain from classes at Fluent Feathers Academy.
+          </p>
+          <p style="font-size: 15px; line-height: 1.7; color: #4a5568; margin: 0 0 22px;">
+            Please open the parent portal and add your expectations in the <strong>Parent Expectations</strong> section. This helps us align lessons with your goals.
+          </p>
+          <div style="text-align: center; margin: 26px 0;">
+            <a href="${portalUrl}" style="display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 13px 30px; text-decoration: none; border-radius: 999px; font-weight: 700; font-size: 15px;">
+              Open Parent Portal
+            </a>
+          </div>
+          <p style="font-size: 13px; color: #718096; margin: 0;">
+            If you already have the app installed, just open it and update the expectations there.
+          </p>
+        </div>
+      </div>
+    `;
+
+    const sent = await sendEmail(
+      student.parent_email,
+      `💭 Please share your expectations for ${student.name}`,
+      emailHtml,
+      student.parent_name,
+      'Parent Expectations Request'
+    );
+
+    if (!sent) {
+      return res.status(500).json({ success: false, error: 'Email could not be sent right now' });
+    }
+
+    res.json({ success: true, message: `Request sent to ${student.parent_email}` });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 

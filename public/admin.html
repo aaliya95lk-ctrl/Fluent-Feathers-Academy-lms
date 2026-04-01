@@ -721,12 +721,27 @@
         </form>
       </div>
       <div class="section"><h2>📋 All Students</h2>
+        <div id="parentAppSummary" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; margin-bottom:15px;">
+          <div style="background:linear-gradient(135deg,#ecfeff 0%,#cffafe 100%); border:1px solid #a5f3fc; border-radius:12px; padding:14px 16px;">
+            <div style="font-size:12px; color:#0f766e; font-weight:700; text-transform:uppercase; letter-spacing:.04em;">Unique Parents</div>
+            <div id="parentAppTotalCount" style="font-size:28px; font-weight:800; color:#134e4a; margin-top:4px;">-</div>
+          </div>
+          <div style="background:linear-gradient(135deg,#ecfdf5 0%,#d1fae5 100%); border:1px solid #86efac; border-radius:12px; padding:14px 16px;">
+            <div style="font-size:12px; color:#166534; font-weight:700; text-transform:uppercase; letter-spacing:.04em;">Notifications Active</div>
+            <div id="parentAppEnabledCount" style="font-size:28px; font-weight:800; color:#14532d; margin-top:4px;">-</div>
+          </div>
+          <div style="background:linear-gradient(135deg,#fff7ed 0%,#ffedd5 100%); border:1px solid #fdba74; border-radius:12px; padding:14px 16px;">
+            <div style="font-size:12px; color:#9a3412; font-weight:700; text-transform:uppercase; letter-spacing:.04em;">Needs Follow-Up</div>
+            <div id="parentAppPendingCount" style="font-size:28px; font-weight:800; color:#7c2d12; margin-top:4px;">-</div>
+          </div>
+        </div>
+        <p style="color:#718096; font-size:13px; margin:-4px 0 15px;">This is based on whether the parent has an active push-notification token saved. Exact home-screen install status is not available separately.</p>
         <div style="margin-bottom: 15px;">
           <input type="text" id="studentSearchInput" placeholder="🔍 Search students by name, age, or program..." oninput="filterStudents()" style="width: 100%; max-width: 400px; padding: 10px 15px; border: 2px solid #e2e8f0; border-radius: 8px; font-size: 14px;">
           <span id="studentCount" style="margin-left: 15px; color: #718096; font-size: 14px;"></span>
         </div>
         <div class="table-responsive">
-        <table id="studentsTable"><thead><tr><th>Name</th><th>Age</th><th>Program</th><th>Type</th><th>Sessions (C/R)</th><th>Makeup</th><th>Status</th><th>Actions</th></tr></thead><tbody id="studentsBody"><tr><td colspan="8">Loading...</td></tr></tbody></table>
+        <table id="studentsTable"><thead><tr><th>Name</th><th>Age</th><th>Program</th><th>Type</th><th>Sessions (C/R)</th><th>Makeup</th><th>Parent App</th><th>Status</th><th>Actions</th></tr></thead><tbody id="studentsBody"><tr><td colspan="9">Loading...</td></tr></tbody></table>
         </div>
       </div>
     </div>
@@ -4764,6 +4779,7 @@ Join Class
       try {
         const res = await fetch('/api/students');
         allStudents = await res.json();
+        updateParentAppSummary();
         filterStudents(); // Render with search filter
         document.getElementById('scheduleStudent').innerHTML = '<option value="">Select student...</option>' + allStudents.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
         document.getElementById('manageScheduleStudent').innerHTML = '<option value="">Select student...</option>' + allStudents.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
@@ -4779,6 +4795,36 @@ if (dueEl) {
       } catch (err) {
         console.error(err);
       }
+    }
+
+    function updateParentAppSummary() {
+      const uniqueParents = new Map();
+      (allStudents || []).forEach(student => {
+        const emailKey = String(student.parent_email || '').trim().toLowerCase();
+        if (!emailKey) return;
+        const existing = uniqueParents.get(emailKey) || {
+          enabled: false,
+          parent_name: student.parent_name || '',
+          student_names: []
+        };
+        existing.enabled = existing.enabled || !!student.parent_push_enabled;
+        if (student.name) existing.student_names.push(student.name);
+        uniqueParents.set(emailKey, existing);
+      });
+
+      const total = uniqueParents.size;
+      let enabled = 0;
+      uniqueParents.forEach(parent => {
+        if (parent.enabled) enabled++;
+      });
+      const pending = Math.max(0, total - enabled);
+
+      const totalEl = document.getElementById('parentAppTotalCount');
+      const enabledEl = document.getElementById('parentAppEnabledCount');
+      const pendingEl = document.getElementById('parentAppPendingCount');
+      if (totalEl) totalEl.textContent = total;
+      if (enabledEl) enabledEl.textContent = enabled;
+      if (pendingEl) pendingEl.textContent = pending;
     }
 
     function filterStudents() {
@@ -4804,7 +4850,7 @@ if (dueEl) {
       }
 
       if (filtered.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: #718096;">No students found matching your search</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; color: #718096;">No students found matching your search</td></tr>';
         return;
       }
 
@@ -4813,7 +4859,10 @@ if (dueEl) {
         const assessmentBadge = s.assessment_due
           ? `<span style="background: #f59e0b; color: white; padding: 2px 6px; border-radius: 4px; font-size: 10px; margin-left: 5px; cursor: pointer;" onclick="showTab('monthlyAssessment', event); setTimeout(() => document.getElementById('assessmentStudent').value = '${s.id}', 100);" title="Due for assessment (${assessmentReason})">📊 Due</span>`
           : '';
-        return `<tr><td><strong>${s.name}</strong>${assessmentBadge}</td><td>${getAgeDisplay(s)}</td><td>${s.program_name}</td><td>${s.class_type}</td><td>${s.completed_sessions}/${s.remaining_sessions}</td><td>${s.makeup_credits||0}</td><td><button onclick="toggleStudentStatus(${s.id}, ${!s.is_active})" class="btn btn-sm" style="background: ${s.is_active ? '#e53e3e' : '#38a169'}; color: white;">${s.is_active ? 'Deactivate' : 'Activate'}</button></td><td><button onclick="openStudentModal(${s.id})" class="btn btn-sm btn-primary">View</button> <button onclick="editStudent(${s.id})" class="btn btn-sm btn-warning">Edit</button> <button onclick="askStudentReview(${s.id})" class="btn btn-sm" style="background:#4285f4;color:white;">⭐ Ask Review</button> <button onclick="deleteStudent(${s.id})" class="btn btn-sm btn-danger">Delete</button></td></tr>`;
+        const parentAppStatus = s.parent_push_enabled
+          ? `<div><span style="display:inline-flex;align-items:center;gap:6px;background:#dcfce7;color:#166534;padding:4px 8px;border-radius:999px;font-size:12px;font-weight:700;">✅ Active</span></div><div style="font-size:11px;color:#166534;margin-top:4px;">${s.parent_push_device_count || 1} device${Number(s.parent_push_device_count || 1) === 1 ? '' : 's'}</div>`
+          : `<div><span style="display:inline-flex;align-items:center;gap:6px;background:#ffedd5;color:#9a3412;padding:4px 8px;border-radius:999px;font-size:12px;font-weight:700;">⚠️ Not set up</span></div><div style="font-size:11px;color:#9a3412;margin-top:4px;">Follow up with parent</div>`;
+        return `<tr><td><strong>${s.name}</strong>${assessmentBadge}<div style="font-size:11px;color:#718096;margin-top:4px;">${s.parent_name || '-'}${s.parent_email ? ` • ${s.parent_email}` : ''}</div></td><td>${getAgeDisplay(s)}</td><td>${s.program_name}</td><td>${s.class_type}</td><td>${s.completed_sessions}/${s.remaining_sessions}</td><td>${s.makeup_credits||0}</td><td>${parentAppStatus}</td><td><button onclick="toggleStudentStatus(${s.id}, ${!s.is_active})" class="btn btn-sm" style="background: ${s.is_active ? '#e53e3e' : '#38a169'}; color: white;">${s.is_active ? 'Deactivate' : 'Activate'}</button></td><td><button onclick="openStudentModal(${s.id})" class="btn btn-sm btn-primary">View</button> <button onclick="editStudent(${s.id})" class="btn btn-sm btn-warning">Edit</button> <button onclick="askStudentReview(${s.id})" class="btn btn-sm" style="background:#4285f4;color:white;">⭐ Ask Review</button> <button onclick="deleteStudent(${s.id})" class="btn btn-sm btn-danger">Delete</button></td></tr>`;
       }).join('');
     }
 
@@ -7568,7 +7617,13 @@ if (dueEl) {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' }
         });
-        const data = await res.json();
+        const raw = await res.text();
+        let data = null;
+        try {
+          data = raw ? JSON.parse(raw) : {};
+        } catch (parseErr) {
+          throw new Error(`Server returned an invalid response (${res.status})`);
+        }
         if (!res.ok || !data.success) {
           throw new Error(data.error || data.message || 'Failed to send request');
         }

@@ -870,7 +870,7 @@
         <div style="display:flex; justify-content:space-between; gap:16px; align-items:flex-start; flex-wrap:wrap;">
           <div style="flex:1; min-width:260px;">
             <h2 style="color:#234e52; margin-bottom:10px;">Parent App Setup</h2>
-            <p style="color:#2d3748; line-height:1.7; margin:0;">Install the app and enable notifications so you receive class reminders, announcements, and session updates directly on your phone.</p>
+            <p style="color:#2d3748; line-height:1.7; margin:0;">Install the app to get class reminders, announcements, and session updates directly on your phone. If your browser allows it, notifications will be requested automatically after login.</p>
             <div style="margin-top:10px;">
               <span id="installStatusPill" class="setup-pill" style="background:#fff7ed;color:#9a3412;">⏳ App install pending</span>
               <span id="notifyStatusPill" class="setup-pill" style="background:#eff6ff;color:#1d4ed8;">🔔 Notifications not enabled</span>
@@ -1739,10 +1739,36 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
       }
 
       note.textContent = isIosInstallCandidate()
-        ? 'On iPhone/iPad, use Share → Add to Home Screen. Then tap "Enable Notifications" after login.'
-        : installed ? 'The app is already installed. Use "Open in App" for the app experience.' : 'Install the app first, then enable notifications to receive reminders and announcements.';
+        ? 'On iPhone/iPad, use Share → Add to Home Screen. After login, Safari may ask once for notification permission.'
+        : installed ? 'The app is already installed. The portal will try to enable notifications automatically after login.' : 'Install the app first. After login, the portal will try to enable notifications automatically.';
 
       card.style.display = (installAvailable || !notificationsEnabled) ? 'block' : 'none';
+    }
+
+    async function maybeAutoEnableParentNotifications(trigger) {
+      if (parentPushSetupDone) return;
+      if (typeof firebase === 'undefined' || !('serviceWorker' in navigator) || !('Notification' in window)) {
+        updateSetupGuide();
+        return;
+      }
+
+      const session = JSON.parse(localStorage.getItem('parentSession') || '{}');
+      if (!session.email) {
+        updateSetupGuide();
+        return;
+      }
+
+      if (Notification.permission === 'granted') {
+        await tryRegisterParentPush(false);
+        return;
+      }
+
+      if (Notification.permission === 'default' && (trigger === 'login' || trigger === 'install')) {
+        await tryRegisterParentPush(false);
+        return;
+      }
+
+      updateSetupGuide();
     }
 
     async function enableParentNotifications() {
@@ -1776,6 +1802,9 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
       deferredInstallPrompt = null;
       setInstallButtonVisibility(false);
       updateSetupGuide();
+      setTimeout(() => {
+        maybeAutoEnableParentNotifications('install').catch(() => {});
+      }, 600);
     });
 
       document.addEventListener('DOMContentLoaded', function() {
@@ -2338,6 +2367,10 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
         syncPortalTimezoneFromStudent();
         showDashboard();
       }
+
+      setTimeout(() => {
+        maybeAutoEnableParentNotifications('login').catch(() => {});
+      }, 400);
     }
 
     function showChildSelector() {
@@ -2439,6 +2472,7 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
       loadChallengeSummary(); // Updates challenge strip on front page
       loadUpcoming();
       checkForFeedback();
+      maybeAutoEnableParentNotifications('dashboard').catch(() => {});
 
       // Pre-load ALL tabs in background after 1.5 seconds
       // Batch 1 (1.5s): Past, Red Dots, Homework, Announcements
