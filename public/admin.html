@@ -2217,7 +2217,7 @@
                 <option value="">Select Student...</option>
               </select>
             </div>
-            <div class="form-group"><label>Month *</label>
+            <div class="form-group"><label>Assessment Month *</label>
               <select id="assessmentMonth" required>
                 <option value="1">January</option>
                 <option value="2">February</option>
@@ -2235,6 +2235,11 @@
             </div>
             <div class="form-group"><label>Year *</label>
               <input type="number" id="assessmentYear" required value="2026" min="2020" max="2030">
+            </div>
+            <div class="form-group" style="flex: 1 1 100%; margin-top: 8px;">
+              <p id="assessmentWindowInfo" style="margin:0;font-size:13px;color:#4a5568;">
+                Monthly assessments for the previous month can be filled only between the 1st and 10th of the next month.
+              </p>
             </div>
           </div>
 
@@ -5530,7 +5535,7 @@ if (dueEl) {
         homeworkSubmissionCache = {};
 
         if (!submissions || submissions.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #718096; padding: 30px;">No homework submissions yet. Students can upload homework from the Parent Portal.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #718096; padding: 30px;">No homework or classwork submissions yet. Students can upload from the Parent Portal.</td></tr>';
           return;
         }
 
@@ -5539,6 +5544,8 @@ if (dueEl) {
             ? `<span style="background: #38a169; color: white; padding: 3px 10px; border-radius: 4px;">${hw.feedback_grade}</span>`
             : '<span style="color: #718096;">Not graded</span>';
 
+          const materialTypeLabel = hw.file_type === 'Classwork' ? 'Classwork' : 'Homework';
+          const materialTypeBadge = `<div style="display:inline-block; margin-top: 6px; font-size:0.75rem; font-weight:700; color:${materialTypeLabel === 'Classwork' ? '#2b6cb0' : '#9b2c2c'}; background:${materialTypeLabel === 'Classwork' ? '#ebf8ff' : '#fff5f5'}; border-radius:999px; padding: 3px 8px;">${materialTypeLabel}</div>`;
           const fileExt = hw.file_name ? hw.file_name.split('.').pop().toLowerCase() : '';
           const fileIcon = ['mp4', 'mov', 'avi', 'webm'].includes(fileExt) ? '🎥' :
                           ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(fileExt) ? '🖼️' :
@@ -5598,6 +5605,7 @@ if (dueEl) {
               ${fileUrl ? `<a href="${fileUrl}" target="_blank" style="color: #B05D9E; text-decoration: none;">
                 ${fileIcon} ${hw.file_name || (isLink ? 'External Link' : 'Download')}
               </a>` : `${fileIcon} ${hw.file_name || 'File'}`}
+              ${materialTypeBadge}
             </td>
             <td>${hw.uploaded_at ? new Date(hw.uploaded_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'N/A'}</td>
             <td>${gradeDisplay}${feedbackDisplay}${buildIntegrityMiniBadge(hw)}</td>
@@ -7502,9 +7510,11 @@ if (dueEl) {
 
         container.innerHTML = `
           <textarea id="expectationsText" rows="3" style="width: 100%; padding: 10px; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 0.9rem; resize: vertical;" placeholder="Parents can share their expectations and goals for their child here...">${expectations}</textarea>
-          <div style="margin-top: 10px; display: flex; gap: 10px;">
+          <div style="margin-top: 10px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center;">
             <button onclick="saveParentExpectations(${studentId})" class="btn btn-sm" style="background: #38a169; color: white;">💾 Save</button>
+            <button id="expectationsRequestBtn" onclick="askParentToFillExpectations(${studentId})" class="btn btn-sm" style="background: #3182ce; color: white;">📩 Ask Parent to Fill</button>
             <span id="expectationsSaveStatus" style="color: #718096; font-size: 0.85rem; align-self: center;"></span>
+            <span id="expectationsRequestStatus" style="color: #718096; font-size: 0.85rem; align-self: center;"></span>
           </div>
         `;
       } catch (err) {
@@ -7533,6 +7543,40 @@ if (dueEl) {
       } catch (err) {
         statusEl.textContent = '❌ Error saving';
         statusEl.style.color = '#e53e3e';
+      }
+    }
+
+    async function askParentToFillExpectations(studentId) {
+      const btn = document.getElementById('expectationsRequestBtn');
+      const statusEl = document.getElementById('expectationsRequestStatus');
+      if (btn) btn.disabled = true;
+      if (statusEl) {
+        statusEl.textContent = 'Sending request...';
+        statusEl.style.color = '#718096';
+      }
+      try {
+        const res = await fetch(`/api/students/${studentId}/expectations/request`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || data.message || 'Failed to send request');
+        }
+        if (statusEl) {
+          statusEl.textContent = '✅ Request email sent';
+          statusEl.style.color = '#38a169';
+        }
+      } catch (err) {
+        if (statusEl) {
+          statusEl.textContent = '❌ ' + (err.message || 'Request failed');
+          statusEl.style.color = '#e53e3e';
+        }
+      } finally {
+        if (btn) btn.disabled = false;
+        setTimeout(() => {
+          if (statusEl) statusEl.textContent = '';
+        }, 5000);
       }
     }
 
@@ -11414,6 +11458,53 @@ async function saveEditedPayment() {
       }
     }
 
+    function getPreviousMonthYear() {
+      const now = new Date();
+      const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      return { month: prev.getMonth() + 1, year: prev.getFullYear() };
+    }
+
+    function isMonthlyAssessmentWindowOpen() {
+      const today = new Date();
+      return today.getDate() >= 1 && today.getDate() <= 10;
+    }
+
+    function updateMonthlyAssessmentWindow() {
+      const info = document.getElementById('assessmentWindowInfo');
+      const submitBtn = document.querySelector('#monthlyAssessmentForm button[type="submit"]');
+      const monthSelect = document.getElementById('assessmentMonth');
+      const yearInput = document.getElementById('assessmentYear');
+      const assessmentType = document.querySelector('input[name="assessmentType"]:checked')?.value || 'monthly';
+      const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+      const { month: prevMonth, year: prevYear } = getPreviousMonthYear();
+
+      if (monthSelect) monthSelect.value = String(prevMonth);
+      if (yearInput) yearInput.value = String(prevYear);
+
+      if (assessmentType === 'demo') {
+        if (info) {
+          info.textContent = 'Demo assessments can be filled anytime. Monthly assessments are only allowed from the 1st to the 10th of the next month for the previous month.';
+          info.style.color = '#2f855a';
+        }
+        if (submitBtn) submitBtn.disabled = false;
+        return;
+      }
+
+      if (isMonthlyAssessmentWindowOpen()) {
+        if (info) {
+          info.textContent = `Monthly assessments for ${monthNames[prevMonth - 1]} ${prevYear} may be filled now. This window closes on the 10th.`;
+          info.style.color = '#2f855a';
+        }
+        if (submitBtn) submitBtn.disabled = false;
+      } else {
+        if (info) {
+          info.textContent = 'Monthly assessment window is closed. You may only fill previous-month reports again from the 1st to the 10th of the next month.';
+          info.style.color = '#c53030';
+        }
+        if (submitBtn) submitBtn.disabled = true;
+      }
+    }
+
     function prefillAssessmentForm(studentId, studentName, month, year) {
       // Scroll to form
       document.getElementById('monthlyAssessmentForm').scrollIntoView({ behavior:'smooth', block:'start' });
@@ -11428,6 +11519,7 @@ async function saveEditedPayment() {
       // Ensure monthly type selected
       const radio = document.getElementById('typeMonthly');
       if (radio) { radio.checked = true; radio.dispatchEvent(new Event('change')); }
+      updateMonthlyAssessmentWindow();
     }
 
     async function deferStudent(studentId, studentName, month, year) {
@@ -11481,6 +11573,7 @@ async function saveEditedPayment() {
         if (isDemo) {
           loadAssessmentDemoLeads();
         }
+        updateMonthlyAssessmentWindow();
       });
     });
 
@@ -11676,6 +11769,20 @@ async function saveEditedPayment() {
       const assessmentType = document.querySelector('input[name="assessmentType"]:checked').value;
       const isDemo = assessmentType === 'demo';
 
+      if (!isDemo) {
+        const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+        const { month: allowedMonth, year: allowedYear } = getPreviousMonthYear();
+        const selectedMonth = parseInt(document.getElementById('assessmentMonth').value, 10);
+        const selectedYear = parseInt(document.getElementById('assessmentYear').value, 10);
+
+        if (!isMonthlyAssessmentWindowOpen()) {
+          return alert('Monthly assessments can only be created between the 1st and 10th of the next month for the previous month.');
+        }
+        if (selectedMonth !== allowedMonth || selectedYear !== allowedYear) {
+          return alert(`Please fill the monthly assessment for ${monthNames[allowedMonth - 1]} ${allowedYear} when using this window.`);
+        }
+      }
+
       const data = {
         assessment_type: assessmentType,
         skills: JSON.stringify(skills),
@@ -11849,12 +11956,13 @@ async function saveEditedPayment() {
       originalShowTab(name, event);
       if (name === 'announcements') loadAnnouncements();
       if (name === 'monthlyAssessment') {
-    loadAssessments();
-    loadAssessmentStudents();
-    if (typeof allStudents !== 'undefined' && allStudents.length > 0) {
-        loadDueAssessments();
-    }
-}
+        loadAssessments();
+        loadAssessmentStudents();
+        updateMonthlyAssessmentWindow();
+        if (typeof allStudents !== 'undefined' && allStudents.length > 0) {
+          loadDueAssessments();
+        }
+      }
       if (name === 'payments') {
         loadPaymentStudentDropdown();
       }
