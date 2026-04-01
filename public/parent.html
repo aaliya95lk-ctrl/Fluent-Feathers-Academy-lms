@@ -1610,6 +1610,8 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
     const APP_INSTALLED_KEY = 'ff_parent_app_installed';
     let parentPushSetupDone = false;
     window.__ffParentPushToken = null;
+    window.__ffParentPushOnMessageBound = window.__ffParentPushOnMessageBound === true;
+    window.__ffParentLastForegroundNotification = window.__ffParentLastForegroundNotification || { tag: '', ts: 0 };
     const PORTAL_AUTO_REFRESH_MS = 5 * 60 * 1000;
     let portalAutoRefreshTimerId = null;
 
@@ -1867,17 +1869,24 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email, token })
         });
-        messaging.onMessage((payload) => {
-          const data = payload.data || {};
-          const n = payload.notification || {};
-          const iconUrl = appConfig.logoUrl || '/logo.png';
-          const title = data.title || n.title;
-          const body = data.body || n.body || '';
-          const tag = data.notificationTag || data.type || [title, body].filter(Boolean).join('|').slice(0, 180);
-          if (title && Notification.permission === 'granted') {
-            new Notification(title, { body, icon: iconUrl, badge: iconUrl, tag, renotify: false });
-          }
-        });
+        if (!window.__ffParentPushOnMessageBound) {
+          messaging.onMessage((payload) => {
+            const data = payload.data || {};
+            const n = payload.notification || {};
+            const iconUrl = appConfig.logoUrl || '/logo.png';
+            const title = data.title || n.title;
+            const body = data.body || n.body || '';
+            const tag = data.notificationTag || data.type || [title, body].filter(Boolean).join('|').slice(0, 180);
+            const now = Date.now();
+            const last = window.__ffParentLastForegroundNotification || { tag: '', ts: 0 };
+            if (last.tag === tag && now - last.ts < 10000) return;
+            window.__ffParentLastForegroundNotification = { tag, ts: now };
+            if (title && Notification.permission === 'granted') {
+              new Notification(title, { body, icon: iconUrl, badge: iconUrl, tag, renotify: false });
+            }
+          });
+          window.__ffParentPushOnMessageBound = true;
+        }
         parentPushSetupDone = true;
         if (showErrors) alert('Notifications enabled successfully.');
       } catch (e) {

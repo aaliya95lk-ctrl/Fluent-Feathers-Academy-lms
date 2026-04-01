@@ -4000,17 +4000,26 @@ I'm passionate about helping children develop confidence in communication!"></te
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ token })
         });
-        messaging.onMessage((payload) => {
-          const data = payload.data || {};
-          const n = payload.notification || {};
-          const iconUrl = appConfig.logoUrl || '/logo.png';
-          const title = data.title || n.title;
-          const body = data.body || n.body || '';
-          const tag = data.notificationTag || data.type || [title, body].filter(Boolean).join('|').slice(0, 180);
-          if (title && Notification.permission === 'granted') {
-            new Notification(title, { body, icon: iconUrl, badge: iconUrl, tag, renotify: false });
-          }
-        });
+        window.__ffAdminPushOnMessageBound = window.__ffAdminPushOnMessageBound === true;
+        window.__ffAdminLastForegroundNotification = window.__ffAdminLastForegroundNotification || { tag: '', ts: 0 };
+        if (!window.__ffAdminPushOnMessageBound) {
+          messaging.onMessage((payload) => {
+            const data = payload.data || {};
+            const n = payload.notification || {};
+            const iconUrl = appConfig.logoUrl || '/logo.png';
+            const title = data.title || n.title;
+            const body = data.body || n.body || '';
+            const tag = data.notificationTag || data.type || [title, body].filter(Boolean).join('|').slice(0, 180);
+            const now = Date.now();
+            const last = window.__ffAdminLastForegroundNotification || { tag: '', ts: 0 };
+            if (last.tag === tag && now - last.ts < 10000) return;
+            window.__ffAdminLastForegroundNotification = { tag, ts: now };
+            if (title && Notification.permission === 'granted') {
+              new Notification(title, { body, icon: iconUrl, badge: iconUrl, tag, renotify: false });
+            }
+          });
+          window.__ffAdminPushOnMessageBound = true;
+        }
         adminPushSetupDone = true;
         updateAdminNotifyButton();
         if (showErrors) alert('Admin notifications enabled successfully.');

@@ -3400,21 +3400,13 @@ async function sendPushToParentByEmail(parentEmail, title, body, data = {}) {
   const safeTitle = String(title || APP_DISPLAY_NAME).slice(0, 200);
   const safeBody = String(body || '').slice(0, 240);
   const notificationTag = String(data.notificationTag || data.type || `${safeTitle}|${safeBody}|${targetLink}`).slice(0, 180);
-  const webpushNotification = {
-    title: safeTitle,
-    body: safeBody,
-    icon: resolveLogoAbsoluteUrl(appUrl),
-    badge: resolveLogoAbsoluteUrl(appUrl),
-    tag: notificationTag
-  };
   try {
     const resp = await firebaseAdmin.messaging().sendEachForMulticast({
       tokens,
-      // Use a data-only payload for web so the service worker is the single notification renderer.
+      // Keep web push data-only so the service worker is the single notification renderer.
       data: { ...data, title: safeTitle, body: safeBody, url: targetLink, link: targetLink, click_action: targetLink, notificationTag },
       webpush: {
-        fcmOptions: { link: targetLink },
-        notification: webpushNotification
+        fcmOptions: { link: targetLink }
       }
     });
     resp.responses.forEach((x, i) => {
@@ -3571,21 +3563,13 @@ async function sendPushToAdmins(title, body, data = {}) {
   const safeTitle = String(title || APP_DISPLAY_NAME).slice(0, 200);
   const safeBody = String(body || '').slice(0, 240);
   const notificationTag = String(data.notificationTag || data.type || `${safeTitle}|${safeBody}|${targetLink}`).slice(0, 180);
-  const webpushNotification = {
-    title: safeTitle,
-    body: safeBody,
-    icon: resolveLogoAbsoluteUrl(appUrl),
-    badge: resolveLogoAbsoluteUrl(appUrl),
-    tag: notificationTag
-  };
   try {
     const resp = await firebaseAdmin.messaging().sendEachForMulticast({
       tokens,
-      // Use a data-only payload for web so the service worker is the single notification renderer.
+      // Keep web push data-only so the service worker is the single notification renderer.
       data: { ...data, title: safeTitle, body: safeBody, url: targetLink, link: targetLink, click_action: targetLink, notificationTag },
       webpush: {
-        fcmOptions: { link: targetLink },
-        notification: webpushNotification
+        fcmOptions: { link: targetLink }
       }
     });
     resp.responses.forEach((x, i) => {
