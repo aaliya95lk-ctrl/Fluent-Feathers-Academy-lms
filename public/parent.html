@@ -2590,6 +2590,27 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
       }
     }
 
+    function getBadgeDisplayParts(badge) {
+      const fullName = String(badge?.badge_name || '').trim();
+      const parts = fullName.split(/\s+/).filter(Boolean);
+      const first = parts[0] || '';
+      const hasLeadingEmoji = /\p{Extended_Pictographic}/u.test(first);
+      const fallbackIcons = {
+        hw_submit: '📝',
+        graded_hw: '📚',
+        first_class: '🎉',
+        '5_classes': '⭐',
+        '10_classes': '🌟',
+        '25_homework': '🏅',
+        '10_homework': '🎓',
+        '5_homework': '📚'
+      };
+      return {
+        icon: hasLeadingEmoji ? first : (fallbackIcons[String(badge?.badge_type || '')] || '🏅'),
+        title: hasLeadingEmoji ? parts.slice(1).join(' ') : fullName
+      };
+    }
+
     async function loadClassPoints() {
       try {
         if (!currentStudent) return;
@@ -2750,25 +2771,31 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
           // Show award badges prominently at top
           let awardsHTML = '';
           if (awardBadges.length > 0) {
-            awardsHTML = awardBadges.slice(0, 3).map(b => `
+            awardsHTML = awardBadges.slice(0, 3).map(b => {
+              const badgeView = getBadgeDisplayParts(b);
+              return `
               <div style="grid-column:1/-1;background:linear-gradient(135deg,#fef3c7,#fde68a);border:2px solid #f59e0b;border-radius:12px;padding:15px;text-align:center;">
-                <div style="font-size:2rem;">${b.badge_name.split(' ')[0]}</div>
-                <div style="font-weight:bold;color:#92400e;font-size:1rem;">${b.badge_name.substring(b.badge_name.indexOf(' ') + 1)}</div>
+                <div style="font-size:2rem;">${badgeView.icon}</div>
+                <div style="font-weight:bold;color:#92400e;font-size:1rem;">${badgeView.title}</div>
                 <div style="color:#b45309;font-size:0.75rem;">${b.badge_description}</div>
               </div>
-            `).join('');
+            `;
+            }).join('');
           }
 
           // Show latest 5 regular badges
           const displayBadges = regularBadges.slice(0, 5);
-          container.innerHTML = awardsHTML + displayBadges.map(b => `
+          container.innerHTML = awardsHTML + displayBadges.map(b => {
+            const badgeView = getBadgeDisplayParts(b);
+            return `
             <div class="badge-card" style="padding: 12px; font-size: 0.9rem;">
-              <div class="badge-icon" style="font-size: 1.8rem;">${b.badge_name.split(' ')[0]}</div>
-              <div class="badge-name" style="font-size: 0.8rem;">${b.badge_name.substring(b.badge_name.indexOf(' ') + 1)}</div>
+              <div class="badge-icon" style="font-size: 1.8rem;">${badgeView.icon}</div>
+              <div class="badge-name" style="font-size: 0.8rem;">${badgeView.title}</div>
               <div class="badge-desc" style="font-size: 0.7rem;">${b.badge_description}</div>
               <div class="badge-date" style="font-size: 0.65rem;">Earned: ${new Date(b.earned_date).toLocaleDateString()}</div>
             </div>
-          `).join('');
+          `;
+          }).join('');
 
           // Show "View All" button if more than 5 badges
           document.getElementById('viewAllBadgesBtn').style.display = badges.length > 5 ? 'block' : 'none';
@@ -2888,14 +2915,17 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
             <button onclick="document.getElementById('allBadgesModal').remove()" style="background: #e53e3e; color: white; border: none; padding: 8px 15px; border-radius: 8px; cursor: pointer;">✕</button>
           </div>
           <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px;">
-            ${allBadges.map(b => `
+            ${allBadges.map(b => {
+              const badgeView = getBadgeDisplayParts(b);
+              return `
               <div style="background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%); padding: 12px; border-radius: 12px; text-align: center;">
-                <div style="font-size: 2rem;">${b.badge_name.split(' ')[0]}</div>
-                <div style="font-weight: 600; font-size: 0.85rem; color: #2d3748;">${b.badge_name.substring(b.badge_name.indexOf(' ') + 1)}</div>
+                <div style="font-size: 2rem;">${badgeView.icon}</div>
+                <div style="font-weight: 600; font-size: 0.85rem; color: #2d3748;">${badgeView.title}</div>
                 <div style="font-size: 0.7rem; color: #718096; margin-top: 5px;">${b.badge_description}</div>
                 <div style="font-size: 0.65rem; color: #a0aec0; margin-top: 5px;">${new Date(b.earned_date).toLocaleDateString()}</div>
               </div>
-            `).join('')}
+            `;
+            }).join('')}
           </div>
         </div>
       `;
