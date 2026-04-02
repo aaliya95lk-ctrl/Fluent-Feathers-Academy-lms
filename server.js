@@ -13625,7 +13625,7 @@ app.post('/api/students/:id/expectations/request', async (req, res) => {
             We would love to know what you hope ${escapeHtml(student.name)} will gain from classes at Fluent Feathers Academy.
           </p>
           <p style="font-size: 15px; line-height: 1.7; color: #4a5568; margin: 0 0 22px;">
-            Please open the parent portal and add your expectations in the <strong>Parent Expectations</strong> section. This helps us align lessons with your goals.
+            Please open the parent portal, go to the <strong>Profile/Expectations</strong> section, scroll down, and submit your expectations there. This helps us align lessons with your goals.
           </p>
           <div style="text-align: center; margin: 26px 0;">
             <a href="${portalUrl}" style="display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 13px 30px; text-decoration: none; border-radius: 999px; font-weight: 700; font-size: 15px;">
@@ -13633,7 +13633,7 @@ app.post('/api/students/:id/expectations/request', async (req, res) => {
             </a>
           </div>
           <p style="font-size: 13px; color: #718096; margin: 0;">
-            If you already have the app installed, just open it and update the expectations there.
+            If you already have the app installed, open the parent portal, go to <strong>Profile/Expectations</strong>, scroll down, and submit the expectations there.
           </p>
         </div>
       </div>
