@@ -3644,6 +3644,14 @@ async function notifyAdminsStudentSubmission({
 
 async function sendEmail(to, subject, html, recipientName, emailType, options = {}) {
   let finalHtml;
+  const normalizedEmailType = String(emailType || '').trim();
+  const effectiveSubject =
+    normalizedEmailType === 'Classwork-Feedback'
+      ? String(subject || '')
+          .replaceAll('Homework Feedback', 'Classwork Feedback')
+          .replaceAll('Homework Corrected', 'Classwork Corrected')
+          .replaceAll("'s Homework Reviewed", "'s Classwork Reviewed")
+      : subject;
   try {
     const apiKey = process.env.BREVO_API_KEY;
     if (!apiKey) {
@@ -3672,17 +3680,17 @@ async function sendEmail(to, subject, html, recipientName, emailType, options = 
       }
     }
 
-    await axios.post('https://api.brevo.com/v3/smtp/email', { sender: { name: 'Fluent Feathers Academy', email: process.env.EMAIL_USER || 'test@test.com' }, to: [{ email: to, name: recipientName || to }], subject: subject, htmlContent: finalHtml }, { headers: { 'api-key': apiKey, 'Content-Type': 'application/json' } });
-    await pool.query(`INSERT INTO email_log (recipient_name, recipient_email, email_type, subject, status, email_body) VALUES ($1, $2, $3, $4, 'Sent', $5)`, [recipientName || '', to, emailType, subject, finalHtml]);
+    await axios.post('https://api.brevo.com/v3/smtp/email', { sender: { name: 'Fluent Feathers Academy', email: process.env.EMAIL_USER || 'test@test.com' }, to: [{ email: to, name: recipientName || to }], subject: effectiveSubject, htmlContent: finalHtml }, { headers: { 'api-key': apiKey, 'Content-Type': 'application/json' } });
+    await pool.query(`INSERT INTO email_log (recipient_name, recipient_email, email_type, subject, status, email_body) VALUES ($1, $2, $3, $4, 'Sent', $5)`, [recipientName || '', to, emailType, effectiveSubject, finalHtml]);
     if (options.skipPush !== true) {
-      const pushTitle = String(subject || '').replace(/\s*\[[^\]]+\]\s*$/g, '').trim() || 'Fluent Feathers';
+      const pushTitle = String(effectiveSubject || '').replace(/\s*\[[^\]]+\]\s*$/g, '').trim() || 'Fluent Feathers';
       const pushBody = stripHtmlSnippet(finalHtml);
       sendPushToParentByEmail(to, pushTitle, pushBody, { emailType: emailType || '' }).catch(() => {});
     }
     return true;
   } catch (e) {
     console.error('Email Error:', e.message);
-    await pool.query(`INSERT INTO email_log (recipient_name, recipient_email, email_type, subject, status, email_body) VALUES ($1, $2, $3, $4, 'Failed', $5)`, [recipientName || '', to, emailType, subject, finalHtml || html || '']);
+    await pool.query(`INSERT INTO email_log (recipient_name, recipient_email, email_type, subject, status, email_body) VALUES ($1, $2, $3, $4, 'Failed', $5)`, [recipientName || '', to, emailType, effectiveSubject, finalHtml || html || '']);
     return false;
   }
 }
@@ -4631,7 +4639,17 @@ function getEventReminderEmail(data) {
 }
 
 function getHomeworkFeedbackEmail(data) {
-  const { studentName, parentName, grade, comments, fileName } = data;
+  const {
+    studentName,
+    parentName,
+    grade,
+    comments,
+    fileName,
+    workType = 'Homework',
+    actionLabel = 'Reviewed'
+  } = data;
+  const normalizedWorkType = workType === 'Classwork' ? 'Classwork' : 'Homework';
+  const lowerWorkType = normalizedWorkType.toLowerCase();
 
   // Get emoji based on grade
   const g = (grade || '').toLowerCase();
@@ -4639,7 +4657,7 @@ function getHomeworkFeedbackEmail(data) {
                      g.includes('b') || g.includes('good') ? '👍' :
                      g.includes('c') ? '📝' : '⭐';
 
-  return `<!DOCTYPE html>
+  const emailHtml = `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="UTF-8">
@@ -4711,6 +4729,13 @@ function getHomeworkFeedbackEmail(data) {
   </div>
 </body>
 </html>`;
+  return emailHtml
+    .replaceAll('Homework Reviewed!', `${normalizedWorkType} ${actionLabel}!`)
+    .replaceAll('your homework', `your ${lowerWorkType}`)
+    .replaceAll(`${studentName}'s homework has been reviewed`, `${studentName}'s ${lowerWorkType} has been ${actionLabel.toLowerCase()}`)
+    .replaceAll('Homework Details', `${normalizedWorkType} Details`)
+    .replaceAll('Homework submission', `${normalizedWorkType} submission`)
+    .replaceAll('Regular homework completion', `Regular ${lowerWorkType} completion`);
 }
 
 function getBirthdayEmail(data) {
@@ -12568,6 +12593,7 @@ app.post('/api/materials/:id/grade', async (req, res) => {
 
     if (materialResult.rows[0]) {
       const material = materialResult.rows[0];
+      const materialType = material.file_type === 'Classwork' ? 'Classwork' : 'Homework';
 
       // Award badge
       await awardBadge(material.student_id, 'graded_hw', '📚 Homework Hero', 'Received homework feedback');
@@ -12580,7 +12606,9 @@ app.post('/api/materials/:id/grade', async (req, res) => {
             parentName: material.parent_name,
             grade: grade,
             comments: comments,
-            fileName: material.file_name
+            fileName: material.file_name,
+            workType: materialType,
+            actionLabel: 'Reviewed'
           });
 
           await sendEmail(
@@ -12588,11 +12616,11 @@ app.post('/api/materials/:id/grade', async (req, res) => {
             `📝 Homework Feedback - ${material.student_name}'s Homework Reviewed`,
             feedbackEmailHTML,
             material.parent_name,
-            'Homework-Feedback'
+            `${materialType}-Feedback`
           );
           console.log(`✅ Sent homework feedback email to ${material.parent_email} for ${material.student_name}`);
         } catch (emailErr) {
-          console.error('Error sending homework feedback email:', emailErr);
+          console.error('Error sending work feedback email:', emailErr);
           // Don't fail the request if email fails
         }
       }
@@ -12657,19 +12685,22 @@ app.post('/api/materials/:id/annotate', express.json({ limit: '20mb' }), async (
       await awardBadge(material.student_id, 'graded_hw', '📚 Homework Hero', 'Received homework feedback');
 
       if (material.parent_email) {
+        const materialType = material.file_type === 'Classwork' ? 'Classwork' : 'Homework';
         const feedbackEmailHTML = getHomeworkFeedbackEmail({
           studentName: material.student_name,
           parentName: material.parent_name,
           grade: grade,
-          comments: (comments || '') + '\n\nYour corrected homework with teacher\'s annotations is available on the parent portal.',
-          fileName: material.file_name
+          comments: (comments || '') + `\n\nYour corrected ${materialType.toLowerCase()} with teacher's annotations is available on the parent portal.`,
+          fileName: material.file_name,
+          workType: materialType,
+          actionLabel: 'Corrected'
         });
         await sendEmail(
           material.parent_email,
           `📝 Homework Corrected - ${material.student_name}'s Homework Reviewed`,
           feedbackEmailHTML,
           material.parent_name,
-          'Homework-Feedback'
+          `${materialType}-Feedback`
         );
       }
     }
