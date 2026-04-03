@@ -15398,8 +15398,7 @@ app.get('/api/health', async (req, res) => {
 });
 
 // ==================== KEEPALIVE PING ====================
-// Self-ping every 25 seconds to generate lightweight inbound traffic while the service is already running.
-// This does not prevent Render free instances from spinning down; use an external uptime monitor or a paid plan for that.
+// Keep the public app endpoint warm and keep the DB connection active.
 const SELF_PING_INTERVAL = Math.max(20 * 1000, Number(process.env.SELF_PING_INTERVAL_MS) || 25 * 1000);
 const DB_CHECK_INTERVAL = 25 * 1000;        // Check DB every 25 seconds
 let selfPingUrl = null;
@@ -15427,6 +15426,7 @@ async function _connectPingClient() {
     });
     c.on('error', () => {
       _pingClient = null;
+      dbReady = false;
       setTimeout(() => {
         checkDatabaseHealth().catch(() => {});
       }, 0);
@@ -15456,6 +15456,7 @@ async function _sendDbPing() {
   } catch (err) {
     console.warn('⚡ DB ping failed, will reconnect:', err.message);
     _pingClient = null;
+    dbReady = false;
     setTimeout(_connectPingClient, 2000);
     setTimeout(() => {
       checkDatabaseHealth().catch(() => {});
@@ -15510,29 +15511,38 @@ function startKeepAlive() {
     await checkDatabaseHealth();
   }, DB_CHECK_INTERVAL);
 
-  // Start external/self keepalive. Prefer a real public URL so hosts like Render
-  // count the request as inbound traffic instead of an internal localhost loop.
-  const publicAppUrl =
+  // Always prefer the public app URL so the host sees inbound traffic.
+  const publicAppUrl = (
     process.env.RENDER_EXTERNAL_URL ||
     process.env.APP_URL ||
     process.env.BASE_URL ||
-    '';
-  selfPingUrl = publicAppUrl.replace(/\/$/, '') || `http://localhost:${PORT}`;
-  console.log(`🏓 Service keepalive enabled for: ${selfPingUrl}/api/health/light every ${Math.round(SELF_PING_INTERVAL / 1000)}s`);
-  if (!publicAppUrl && process.env.NODE_ENV === 'production') {
-    console.warn('⚠️ No public app URL configured for keepalive. Localhost self-pings will not prevent host idle spin-down.');
-  }
+    getAppBaseUrl() ||
+    ''
+  ).replace(/\/$/, '');
+  selfPingUrl = publicAppUrl || `http://localhost:${PORT}`;
+  console.log(`🏓 Keepalive ping enabled for: ${selfPingUrl} every ${Math.round(SELF_PING_INTERVAL / 1000)}s`);
 
   setInterval(async () => {
     if (selfPingInFlight) return;
     selfPingInFlight = true;
     try {
-      const response = await axios.get(`${selfPingUrl}/api/health/light`, { timeout: 15000 });
+      const response = await axios.get(`${selfPingUrl}/api/health/light`, { timeout: 10000 });
       const data = response.data;
-      const dbStatus = data?.database?.ready ? 'connected' : 'disconnected';
-      console.log(`🏓 Service keepalive ok, DB: ${dbStatus} at ${new Date().toISOString()}`);
+      const dbStatus = data?.database?.status || (data?.database?.ready ? 'connected' : 'unknown');
+      console.log(`🏓 Keepalive: ${data.status}, DB: ${dbStatus}, Pool: ${JSON.stringify(data.database?.pool || {})} at ${new Date().toISOString()}`);
+
+      if (dbStatus !== 'connected') {
+        console.log('🔄 Database disconnected, triggering reconnect...');
+        await checkDatabaseHealth();
+        try {
+          await axios.get(`${selfPingUrl}/api/db/ping`, { timeout: 15000 });
+        } catch (dbPingErr) {
+          console.log(`🏓 DB warm ping failed: ${dbPingErr.message}`);
+        }
+      }
     } catch (err) {
       console.log(`🏓 Keepalive ping failed: ${err.message}`);
+      checkDatabaseHealth().catch(() => {});
     } finally {
       selfPingInFlight = false;
     }
