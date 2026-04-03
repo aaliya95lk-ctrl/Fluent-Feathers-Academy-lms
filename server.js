@@ -15520,25 +15520,20 @@ function startKeepAlive() {
     ''
   ).replace(/\/$/, '');
   selfPingUrl = publicAppUrl || `http://localhost:${PORT}`;
-  console.log(`🏓 Keepalive ping enabled for: ${selfPingUrl} every ${Math.round(SELF_PING_INTERVAL / 1000)}s`);
+  console.log(`🏓 Keepalive ping enabled for: ${selfPingUrl}/api/db/ping every ${Math.round(SELF_PING_INTERVAL / 1000)}s`);
 
   setInterval(async () => {
     if (selfPingInFlight) return;
     selfPingInFlight = true;
     try {
-      const response = await axios.get(`${selfPingUrl}/api/health/light`, { timeout: 10000 });
+      const response = await axios.get(`${selfPingUrl}/api/db/ping`, { timeout: 15000 });
       const data = response.data;
-      const dbStatus = data?.database?.status || (data?.database?.ready ? 'connected' : 'unknown');
-      console.log(`🏓 Keepalive: ${data.status}, DB: ${dbStatus}, Pool: ${JSON.stringify(data.database?.pool || {})} at ${new Date().toISOString()}`);
+      const dbStatus = data?.dbReady ? 'connected' : 'disconnected';
+      console.log(`🏓 Keepalive: ok=${data?.ok === true}, DB: ${dbStatus} at ${new Date().toISOString()}`);
 
-      if (dbStatus !== 'connected') {
+      if (!data?.dbReady) {
         console.log('🔄 Database disconnected, triggering reconnect...');
         await checkDatabaseHealth();
-        try {
-          await axios.get(`${selfPingUrl}/api/db/ping`, { timeout: 15000 });
-        } catch (dbPingErr) {
-          console.log(`🏓 DB warm ping failed: ${dbPingErr.message}`);
-        }
       }
     } catch (err) {
       console.log(`🏓 Keepalive ping failed: ${err.message}`);
