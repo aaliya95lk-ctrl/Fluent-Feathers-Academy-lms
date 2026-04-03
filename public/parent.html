@@ -2525,6 +2525,7 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
       document.addEventListener('visibilitychange', () => {                  // layer 3
         if (document.visibilityState === 'visible') _parentDbPing();
       });
+      _parentDbPing();                                                       // layer 0
       // ─────────────────────────────────────────────────────────────────────────
 
       // Restore last active tab from localStorage
@@ -2667,19 +2668,11 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
           if (el) el.textContent = total;
         });
 
-        // Compute next milestone
-        var milestones = [10, 20, 30, 50, 100];
-        var next = null;
-        for (var i = 0; i < milestones.length; i++) {
-          if (total < milestones[i]) { next = milestones[i]; break; }
-        }
-        var prevMilestone = next ? (milestones[milestones.indexOf(next) - 1] || 0) : milestones[milestones.length - 1];
-        var nextText = next
-          ? 'Next badge at ' + next + ' pts (' + (next - total) + ' to go!)'
-          : '🏆 All milestones reached!';
-        var pct = next
-          ? Math.min(100, Math.round((total - prevMilestone) / (next - prevMilestone) * 100))
-          : 100;
+        // Compute next 10-point badge milestone
+        var next = Math.floor(total / 10) * 10 + 10;
+        var prevMilestone = Math.max(0, next - 10);
+        var nextText = 'Next badge at ' + next + ' pts (' + (next - total) + ' to go!)';
+        var pct = Math.max(0, Math.min(100, Math.round((total - prevMilestone) / 10 * 100)));
 
         ['classPointsNext', 'classPointsNextTab'].forEach(function(id) {
           var el = document.getElementById(id);

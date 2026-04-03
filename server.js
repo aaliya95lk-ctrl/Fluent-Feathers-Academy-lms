@@ -11656,8 +11656,44 @@ async function awardBadge(studentId, badgeType, badgeName, badgeDescription) {
   }
 }
 
+const CLASS_POINT_BADGE_MILESTONES = {
+  10: { name: '⭐ Class Star', desc: 'Earned 10 class points in live classes!' },
+  20: { name: '🌟 Double Star', desc: 'Earned 20 class points in live classes!' },
+  30: { name: '🔥 On Fire', desc: 'Earned 30 class points in live classes!' },
+  50: { name: '🏆 Points Champion', desc: 'Earned 50 class points in live classes!' },
+  100: { name: '💎 Points Legend', desc: 'Earned 100 class points in live classes!' }
+};
+
+async function backfillClassPointBadges(studentId, totalPoints) {
+  const normalizedTotal = parseInt(totalPoints, 10) || 0;
+  if (normalizedTotal < 10) return [];
+
+  const awardedBadges = [];
+  const endMilestone = Math.floor(normalizedTotal / 10) * 10;
+  for (let threshold = 10; threshold <= endMilestone; threshold += 10) {
+    const badgeMeta = CLASS_POINT_BADGE_MILESTONES[threshold] || {
+      name: `🏅 ${threshold} Point Badge`,
+      desc: `Earned ${threshold} class points in live classes!`
+    };
+    const awarded = await awardBadge(
+      studentId,
+      `class_points_${threshold}`,
+      badgeMeta.name,
+      badgeMeta.desc
+    );
+    if (awarded) awardedBadges.push(badgeMeta.name);
+  }
+  return awardedBadges;
+}
+
 app.get('/api/students/:id/badges', async (req, res) => {
   try {
+    const totalResult = await pool.query(
+      'SELECT COALESCE(SUM(points), 0) AS total_points FROM class_points WHERE student_id = $1',
+      [req.params.id]
+    );
+    await backfillClassPointBadges(req.params.id, totalResult.rows[0].total_points);
+
     const result = await pool.query(
       'SELECT * FROM student_badges WHERE student_id = $1 ORDER BY earned_date DESC',
       [req.params.id]
@@ -15236,12 +15272,23 @@ app.get('/api/health/light', (req, res) => {
 // Runs SELECT 1 against the real pool so the DB connection is never idle.
 app.get('/api/db/ping', async (req, res) => {
   try {
+    if (!dbReady) {
+      await initializeDatabaseConnection();
+    }
     await pool.query('SELECT 1');
     if (!dbReady) dbReady = true;
     markDbActivity();
     res.json({ ok: true, dbReady: true });
   } catch (err) {
-    res.json({ ok: false, dbReady: false });
+    try {
+      await initializeDatabaseConnection();
+      await pool.query('SELECT 1');
+      dbReady = true;
+      markDbActivity();
+      return res.json({ ok: true, dbReady: true, recovered: true });
+    } catch (_) {
+      res.status(503).json({ ok: false, dbReady: false });
+    }
   }
 });
 
@@ -15434,23 +15481,29 @@ function startKeepAlive() {
     await checkDatabaseHealth();
   }, DB_CHECK_INTERVAL);
 
-  // Start external/self keepalive — always run to prevent service spindown.
-  // Use RENDER_EXTERNAL_URL if set, otherwise fall back to localhost so Render's
-  // free-tier idle timer is always reset even if the env var is missing.
-  selfPingUrl = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
+  // Start external/self keepalive. Prefer a real public URL so hosts like Render
+  // count the request as inbound traffic instead of an internal localhost loop.
+  const publicAppUrl =
+    process.env.RENDER_EXTERNAL_URL ||
+    process.env.APP_URL ||
+    process.env.BASE_URL ||
+    '';
+  selfPingUrl = publicAppUrl.replace(/\/$/, '') || `http://localhost:${PORT}`;
   console.log(`🏓 Keepalive ping enabled for: ${selfPingUrl} every ${Math.round(SELF_PING_INTERVAL / 1000)}s`);
+  if (!publicAppUrl && process.env.NODE_ENV === 'production') {
+    console.warn('⚠️ No public app URL configured for keepalive. Localhost self-pings will not prevent host idle spin-down.');
+  }
 
   setInterval(async () => {
     if (selfPingInFlight) return;
     selfPingInFlight = true;
     try {
-      const response = await axios.get(`${selfPingUrl}/api/health/light`, { timeout: 10000 });
+      const response = await axios.get(`${selfPingUrl}/api/db/ping`, { timeout: 15000 });
       const data = response.data;
-      const dbStatus = data.database?.status || 'unknown';
-      console.log(`🏓 Keepalive: ${data.status}, DB: ${dbStatus}, Pool: ${JSON.stringify(data.database?.pool || {})} at ${new Date().toISOString()}`);
+      const dbStatus = data.dbReady ? 'connected' : 'disconnected';
+      console.log(`🏓 Keepalive: ok=${data.ok === true}, DB: ${dbStatus} at ${new Date().toISOString()}`);
 
-      // If database is disconnected, try to reconnect
-      if (dbStatus !== 'connected') {
+      if (!data.dbReady) {
         console.log('🔄 Database disconnected, triggering reconnect...');
         await checkDatabaseHealth();
       }
@@ -15800,6 +15853,13 @@ app.get('/api/live-points/totals', async (req, res) => {
   try {
     const ids = (req.query.ids || '').split(',').map(Number).filter(Boolean);
     if (ids.length === 0) return res.json([]);
+    await Promise.all(ids.map(async function(studentId) {
+      const totalResult = await pool.query(
+        'SELECT COALESCE(SUM(points), 0) AS total_points FROM class_points WHERE student_id = $1',
+        [studentId]
+      );
+      await backfillClassPointBadges(studentId, totalResult.rows[0].total_points);
+    }));
     const placeholders = ids.map((_, i) => `$${i + 1}`).join(',');
     const result = await executeQuery(
       `SELECT student_id, SUM(points) AS total_points
@@ -15832,23 +15892,8 @@ app.post('/api/live-points/award', async (req, res) => {
       [student_id]
     );
     const totalPoints = parseInt(totalResult.rows[0].total_points);
-    const prevTotal = totalPoints - safePoints;
-
-    // Auto-award milestone badges for class points
-    const pointsMilestones = [
-      { threshold: 10,  type: 'class_points_10',  name: '⭐ Class Star',      desc: 'Earned 10 class points in live classes!' },
-      { threshold: 20,  type: 'class_points_20',  name: '🌟 Double Star',     desc: 'Earned 20 class points in live classes!' },
-      { threshold: 30,  type: 'class_points_30',  name: '🔥 On Fire',         desc: 'Earned 30 class points in live classes!' },
-      { threshold: 50,  type: 'class_points_50',  name: '🏆 Points Champion', desc: 'Earned 50 class points in live classes!' },
-      { threshold: 100, type: 'class_points_100', name: '💎 Points Legend',   desc: 'Earned 100 class points in live classes!' },
-    ];
-    let badgeAwarded = null;
-    for (const m of pointsMilestones) {
-      if (prevTotal < m.threshold && totalPoints >= m.threshold) {
-        const awarded = await awardBadge(student_id, m.type, m.name, m.desc);
-        if (awarded) badgeAwarded = m.name;
-      }
-    }
+    const newlyAwardedBadges = await backfillClassPointBadges(student_id, totalPoints);
+    const badgeAwarded = newlyAwardedBadges.length > 0 ? newlyAwardedBadges[newlyAwardedBadges.length - 1] : null;
 
     res.json({ entry: result.rows[0], total_points: totalPoints, badge_awarded: badgeAwarded });
   } catch (err) {
