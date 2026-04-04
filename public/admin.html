@@ -9829,9 +9829,7 @@ async function saveEditedPayment() {
 
     function populateDemoTimezoneSelects() {
       const defaultTz = 'Asia/Kolkata';
-      ['demoTimezone', 'editDemoTimezone', 'convertTimezone'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.innerHTML = buildTimezoneOptions(defaultTz);
+      ['demoTimezone', 'editDemoTimezone', 'convertTimezone', 'convertSummerCampTimezone'].forEach(id => {
       });
     }
 
