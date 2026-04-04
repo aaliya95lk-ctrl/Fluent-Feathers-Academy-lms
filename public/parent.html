@@ -5,19 +5,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Parent Portal - Fluent Feathers Academy By Aaliya</title>
-  <link rel="manifest" href="/manifest.webmanifest">
-  <meta name="theme-color" content="#B05D9E">
-  <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <meta name="apple-mobile-web-app-title" content="Fluent Feathers Academy">
-  <link rel="icon" id="pwaFavicon" href="/logo.png" type="image/png">
-  <link rel="apple-touch-icon" id="pwaAppleTouch" href="/logo.png">
   <!-- PDF Generation Libraries -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging-compat.js"></script>
   <style>
   /* Base styles */
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -89,64 +79,6 @@
     .btn-Class { background: linear-gradient(135deg, #38b2ac 0%, #2c7a7b 100%); color: white; padding: 8px 16px; border-radius: 6px; text-decoration: none; font-size: 0.85rem; display: inline-block; }
     .btn-Class:hover { background: linear-gradient(135deg, #319795 0%, #285e61 100%); }
     .btn-download { background: #B05D9E; color: white; padding: 6px 12px; border-radius: 6px; text-decoration: none; font-size: 0.8rem; display: inline-block; margin: 2px; }
-    .install-app-btn {
-      position: fixed;
-      right: 16px;
-      bottom: 16px;
-      z-index: 10002;
-      display: none;
-      background: linear-gradient(135deg, #B05D9E 0%, #764ba2 100%);
-      color: white;
-      border: none;
-      border-radius: 999px;
-      padding: 12px 18px;
-      box-shadow: 0 8px 24px rgba(118, 75, 162, 0.28);
-      cursor: pointer;
-      font-weight: 700;
-      font-size: 0.92rem;
-    }
-    .install-app-btn:hover { transform: translateY(-1px); }
-    .setup-card {
-      border-left: 5px solid #38b2ac;
-      background: linear-gradient(135deg, #f0fff4 0%, #e6fffa 100%);
-    }
-    .setup-actions {
-      display: flex;
-      gap: 12px;
-      flex-wrap: wrap;
-      margin-top: 16px;
-    }
-    .setup-btn {
-      border: none;
-      border-radius: 999px;
-      padding: 10px 18px;
-      font-size: 0.92rem;
-      font-weight: 700;
-      cursor: pointer;
-    }
-    .setup-btn.install {
-      background: linear-gradient(135deg, #B05D9E 0%, #764ba2 100%);
-      color: white;
-    }
-    .setup-btn.notify {
-      background: linear-gradient(135deg, #38b2ac 0%, #2c7a7b 100%);
-      color: white;
-    }
-    .setup-btn.secondary {
-      background: white;
-      border: 1.5px solid #cbd5e0;
-      color: #4a5568;
-    }
-    .setup-pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      border-radius: 999px;
-      padding: 6px 12px;
-      font-size: 0.8rem;
-      font-weight: 700;
-      margin: 6px 8px 0 0;
-    }
     table { width: 100%; border-collapse: collapse; }
     th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e2e8f0; }
     th { background: #f7fafc; color: #4a5568; font-weight: 600; }
@@ -305,76 +237,6 @@
       font-weight: 700;
       white-space: nowrap;
     }
-    .announcement-item {
-      background: white;
-      border: 1px solid #e2e8f0;
-      border-radius: 12px;
-      margin-bottom: 14px;
-      overflow: hidden;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-    }
-    .announcement-item summary {
-      list-style: none;
-      cursor: pointer;
-      padding: 18px 20px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 14px;
-      background: #fff;
-      border-left: 4px solid var(--announcement-color, #B05D9E);
-    }
-    .announcement-item summary::-webkit-details-marker {
-      display: none;
-    }
-    .announcement-summary-main {
-      min-width: 0;
-      flex: 1;
-    }
-    .announcement-summary-title {
-      margin: 0 0 6px;
-      color: var(--announcement-color, #B05D9E);
-      font-size: 1rem;
-      font-weight: 800;
-      line-height: 1.35;
-    }
-    .announcement-summary-meta {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      align-items: center;
-      color: #718096;
-      font-size: 0.8rem;
-    }
-    .announcement-pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 4px 10px;
-      border-radius: 999px;
-      font-size: 0.75rem;
-      font-weight: 700;
-      white-space: nowrap;
-    }
-    .announcement-chevron {
-      flex-shrink: 0;
-      font-size: 1.2rem;
-      color: var(--announcement-color, #B05D9E);
-      transition: transform 0.2s ease;
-    }
-    .announcement-item[open] .announcement-chevron {
-      transform: rotate(180deg);
-    }
-    .announcement-body {
-      padding: 0 20px 20px 24px;
-      border-left: 4px solid rgba(176, 93, 158, 0.12);
-      margin-left: 0;
-    }
-    .announcement-content {
-      color: #4a5568;
-      line-height: 1.7;
-      white-space: pre-wrap;
-    }
 
     /* Badges - Cute Compact Design */
     .badges-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 12px; margin-top: 15px; }
@@ -514,8 +376,6 @@
       .makeup-summary-inner { flex-direction: column; align-items: flex-start; }
       .makeup-summary-right { width: 100%; justify-content: space-between; }
       .makeup-history-stats { grid-template-columns: 1fr; }
-      .announcement-item summary { padding: 16px; align-items: flex-start; }
-      .announcement-body { padding: 0 16px 16px 20px; }
     }
 
     @media screen and (max-width: 480px) {
@@ -762,8 +622,6 @@
   </div>
 </div>
 
-  <button id="installAppBtn" class="install-app-btn" type="button">Install App</button>
-
   <div class="container">
     <!-- LOGIN SECTION -->
     <div id="loginSection" class="login-section">
@@ -860,30 +718,10 @@
         </div>
         <div style="display: flex; gap: 10px; align-items: center;">
           <span id="currentChildBadge" style="display: none; background: #e2e8f0; color: #4a5568; padding: 6px 12px; border-radius: 15px; font-size: 0.85rem;">Viewing: <strong id="currentChildName">-</strong></span>
-          <button id="switchChildBtn" onclick="showChildSelector()" style="display: none; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 8px 15px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; font-weight: 600; transition: transform 0.2s;" onmouseenter="this.style.transform='scale(1.05)'" onmouseleave="this.style.transform='scale(1)'">Switch Child</button>
-          <button id="refreshPortalBtn" type="button" onclick="refreshParentPortal(true)" style="background: linear-gradient(135deg, #38b2ac 0%, #319795 100%); color: white; border: none; padding: 8px 15px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; font-weight: 600;">Refresh Portal</button>
+          <button id="switchChildBtn" onclick="showChildSelector()" style="display: none; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 8px 15px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; font-weight: 600; transition: transform 0.2s;" onmouseenter="this.style.transform='scale(1.05)'" onmouseleave="this.style.transform='scale(1)'">👧👦 Switch Child</button>
           <button onclick="logout()" class="btn btn-danger btn-sm">Logout</button>
         </div>
       </header>
-
-      <div id="setupGuideCard" class="info-card setup-card" style="display: none;">
-        <div style="display:flex; justify-content:space-between; gap:16px; align-items:flex-start; flex-wrap:wrap;">
-          <div style="flex:1; min-width:260px;">
-            <h2 style="color:#234e52; margin-bottom:10px;">Parent App Setup</h2>
-            <p style="color:#2d3748; line-height:1.7; margin:0;">Install the app to get class reminders, announcements, and session updates directly on your phone. If your browser allows it, notifications will be requested automatically after login.</p>
-            <div style="margin-top:10px;">
-              <span id="installStatusPill" class="setup-pill" style="background:#fff7ed;color:#9a3412;">⏳ App install pending</span>
-              <span id="notifyStatusPill" class="setup-pill" style="background:#eff6ff;color:#1d4ed8;">🔔 Notifications not enabled</span>
-            </div>
-          </div>
-          <div class="setup-actions">
-            <button id="setupInstallBtn" class="setup-btn install" type="button">Install App</button>
-            <button id="setupNotifyBtn" class="setup-btn notify" type="button">Enable Notifications</button>
-            <button id="setupDismissBtn" class="setup-btn secondary" type="button">Hide</button>
-          </div>
-        </div>
-        <p id="setupGuideNote" style="margin-top:14px; color:#4a5568; font-size:0.9rem;">Android/desktop can show an install prompt. On iPhone/iPad, use Share → Add to Home Screen.</p>
-      </div>
 
       <!-- Child Selector Modal for Siblings -->
       <div id="studentSelector">
@@ -993,7 +831,7 @@
         <button class="tab-btn" id="tabBtnAnnouncements" onclick="showTab('announcements', event)">📢 News<span class="red-dot" id="dotAnnouncements"></span></button>
         <button class="tab-btn" id="tabBtnEvents" onclick="showTab('events', event)">🎉 Events<span class="red-dot" id="dotEvents"></span></button>
         <button class="tab-btn" id="tabBtnPayments" onclick="showTab('payments', event)">💳 Payments<span class="red-dot" id="dotPayments"></span></button>
-        <button class="tab-btn" onclick="showTab('profile', event)">👤 Profile</button>
+        <button class="tab-btn" onclick="showTab('profile', event)">👤 Profile / Expectations</button>
       </div>
 
       <div id="upcomingTab" class="tab-content active">
@@ -1060,7 +898,7 @@
           <p id="pastClassCount" style="color: #718096; font-size: 0.85rem; margin-bottom: 10px;">Showing recent 10 classes</p>
           <div class="table-responsive">
             <table id="pastTable">
-              <thead><tr><th>#</th><th>Date / Topic</th><th>Time</th><th>Attendance</th><th>Materials & Upload Work</th><th>Work Status</th><th>Feedback</th></tr></thead>
+              <thead><tr><th>#</th><th>Date / Topic</th><th>Time</th><th>Attendance</th><th>Materials & Submit HW</th><th>HW Status</th><th>Feedback</th></tr></thead>
               <tbody id="pastBody"><tr><td colspan="7">Loading...</td></tr></tbody>
             </table>
           </div>
@@ -1069,18 +907,11 @@
 
       <div id="homeworkTab" class="tab-content" style="display:none !important;">
         <div class="section">
-          <h2>📤 Upload Work</h2>
+          <h2>📤 Upload Homework</h2>
           <form id="uploadHomeworkForm">
             <div class="form-group">
               <label>Select Session *</label>
               <select id="homeworkSessionSelect" required><option value="">Loading...</option></select>
-            </div>
-            <div class="form-group">
-              <label>Work Type *</label>
-              <select id="homeworkTypeSelect" required>
-                <option value="Homework">Homework</option>
-                <option value="Classwork">Classwork</option>
-              </select>
             </div>
             <div class="form-group">
               <label>Files * (Select multiple files at once)</label>
@@ -1089,10 +920,10 @@
                 Upload any file type: Images, Videos, PDFs, Documents, Presentations, Audio, etc. - Max 100MB per file. You can select multiple files.
               </p>
             </div>
-            <button type="submit" class="btn btn-primary">📤 Upload Work</button>
+            <button type="submit" class="btn btn-primary">📤 Upload Homework</button>
           </form>
 
-          <h3 style="margin-top: 30px; color: #B05D9E;">📚 My Submitted Work</h3>
+          <h3 style="margin-top: 30px; color: #B05D9E;">📚 My Submitted Homework</h3>
           <div id="submittedHomeworkList" style="margin-top: 15px;">
             <p style="color: #718096;">Loading your submissions...</p>
           </div>
@@ -1606,175 +1437,8 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
     let selectedRating = 0;
     let checkedFeedbackSessions = new Set();
     let appConfig = { logoUrl: '/logo.png' };
-    let deferredInstallPrompt = null;
-    const APP_INSTALLED_KEY = 'ff_parent_app_installed';
-    let parentPushSetupDone = false;
-    window.__ffParentPushToken = null;
-    window.__ffParentPushOnMessageBound = window.__ffParentPushOnMessageBound === true;
-    window.__ffParentLastForegroundNotification = window.__ffParentLastForegroundNotification || { tag: '', ts: 0 };
     const PORTAL_AUTO_REFRESH_MS = 5 * 60 * 1000;
     let portalAutoRefreshTimerId = null;
-
-    async function registerPortalServiceWorker() {
-      if (!('serviceWorker' in navigator)) return;
-      try {
-        await navigator.serviceWorker.register('/firebase-messaging-sw.js');
-      } catch (e) {
-        console.warn('Portal service worker registration failed:', e);
-      }
-    }
-
-    function isIosInstallCandidate() {
-      return /iphone|ipad|ipod/i.test(navigator.userAgent) && !window.matchMedia('(display-mode: standalone)').matches && !window.navigator.standalone;
-    }
-
-    function isAppKnownInstalled() {
-      return isAppInstalled() || localStorage.getItem(APP_INSTALLED_KEY) === '1';
-    }
-
-    function markAppInstalled() {
-      localStorage.setItem(APP_INSTALLED_KEY, '1');
-    }
-
-    function setInstallButtonVisibility(show) {
-      const installed = isAppKnownInstalled();
-      const btn = document.getElementById('installAppBtn');
-      if (btn) {
-        btn.style.display = show && !isAppInstalled() ? 'inline-flex' : 'none';
-        btn.textContent = installed && !isAppInstalled() ? 'Open in App' : 'Install App';
-      }
-      const setupBtn = document.getElementById('setupInstallBtn');
-      if (setupBtn) {
-        setupBtn.style.display = (show || isIosInstallCandidate() || installed) && !isAppInstalled() ? 'inline-flex' : 'none';
-        setupBtn.textContent = installed && !isAppInstalled() ? 'Open in App' : 'Install App';
-      }
-    }
-
-    function getPortalInstallEntryRequested() {
-      try {
-        return new URLSearchParams(window.location.search).get('install_app') === '1';
-      } catch (e) {
-        return false;
-      }
-    }
-
-    function highlightInstallSetupEntry() {
-      if (!getPortalInstallEntryRequested()) return;
-      const card = document.getElementById('setupGuideCard');
-      if (!card) return;
-      updateSetupGuide();
-      card.style.display = 'block';
-      card.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      card.style.boxShadow = '0 0 0 3px rgba(176, 93, 158, 0.2), 0 12px 28px rgba(0,0,0,0.08)';
-      setTimeout(() => {
-        card.style.boxShadow = '';
-      }, 2200);
-    }
-
-    async function triggerPortalInstall() {
-      if (isAppKnownInstalled() && !isAppInstalled()) {
-        window.location.href = '/parent.html';
-        return;
-      }
-      if (deferredInstallPrompt) {
-        deferredInstallPrompt.prompt();
-        const choice = await deferredInstallPrompt.userChoice.catch(() => null);
-        if (choice && choice.outcome === 'accepted') {
-          markAppInstalled();
-          setInstallButtonVisibility(false);
-        }
-        deferredInstallPrompt = null;
-        return;
-      }
-      if (isIosInstallCandidate()) {
-        alert('On iPhone or iPad, tap Share and then "Add to Home Screen" to install the app.');
-      }
-      updateSetupGuide();
-    }
-
-    function isAppInstalled() {
-      return window.matchMedia('(display-mode: standalone)').matches || !!window.navigator.standalone;
-    }
-
-    function updateSetupGuide() {
-      const card = document.getElementById('setupGuideCard');
-      const installPill = document.getElementById('installStatusPill');
-      const notifyPill = document.getElementById('notifyStatusPill');
-      const note = document.getElementById('setupGuideNote');
-      const notifyBtn = document.getElementById('setupNotifyBtn');
-      if (!card || !installPill || !notifyPill || !note || !notifyBtn) return;
-
-      const installed = isAppKnownInstalled();
-      const notificationsEnabled = parentPushSetupDone || Notification.permission === 'granted';
-      const installAvailable = !isAppInstalled() && (!!deferredInstallPrompt || isIosInstallCandidate() || installed);
-
-      installPill.textContent = installed ? '✅ App installed' : '⏳ App install pending';
-      installPill.style.background = installed ? '#ecfdf5' : '#fff7ed';
-      installPill.style.color = installed ? '#047857' : '#9a3412';
-
-      if (notificationsEnabled) {
-        notifyPill.textContent = '✅ Notifications enabled';
-        notifyPill.style.background = '#ecfdf5';
-        notifyPill.style.color = '#047857';
-        notifyBtn.textContent = 'Notifications Enabled';
-        notifyBtn.disabled = true;
-        notifyBtn.style.opacity = '0.7';
-        notifyBtn.style.cursor = 'default';
-      } else if (Notification.permission === 'denied') {
-        notifyPill.textContent = '⚠️ Notifications blocked';
-        notifyPill.style.background = '#fef2f2';
-        notifyPill.style.color = '#b91c1c';
-        notifyBtn.textContent = 'Browser Blocked Notifications';
-        notifyBtn.disabled = true;
-        notifyBtn.style.opacity = '0.7';
-        notifyBtn.style.cursor = 'default';
-      } else {
-        notifyPill.textContent = '🔔 Notifications not enabled';
-        notifyPill.style.background = '#eff6ff';
-        notifyPill.style.color = '#1d4ed8';
-        notifyBtn.textContent = 'Enable Notifications';
-        notifyBtn.disabled = false;
-        notifyBtn.style.opacity = '1';
-        notifyBtn.style.cursor = 'pointer';
-      }
-
-      note.textContent = isIosInstallCandidate()
-        ? 'On iPhone/iPad, use Share → Add to Home Screen. After login, Safari may ask once for notification permission.'
-        : installed ? 'The app is already installed. The portal will try to enable notifications automatically after login.' : 'Install the app first. After login, the portal will try to enable notifications automatically.';
-
-      card.style.display = (installAvailable || !notificationsEnabled) ? 'block' : 'none';
-    }
-
-    async function maybeAutoEnableParentNotifications(trigger) {
-      if (parentPushSetupDone) return;
-      if (typeof firebase === 'undefined' || !('serviceWorker' in navigator) || !('Notification' in window)) {
-        updateSetupGuide();
-        return;
-      }
-
-      const session = JSON.parse(localStorage.getItem('parentSession') || '{}');
-      if (!session.email) {
-        updateSetupGuide();
-        return;
-      }
-
-      if (Notification.permission === 'granted') {
-        await tryRegisterParentPush(false);
-        return;
-      }
-
-      if (Notification.permission === 'default' && (trigger === 'login' || trigger === 'install')) {
-        await tryRegisterParentPush(false);
-        return;
-      }
-
-      updateSetupGuide();
-    }
-
-    async function enableParentNotifications() {
-      await tryRegisterParentPush(true);
-      updateSetupGuide();
-    }
 
     function startPortalAutoRefresh() {
       if (portalAutoRefreshTimerId) return;
@@ -1786,43 +1450,6 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
         window.location.reload();
       }, PORTAL_AUTO_REFRESH_MS);
     }
-
-    registerPortalServiceWorker();
-    if (isAppInstalled()) markAppInstalled();
-
-    window.addEventListener('beforeinstallprompt', function(event) {
-      if (isAppInstalled()) return;
-      event.preventDefault();
-      deferredInstallPrompt = event;
-      setInstallButtonVisibility(true);
-    });
-
-    window.addEventListener('appinstalled', function() {
-      markAppInstalled();
-      deferredInstallPrompt = null;
-      setInstallButtonVisibility(false);
-      updateSetupGuide();
-      setTimeout(() => {
-        maybeAutoEnableParentNotifications('install').catch(() => {});
-      }, 600);
-    });
-
-      document.addEventListener('DOMContentLoaded', function() {
-      const installBtn = document.getElementById('installAppBtn');
-      if (installBtn) installBtn.addEventListener('click', triggerPortalInstall);
-      const setupInstallBtn = document.getElementById('setupInstallBtn');
-      if (setupInstallBtn) setupInstallBtn.addEventListener('click', triggerPortalInstall);
-      const setupNotifyBtn = document.getElementById('setupNotifyBtn');
-      if (setupNotifyBtn) setupNotifyBtn.addEventListener('click', enableParentNotifications);
-      const setupDismissBtn = document.getElementById('setupDismissBtn');
-      if (setupDismissBtn) setupDismissBtn.addEventListener('click', function() {
-        const card = document.getElementById('setupGuideCard');
-        if (card) card.style.display = 'none';
-      });
-      if (!isAppInstalled() && isIosInstallCandidate()) setInstallButtonVisibility(true);
-      updateSetupGuide();
-      setTimeout(highlightInstallSetupEntry, 250);
-    });
 
     // Load app configuration (logo URL from environment)
    async function loadConfig() {
@@ -1841,90 +1468,10 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
     if (loadingLogo && appConfig.logoUrl) {
       loadingLogo.src = appConfig.logoUrl;
     }
-
-    const logo = appConfig.logoUrl || '/logo.png';
-    const fav = document.getElementById('pwaFavicon');
-    const apple = document.getElementById('pwaAppleTouch');
-    if (fav) fav.href = logo;
-    if (apple) apple.href = logo;
   } catch (e) {
     console.log('Using default config');
   }
 }
-
-    async function tryRegisterParentPush(showErrors) {
-      if (parentPushSetupDone) return;
-      try {
-        if (typeof firebase === 'undefined' || !('serviceWorker' in navigator)) return;
-        await loadConfig();
-        if (!appConfig.firebase || !appConfig.firebaseVapidKey) {
-          if (showErrors) alert('Push notifications are not fully configured yet.');
-          return;
-        }
-        const session = JSON.parse(localStorage.getItem('parentSession') || '{}');
-        const email = session.email;
-        if (!email) return;
-
-        if (!('Notification' in window)) {
-          if (showErrors) alert('This browser does not support notifications.');
-          return;
-        }
-        let perm = Notification.permission;
-        if (perm === 'denied') {
-          if (showErrors) alert('Notifications are blocked in this browser. Please enable them in browser settings.');
-          return;
-        }
-        if (perm !== 'granted') {
-          perm = await Notification.requestPermission();
-          if (perm !== 'granted') {
-            if (showErrors) alert('Notification permission was not granted.');
-            return;
-          }
-        }
-
-        const reg = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
-        if (!firebase.apps.length) {
-          firebase.initializeApp(appConfig.firebase);
-        }
-        const messaging = firebase.messaging();
-        const token = await messaging.getToken({
-          vapidKey: appConfig.firebaseVapidKey,
-          serviceWorkerRegistration: reg
-        });
-        if (!token) return;
-        window.__ffParentPushToken = token;
-        await fetch('/api/parent/register-fcm-token', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, token })
-        });
-        if (!window.__ffParentPushOnMessageBound) {
-          messaging.onMessage((payload) => {
-            const data = payload.data || {};
-            const n = payload.notification || {};
-            const iconUrl = appConfig.logoUrl || '/logo.png';
-            const title = data.title || n.title;
-            const body = data.body || n.body || '';
-            const tag = data.notificationTag || data.type || [title, body].filter(Boolean).join('|').slice(0, 180);
-            const now = Date.now();
-            const last = window.__ffParentLastForegroundNotification || { tag: '', ts: 0 };
-            if (last.tag === tag && now - last.ts < 10000) return;
-            window.__ffParentLastForegroundNotification = { tag, ts: now };
-            if (title && Notification.permission === 'granted') {
-              new Notification(title, { body, icon: iconUrl, badge: iconUrl, tag, renotify: false });
-            }
-          });
-          window.__ffParentPushOnMessageBound = true;
-        }
-        parentPushSetupDone = true;
-        if (showErrors) alert('Notifications enabled successfully.');
-      } catch (e) {
-        console.warn('Push setup:', e);
-        if (showErrors) alert('Could not enable notifications right now. Please try again.');
-      } finally {
-        updateSetupGuide();
-      }
-    }
 
     const adminToken = sessionStorage.getItem('adminParentToken');
     function authHeaders() {
@@ -2137,12 +1684,9 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
             }
           })
           .catch(() => {
-            // Keep parents signed in across refreshes even if validation fails temporarily.
-            if (session.students && session.students.length > 0) {
-              handleMultipleStudents(session.students, true);
-            } else {
-              setupLoginHandlers();
-            }
+            // Error checking - clear storage and show login
+            localStorage.removeItem('parentSession');
+            setupLoginHandlers();
           });
           return;
         } catch (e) {
@@ -2367,10 +1911,6 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
         syncPortalTimezoneFromStudent();
         showDashboard();
       }
-
-      setTimeout(() => {
-        maybeAutoEnableParentNotifications('login').catch(() => {});
-      }, 400);
     }
 
     function showChildSelector() {
@@ -2472,7 +2012,6 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
       loadChallengeSummary(); // Updates challenge strip on front page
       loadUpcoming();
       checkForFeedback();
-      maybeAutoEnableParentNotifications('dashboard').catch(() => {});
 
       // Pre-load ALL tabs in background after 1.5 seconds
       // Batch 1 (1.5s): Past, Red Dots, Homework, Announcements
@@ -2534,8 +2073,6 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
       if (savedTab && document.getElementById(savedTab + 'Tab')) {
         showTab(savedTab);
       }
-
-      updateSetupGuide();
     }
 
     // ==================== RED DOT INDICATORS ====================
@@ -2631,27 +2168,6 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
       } catch (e) {
         return new Date(ts).toLocaleString();
       }
-    }
-
-    function getBadgeDisplayParts(badge) {
-      const fullName = String(badge?.badge_name || '').trim();
-      const parts = fullName.split(/\s+/).filter(Boolean);
-      const first = parts[0] || '';
-      const hasLeadingEmoji = /\p{Extended_Pictographic}/u.test(first);
-      const fallbackIcons = {
-        hw_submit: '📝',
-        graded_hw: '📚',
-        first_class: '🎉',
-        '5_classes': '⭐',
-        '10_classes': '🌟',
-        '25_homework': '🏅',
-        '10_homework': '🎓',
-        '5_homework': '📚'
-      };
-      return {
-        icon: hasLeadingEmoji ? first : (fallbackIcons[String(badge?.badge_type || '')] || '🏅'),
-        title: hasLeadingEmoji ? parts.slice(1).join(' ') : fullName
-      };
     }
 
     async function loadClassPoints() {
@@ -2814,31 +2330,25 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
           // Show award badges prominently at top
           let awardsHTML = '';
           if (awardBadges.length > 0) {
-            awardsHTML = awardBadges.slice(0, 3).map(b => {
-              const badgeView = getBadgeDisplayParts(b);
-              return `
+            awardsHTML = awardBadges.slice(0, 3).map(b => `
               <div style="grid-column:1/-1;background:linear-gradient(135deg,#fef3c7,#fde68a);border:2px solid #f59e0b;border-radius:12px;padding:15px;text-align:center;">
-                <div style="font-size:2rem;">${badgeView.icon}</div>
-                <div style="font-weight:bold;color:#92400e;font-size:1rem;">${badgeView.title}</div>
+                <div style="font-size:2rem;">${b.badge_name.split(' ')[0]}</div>
+                <div style="font-weight:bold;color:#92400e;font-size:1rem;">${b.badge_name.substring(b.badge_name.indexOf(' ') + 1)}</div>
                 <div style="color:#b45309;font-size:0.75rem;">${b.badge_description}</div>
               </div>
-            `;
-            }).join('');
+            `).join('');
           }
 
           // Show latest 5 regular badges
           const displayBadges = regularBadges.slice(0, 5);
-          container.innerHTML = awardsHTML + displayBadges.map(b => {
-            const badgeView = getBadgeDisplayParts(b);
-            return `
+          container.innerHTML = awardsHTML + displayBadges.map(b => `
             <div class="badge-card" style="padding: 12px; font-size: 0.9rem;">
-              <div class="badge-icon" style="font-size: 1.8rem;">${badgeView.icon}</div>
-              <div class="badge-name" style="font-size: 0.8rem;">${badgeView.title}</div>
+              <div class="badge-icon" style="font-size: 1.8rem;">${b.badge_name.split(' ')[0]}</div>
+              <div class="badge-name" style="font-size: 0.8rem;">${b.badge_name.substring(b.badge_name.indexOf(' ') + 1)}</div>
               <div class="badge-desc" style="font-size: 0.7rem;">${b.badge_description}</div>
               <div class="badge-date" style="font-size: 0.65rem;">Earned: ${new Date(b.earned_date).toLocaleDateString()}</div>
             </div>
-          `;
-          }).join('');
+          `).join('');
 
           // Show "View All" button if more than 5 badges
           document.getElementById('viewAllBadgesBtn').style.display = badges.length > 5 ? 'block' : 'none';
@@ -2958,17 +2468,14 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
             <button onclick="document.getElementById('allBadgesModal').remove()" style="background: #e53e3e; color: white; border: none; padding: 8px 15px; border-radius: 8px; cursor: pointer;">✕</button>
           </div>
           <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px;">
-            ${allBadges.map(b => {
-              const badgeView = getBadgeDisplayParts(b);
-              return `
+            ${allBadges.map(b => `
               <div style="background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%); padding: 12px; border-radius: 12px; text-align: center;">
-                <div style="font-size: 2rem;">${badgeView.icon}</div>
-                <div style="font-weight: 600; font-size: 0.85rem; color: #2d3748;">${badgeView.title}</div>
+                <div style="font-size: 2rem;">${b.badge_name.split(' ')[0]}</div>
+                <div style="font-weight: 600; font-size: 0.85rem; color: #2d3748;">${b.badge_name.substring(b.badge_name.indexOf(' ') + 1)}</div>
                 <div style="font-size: 0.7rem; color: #718096; margin-top: 5px;">${b.badge_description}</div>
                 <div style="font-size: 0.65rem; color: #a0aec0; margin-top: 5px;">${new Date(b.earned_date).toLocaleDateString()}</div>
               </div>
-            `;
-            }).join('')}
+            `).join('')}
           </div>
         </div>
       `;
@@ -3327,7 +2834,7 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
         const res = await fetch(`/api/students/${currentStudent.id}/expectations`, {
           method: 'PUT',
           headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-          body: JSON.stringify({ expectations })
+          body: JSON.stringify({ expectations, source: 'parent' })
         });
 
         if (res.ok) {
@@ -3481,90 +2988,6 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
     function resetSessionsCache() {
       lightSessionsCache = { studentId: null, loadedAt: 0, data: null, promise: null };
       fullSessionsCache = { studentId: null, loadedAt: 0, data: null, promise: null };
-    }
-
-    async function refreshCurrentStudentProfile() {
-      const session = JSON.parse(localStorage.getItem('parentSession') || '{}');
-      if (!session.email || !currentStudent?.id) return;
-
-      const res = await fetch('/api/parent/check-email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: session.email, timezone: getBrowserTimezone() })
-      });
-      const data = await res.json();
-      if (!res.ok || !Array.isArray(data.students)) {
-        throw new Error(data?.error || 'Could not refresh student profile');
-      }
-
-      allMyStudents = data.students;
-      const latestStudent = allMyStudents.find(s => s.id === currentStudent.id) || data.students[0];
-      if (!latestStudent) return;
-      currentStudent = latestStudent;
-      syncPortalTimezoneFromStudent();
-      document.getElementById('displayName').textContent = currentStudent.name;
-      document.getElementById('displayGrade').textContent = getAgeDisplay(currentStudent);
-      document.getElementById('displayTotal').textContent = currentStudent.total_sessions;
-      document.getElementById('displayCompleted').textContent = currentStudent.completed_sessions || 0;
-      document.getElementById('displayMissed').textContent = currentStudent.missed_sessions || 0;
-      document.getElementById('displayRemaining').textContent = currentStudent.remaining_sessions;
-      if (allMyStudents.length > 1) {
-        const currentChildName = document.getElementById('currentChildName');
-        if (currentChildName) currentChildName.textContent = currentStudent.name;
-      }
-    }
-
-    async function refreshParentPortal(showFeedback = false) {
-      if (!currentStudent?.id) return;
-      const refreshBtn = document.getElementById('refreshPortalBtn');
-      const currentTab = localStorage.getItem('parentActiveTab') || 'upcoming';
-      const originalLabel = refreshBtn ? refreshBtn.textContent : '';
-
-      try {
-        if (refreshBtn) {
-          refreshBtn.disabled = true;
-          refreshBtn.textContent = 'Refreshing...';
-          refreshBtn.style.opacity = '0.75';
-          refreshBtn.style.cursor = 'wait';
-        }
-
-        resetSessionsCache();
-        await refreshCurrentStudentProfile();
-
-        await Promise.all([
-          loadUpcoming(false),
-          loadPast(false),
-          loadMakeupCredits(),
-          loadBadges(),
-          loadClassPoints(),
-          loadScoreHistory(),
-          loadChallengeSummary(),
-          loadAnnouncements(),
-          loadEvents(),
-          loadPayments(),
-          loadAssessments(),
-          loadHallOfFame(),
-          loadStudentChallenges(),
-          loadParentResources(),
-          loadHomeworkSessions(),
-          checkRedDots(),
-          checkForFeedback()
-        ]);
-
-        if (currentTab === 'upcoming') loadUpcoming(false);
-        if (currentTab === 'past') loadPast(false);
-        if (showFeedback) alert('Portal refreshed.');
-      } catch (err) {
-        console.error('Portal refresh error:', err);
-        if (showFeedback) alert(err.message || 'Could not refresh portal');
-      } finally {
-        if (refreshBtn) {
-          refreshBtn.disabled = false;
-          refreshBtn.textContent = originalLabel || 'Refresh Portal';
-          refreshBtn.style.opacity = '1';
-          refreshBtn.style.cursor = 'pointer';
-        }
-      }
     }
 
     async function getStudentSessions({ light = false, forceRefresh = false } = {}) {
@@ -3960,17 +3383,14 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
           // Add Submit HW / Resubmit button next to HW download
           const canSubmitHw = s.status === 'Completed' || (s.source_type === 'Group' && s.student_attendance !== 'Pending') || s.status === 'Missed';
           const hwSubs = Array.isArray(s.hw_submissions) ? s.hw_submissions : [];
-          const homeworkSubs = hwSubs.filter(sub => (sub.file_type || 'Homework') === 'Homework');
-          const classworkSubs = hwSubs.filter(sub => sub.file_type === 'Classwork');
           if (canSubmitHw) {
-            const existingHomeworkNames = homeworkSubs.map(f => f.file_name || '').filter(Boolean);
-            const existingClassworkNames = classworkSubs.map(f => f.file_name || '').filter(Boolean);
-            if (homeworkSubs.length > 0) {
-              materials += `<button onclick='openHwSubmitModal(${s.id}, "${getSerial(s)}", true, ${JSON.stringify(existingHomeworkNames)}, "Homework")' style="cursor:pointer; border:none; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color:white; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 500; display: inline-flex; align-items: center; gap: 4px; margin: 2px;">🔄 Resubmit HW</button>`;
+            const existingNames = hwSubs.map(f => f.file_name || '').filter(Boolean);
+            const existingNamesJson = JSON.stringify(existingNames).replace(/"/g, '&quot;');
+            if (hwSubs.length > 0) {
+              materials += `<button onclick="openHwSubmitModal(${s.id}, '${getSerial(s)}', true, ${JSON.stringify(existingNames)})" style="cursor:pointer; border:none; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color:white; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 500; display: inline-flex; align-items: center; gap: 4px; margin: 2px;">🔄 Resubmit HW</button>`;
             } else {
-              materials += `<button onclick='openHwSubmitModal(${s.id}, "${getSerial(s)}", false, [], "Homework")' style="cursor:pointer; border:none; background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color:white; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 500; display: inline-flex; align-items: center; gap: 4px; margin: 2px;">📤 Submit HW</button>`;
+              materials += `<button onclick="openHwSubmitModal(${s.id}, '${getSerial(s)}', false, [])" style="cursor:pointer; border:none; background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color:white; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 500; display: inline-flex; align-items: center; gap: 4px; margin: 2px;">📤 Submit HW</button>`;
             }
-            materials += `<button onclick='openHwSubmitModal(${s.id}, "${getSerial(s)}", ${classworkSubs.length > 0}, ${JSON.stringify(existingClassworkNames)}, "Classwork")' style="cursor:pointer; border:none; background: linear-gradient(135deg, #2b6cb0 0%, #2c5282 100%); color:white; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 500; display: inline-flex; align-items: center; gap: 4px; margin: 2px;">✏️ ${classworkSubs.length > 0 ? 'Add Classwork' : 'Upload Classwork'}</button>`;
           }
           if (!materials) materials = '-';
 
@@ -3999,13 +3419,10 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
               const subNum = hwSubs.length > 1 ? `<span style="background:${isLatest ? '#9f7aea' : '#a0aec0'}; color:white; padding:1px 7px; border-radius:10px; font-size:0.72rem; margin-right:4px;">Submission #${idx + 1}${isLatest ? ' (latest)' : ''}</span>` : '';
               // divider between multiple submissions
               if (idx > 0) hwStatus += `<hr style="border:none;border-top:1px dashed #e2e8f0;margin:6px 0;">`;
-              const typeBadge = sub.file_type === 'Classwork'
-                ? `<span style="background:#2b6cb0; color:white; padding:1px 7px; border-radius:10px; font-size:0.72rem; margin-right:4px;">Classwork</span>`
-                : `<span style="background:#805ad5; color:white; padding:1px 7px; border-radius:10px; font-size:0.72rem; margin-right:4px;">Homework</span>`;
               const submissionLabel = sub.uploaded_by === 'Admin'
                 ? `<span style="color:#38a169; font-weight:600;">✅ Submitted</span> <span style="background:#667eea; color:white; padding:1px 7px; border-radius:10px; font-size:0.72rem;">📱 WhatsApp</span>`
                 : `<span style="color:#38a169; font-weight:600;">✅ Submitted</span>`;
-              hwStatus += `${subNum}${typeBadge}${submissionLabel}`;
+              hwStatus += `${subNum}${submissionLabel}`;
               if (s.session_topic && idx === 0) hwStatus += `<br><small style="color:#5a67d8; font-weight:600;">📌 ${s.session_topic}</small>`;
               if (submittedOn) hwStatus += `<br><small style="color:#718096;">📅 ${submittedOn}</small>`;
               if (sub.feedback_grade) hwStatus += `<br><span style="background:#38a169; color:white; padding:2px 8px; border-radius:4px; font-size:0.8rem;">${sub.feedback_grade}</span>`;
@@ -4078,17 +3495,14 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
         }).join('');
     }
 
-    function openHwSubmitModal(sessionId, sessionSerial, isResubmit, existingFiles, submissionType = 'Homework') {
+    function openHwSubmitModal(sessionId, sessionSerial, isResubmit, existingFiles) {
       existingFiles = Array.isArray(existingFiles) ? existingFiles : [];
       const existing = document.getElementById('hwSubmitModal');
       if (existing) existing.remove();
-      const isClasswork = submissionType === 'Classwork';
-      const noun = isClasswork ? 'Classwork' : 'Homework';
-      const actionTitle = isResubmit ? (isClasswork ? 'Add Classwork' : 'Resubmit Homework') : (isClasswork ? 'Upload Classwork' : 'Submit Homework');
 
       const resubmitWarning = isResubmit ? `
         <div style="background:#fff8e1;border:2px solid #f6ad55;border-radius:8px;padding:12px;margin-bottom:16px;font-size:0.88rem;color:#744210;">
-          ⚠️ <strong>You already submitted ${noun.toLowerCase()} for this session.</strong><br>
+          ⚠️ <strong>You already submitted homework for this session.</strong><br>
           Only upload <em>new</em> files — files you already submitted will be skipped automatically.
         </div>` : '';
 
@@ -4104,7 +3518,7 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
       modal.innerHTML = `
         <div style="background:white;border-radius:16px;padding:30px;max-width:500px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
-            <h2 style="margin:0;color:#B05D9E;font-size:1.3rem;">${isClasswork ? '✏️' : '📤'} ${actionTitle}</h2>
+            <h2 style="margin:0;color:#B05D9E;font-size:1.3rem;">${isResubmit ? '🔄 Resubmit Homework' : '📤 Submit Homework'}</h2>
             <button onclick="closeHwSubmitModal()" style="background:#e53e3e;color:white;border:none;border-radius:50%;width:32px;height:32px;cursor:pointer;font-size:1rem;font-weight:700;display:flex;align-items:center;justify-content:center;line-height:1;">✕</button>
           </div>
           <p style="color:#718096;margin-bottom:15px;font-size:0.9rem;">Session <strong>#${sessionSerial}</strong></p>
@@ -4127,9 +3541,9 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
             </div>
             <p id="hwSubmitProgressText" style="color:#718096;font-size:0.82rem;margin-top:6px;text-align:center;"></p>
           </div>
-          <button id="hwSubmitBtn" onclick="submitHwFiles(${sessionId}, '${submissionType}')"
+          <button id="hwSubmitBtn" onclick="submitHwFiles(${sessionId})"
             style="width:100%;padding:14px;background:linear-gradient(135deg,#B05D9E,#8B4789);color:white;border:none;border-radius:10px;cursor:pointer;font-size:1rem;font-weight:700;">
-            ${isClasswork ? '✏️ Upload Classwork' : '📤 Upload Homework'}
+            📤 Upload Homework
           </button>
         </div>
       `;
@@ -4160,7 +3574,7 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
     }
 
     var _hwUploading = false;
-    async function submitHwFiles(sessionId, submissionType = 'Homework') {
+    async function submitHwFiles(sessionId) {
       if (_hwUploading) return; // prevent double-fire
       const input = document.getElementById('hwSubmitFileInput');
       if (!input || input.files.length === 0) {
@@ -4176,7 +3590,7 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
       const files = allFiles.filter(f => !existingFiles.includes(f.name.toLowerCase()));
 
       if (files.length === 0) {
-        alert(`⚠️ All selected files have already been submitted for this session.\n\nPlease choose different files to add new ${submissionType.toLowerCase()}.`);
+        alert('⚠️ All selected files have already been submitted for this session.\n\nPlease choose different files to add new homework.');
         return;
       }
 
@@ -4203,7 +3617,6 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
         fd.append('file', files[i]);
         fd.append('sessionId', sessionId);
         fd.append('uploadType', 'homework');
-        fd.append('submissionType', submissionType);
         try {
           const res = await fetch(`/api/upload/homework/${currentStudent.id}`, {
             method: 'POST',
@@ -4228,8 +3641,10 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
         progressText.textContent = `✅ ${successCount} new file(s) uploaded!${skipMsg}${errorCount > 0 ? ` (${errorCount} failed)` : ''}`;
         setTimeout(() => {
           closeHwSubmitModal();
-          refreshParentPortal(false);
-        }, 250);
+          loadPast();
+          loadBadges();
+          loadScoreHistory();
+        }, 1800);
       } else if ((skippedFiles.length + dupCount) > 0 && errorCount === 0) {
         progressText.textContent = `⚠️ All files were already submitted. No duplicates created.`;
         setTimeout(() => closeHwSubmitModal(), 2500);
@@ -4272,16 +3687,12 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
         const container = document.getElementById('submittedHomeworkList');
 
         if (!submissions || submissions.length === 0) {
-          container.innerHTML = '<p style="color: #718096; text-align: center; padding: 20px;">No work submitted yet. Upload homework or classwork from Past Classes.</p>';
+          container.innerHTML = '<p style="color: #718096; text-align: center; padding: 20px;">No homework submitted yet. Upload your first homework above!</p>';
           return;
         }
 
         container.innerHTML = submissions.map(hw => {
           const fileExt = hw.file_name ? hw.file_name.split('.').pop().toLowerCase() : '';
-          const workType = hw.file_type === 'Classwork' ? 'Classwork' : 'Homework';
-          const workTypeBadge = workType === 'Classwork'
-            ? '<span style="background:#2b6cb0;color:white;padding:3px 10px;border-radius:999px;font-size:0.75rem;font-weight:700;">Classwork</span>'
-            : '<span style="background:#805ad5;color:white;padding:3px 10px;border-radius:999px;font-size:0.75rem;font-weight:700;">Homework</span>';
           const fileIcon = ['mp4', 'mov', 'avi'].includes(fileExt) ? '🎥' :
                           ['jpg', 'jpeg', 'png', 'gif'].includes(fileExt) ? '🖼️' :
                           ['pdf'].includes(fileExt) ? '📄' :
@@ -4358,7 +3769,6 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
                   </p>
                 </div>
                 <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
-                  ${workTypeBadge}
                   ${gradeDisplay}
                   ${hw.corrected_file_path ? `<button onclick="previewFile('${hw.corrected_file_path}', 'image', 'Teacher Corrections')" style="background: #e53e3e; color: white; border: none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 0.8rem;">📝 View Corrections</button>` : ''}
                   ${viewButton}
@@ -4643,7 +4053,6 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
     document.getElementById('uploadHomeworkForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       const sid = document.getElementById('homeworkSessionSelect').value;
-      const submissionType = document.getElementById('homeworkTypeSelect').value === 'Classwork' ? 'Classwork' : 'Homework';
       const files = document.getElementById('homeworkFile').files;
       if(!sid || files.length === 0) return alert('Please select a session and at least one file');
 
@@ -4661,7 +4070,6 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
           fd.append('file', files[i]);
           fd.append('sessionId', sid);
           fd.append('uploadType', 'homework');
-          fd.append('submissionType', submissionType);
 
           try {
             const res = await fetch(`/api/upload/homework/${currentStudent.id}`, {
@@ -4681,18 +4089,21 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
         }
 
         if (successCount > 0) {
-          alert(`✅ ${successCount} ${submissionType.toLowerCase()} file(s) uploaded successfully!${errorCount > 0 ? ` (${errorCount} failed)` : ''}`);
+          alert(`✅ ${successCount} file(s) uploaded successfully!${errorCount > 0 ? ` (${errorCount} failed)` : ''}`);
           e.target.reset();
-          refreshParentPortal(false);
+          loadPast();
+          loadBadges();
+          loadScoreHistory();
+          loadSubmittedHomework();
         } else {
           alert('Error uploading files');
         }
       } catch(err) {
         console.error('Upload error:', err);
-        alert(`Error uploading ${submissionType.toLowerCase()}`);
+        alert('Error uploading homework');
       } finally {
         submitBtn.disabled = false;
-        submitBtn.textContent = '📤 Upload Work';
+        submitBtn.textContent = '📤 Upload Homework';
       }
     });
 
@@ -5368,7 +4779,7 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
             const certificateLabel = (isMonthly && a.month && a.year) ? `${monthNames[a.month - 1]} ${a.year}` : issuedLabel;
 
             return `
-            <details class="assessment-item">
+            <details class="assessment-item" ${groupIndex === 0 && itemIndex === 0 ? 'open' : ''}>
               <summary>
                 <div style="display:flex;gap:12px;align-items:flex-start;min-width:0;flex:1;">
                   <div style="font-size:1.5rem;line-height:1;">${itemIcon}</div>
@@ -5468,7 +4879,7 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
           }).join('');
 
           return `
-          <details class="assessment-group">
+          <details class="assessment-group" ${groupIndex === 0 ? 'open' : ''}>
             <summary>
               <div class="assessment-group-title">📁 ${groupTitle}</div>
               <div class="assessment-group-meta">${group.items.length} item${group.items.length > 1 ? 's' : ''}</div>
@@ -5555,7 +4966,7 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
           return;
         }
 
-        container.innerHTML = announcements.map((a, index) => {
+        container.innerHTML = announcements.map(a => {
           const priorityColor = a.priority === 'Urgent' ? '#e53e3e' : a.priority === 'High' ? '#f6ad55' : '#B05D9E';
           const typeIcons = {
             'Holiday': '🎉',
@@ -5567,6 +4978,7 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
             'General': '📰'
           };
           const typeIcon = typeIcons[a.announcement_type] || '📰';
+          const formattedDate = new Date(a.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
 
           // Image HTML if exists
           const imageHtml = a.image_url ? `
@@ -5574,31 +4986,52 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
               <img src="${a.image_url}" style="max-width: 100%; max-height: 400px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); cursor: pointer;" onclick="window.open('${a.image_url}', '_blank')" title="Click to view full size">
             </div>
           ` : '';
-          const formattedDate = new Date(a.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
 
           return `
-          <details class="announcement-item" style="--announcement-color: ${priorityColor};" ${index === 0 ? 'open' : ''}>
-            <summary>
-              <div class="announcement-summary-main">
-                <h3 class="announcement-summary-title">${typeIcon} ${a.title}</h3>
-                <div class="announcement-summary-meta">
-                  <span class="announcement-pill" style="background: #edf2f7; color: #4a5568;">${a.announcement_type}</span>
-                  <span class="announcement-pill" style="background: ${priorityColor}; color: white;">${a.priority}</span>
-                  <span>📅 ${formattedDate}</span>
+          <div class="announcement-card" style="background: white; border: 1px solid #e2e8f0; border-left: 4px solid ${priorityColor}; margin-bottom: 15px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); overflow: hidden;">
+            <button type="button" class="announcement-toggle" onclick="toggleAnnouncement(this)" style="width:100%; text-align:left; border:none; background:#fafbfc; padding: 22px 20px; display:flex; justify-content:space-between; align-items:flex-start; cursor:pointer; transition: background 0.2s, transform 0.2s;">
+              <div style="flex:1; text-align:left;">
+                <div style="display:flex; flex-wrap:wrap; gap: 8px; align-items:center; margin-bottom: 10px;">
+                  <span style="font-size: 18px; font-weight: 700; color: ${priorityColor};">${typeIcon} ${a.title}</span>
+                  <span style="background: #e2e8f0; color: #4a5568; padding: 4px 10px; border-radius: 10px; font-size: 11px;">${a.announcement_type}</span>
+                  <span style="background: ${priorityColor}; color: white; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: bold;">${a.priority}</span>
                 </div>
+                <p style="margin:0; color:#4a5568; font-size:13px;">📅 ${formattedDate}</p>
               </div>
-              <span class="announcement-chevron">⌄</span>
-            </summary>
-            <div class="announcement-body">
-              <div class="announcement-content">${a.content}</div>
+              <span style="font-size: 24px; line-height: 1; color: ${priorityColor};">+</span>
+            </button>
+            <div class="announcement-body" style="display:none; padding: 0 20px 20px; color: #4a5568; line-height: 1.6; white-space: pre-wrap;">
+              <p style="margin: 0 0 10px;">${a.content}</p>
               ${imageHtml}
             </div>
-          </details>
+          </div>
           `;
         }).join('');
       } catch(e) {
         console.error('Error loading announcements:', e);
         document.getElementById('announcementsContainer').innerHTML = '<p style="color: #e53e3e;">Error loading announcements</p>';
+      }
+    }
+
+    function toggleAnnouncement(button) {
+      const card = button.closest('.announcement-card');
+      if (!card) return;
+      const body = card.querySelector('.announcement-body');
+      if (!body) return;
+      const open = body.style.display === 'block';
+
+      // Close all announcements first
+      document.querySelectorAll('.announcement-card .announcement-body').forEach(el => {
+        el.style.display = 'none';
+      });
+      document.querySelectorAll('.announcement-card .announcement-toggle span').forEach(el => {
+        el.textContent = '+';
+      });
+
+      if (!open) {
+        body.style.display = 'block';
+        const icon = button.querySelector('span');
+        if (icon) icon.textContent = '−';
       }
     }
 
@@ -5668,7 +5101,6 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
 
     function logout() {
       if(confirm('Are you sure you want to logout?')) {
-        // Do not unregister FCM: parents should still receive push notifications after logout
         // Clear persistent login session
         localStorage.removeItem('parentSession');
         localStorage.removeItem('parentActiveTab');
