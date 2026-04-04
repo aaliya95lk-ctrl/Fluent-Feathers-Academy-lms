@@ -12,39 +12,8 @@ const crypto = require('crypto');
 const cron = require('node-cron');
 const cloudinary = require('cloudinary').v2;
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
+const firebaseAdmin = require('firebase-admin');
 require('dotenv').config();
-
-let remotionBundle = null;
-let remotionRenderer = null;
-try {
-  remotionBundle = require('@remotion/bundler');
-  remotionRenderer = require('@remotion/renderer');
-} catch (e) {
-  console.warn('⚠️ Remotion rendering modules not fully available:', e.message);
-}
-
-let firebaseAdmin = null;
-try {
-  const admin = require('firebase-admin');
-  let serviceAccount = null;
-  if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
-    serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
-  } else if (process.env.FIREBASE_SERVICE_ACCOUNT_PATH) {
-    const credPath = path.resolve(process.env.FIREBASE_SERVICE_ACCOUNT_PATH);
-    if (fs.existsSync(credPath)) {
-      serviceAccount = JSON.parse(fs.readFileSync(credPath, 'utf8'));
-    }
-  }
-  if (serviceAccount) {
-    admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
-    firebaseAdmin = admin;
-    console.log('✅ Firebase Admin initialized for push notifications');
-  } else {
-    console.log('ℹ️ FCM server push disabled: set FIREBASE_SERVICE_ACCOUNT_JSON (or FIREBASE_SERVICE_ACCOUNT_PATH)');
-  }
-} catch (e) {
-  console.warn('⚠️ Firebase Admin could not load:', e.message);
-}
 
 const app = express();
 
@@ -244,657 +213,6 @@ function escapeHtml(text) {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function getGroqApiKey() {
-  return process.env.GROQ_API_KEY || '';
-}
-
-async function callGroqChatCompletion(payload, timeout = 45000) {
-  const groqKey = getGroqApiKey();
-  if (!groqKey) {
-    throw new Error('GROQ_API_KEY is not configured. Add it to your environment variables on Render. Get a free key at console.groq.com');
-  }
-
-  const response = await axios.post(
-    'https://api.groq.com/openai/v1/chat/completions',
-    payload,
-    {
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${groqKey}`
-      },
-      timeout
-    }
-  );
-
-  const content = response.data?.choices?.[0]?.message?.content?.trim();
-  if (!content) throw new Error('Groq returned empty response');
-  return content;
-}
-
-function extractJsonObject(text) {
-  const content = String(text || '').trim();
-  if (!content) throw new Error('Empty JSON response');
-
-  const fenceMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  let jsonStr = fenceMatch ? fenceMatch[1].trim() : content;
-  if (!fenceMatch) {
-    const braceMatch = content.match(/\{[\s\S]*\}/);
-    if (braceMatch) jsonStr = braceMatch[0];
-  }
-
-  try {
-    return JSON.parse(jsonStr);
-  } catch (err) {
-    const sanitized = jsonStr.replace(/[\r\n]+/g, ' ').replace(/([^\\])\\'/g, "$1'");
-    return JSON.parse(sanitized);
-  }
-}
-
-function clampScore(value, fallback = 0) {
-  const num = Number(value);
-  if (!Number.isFinite(num)) return Math.max(0, Math.min(100, Math.round(fallback)));
-  return Math.max(0, Math.min(100, Math.round(num)));
-}
-
-function normalizeShortText(value, maxLen = 240) {
-  return String(value || '').trim().replace(/\s+/g, ' ').slice(0, maxLen);
-}
-
-function normalizeStringList(value, maxItems = 5, maxLen = 180) {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((item) => normalizeShortText(item, maxLen))
-    .filter(Boolean)
-    .slice(0, maxItems);
-}
-
-function detectMediaType(fileName = '', filePath = '') {
-  const source = `${fileName} ${filePath}`.toLowerCase();
-  if (/\.(png|jpe?g|webp|gif|bmp|svg)(\?|$)/.test(source) || source.includes('/image/upload/')) return 'image';
-  if (/\.(mp4|mov|avi|mkv|webm|m4v)(\?|$)/.test(source) || source.includes('/video/upload/')) return 'video';
-  if (/\.(mp3|wav|m4a|aac)(\?|$)/.test(source) || source.includes('/raw/upload/')) return 'audio';
-  return 'document';
-}
-
-async function generateSocialMediaScript({
-  prompt,
-  platform,
-  contentStyle,
-  durationSeconds,
-  studentName,
-  sourceExcerpt,
-  sourceFileName,
-  sourceMediaType,
-  imageData
-}) {
-  const style = normalizeShortText(contentStyle || 'warm educational', 80);
-  const duration = Math.max(10, Math.min(90, parseInt(durationSeconds, 10) || 30));
-  const mediaType = normalizeShortText(sourceMediaType || 'document', 30);
-  const platformName = normalizeShortText(platform || 'Instagram', 40);
-  const student = normalizeShortText(studentName || '', 80);
-  const excerpt = String(sourceExcerpt || '').trim().slice(0, 2500);
-  const fileName = normalizeShortText(sourceFileName || '', 180);
-  const userPrompt = String(prompt || '').trim().slice(0, 2500);
-
-  const instruction = `You help an English learning academy create short-form social media reels for ${platformName}.
-
-Goal:
-- Turn the admin brief into a polished short reel concept.
-- Keep it emotionally engaging, child-safe, parent-safe, and professional.
-- Focus on student creativity, progress, confidence, storytelling, or learning moments.
-- Avoid exaggerated claims and avoid sounding robotic.
-
-Output rules:
-- Return ONLY valid JSON.
-- Keep the voiceover natural and ready for AI narration.
-- Make the reel feel editable in Remotion later with text reveals, typing effects, click sounds, subtle whooshes, and warm background music.
-- Keep the visual directions concrete.
-- Do not include copyrighted song suggestions.
-
-Return JSON in exactly this shape:
-{
-  "title": "short reel title",
-  "hook": "strong opening line for first 2 seconds",
-  "voiceover_script": "full narration script for the reel",
-  "caption": "Instagram caption with CTA",
-  "hashtags": ["#tag1", "#tag2", "#tag3"],
-  "editing_notes": ["short editing instruction", "short editing instruction"],
-  "scene_plan": [
-    {
-      "scene": 1,
-      "start_sec": 0,
-      "end_sec": 4,
-      "visual": "what to show",
-      "on_screen_text": "exact text overlay",
-      "motion": "camera/text motion",
-      "sfx": "sound cue"
-    }
-  ]
-}
-
-Admin brief:
-${userPrompt}
-
-Student name:
-${student || 'Not provided'}
-
-Requested style:
-${style}
-
-Target duration:
-${duration} seconds
-
-Uploaded source type:
-${mediaType}
-
-Uploaded source file name:
-${fileName || 'Not provided'}
-
-Visible text/transcript/summary from source:
-${excerpt || 'Not provided'}
-
-If the uploaded source is a student's creative writing, preserve the child’s idea and improve only the marketing framing around it.
-If details are missing, make reasonable creative assumptions but keep them believable.`;
-
-  const message = imageData
-    ? [{
-        role: 'user',
-        content: [
-          { type: 'text', text: instruction },
-          { type: 'image_url', image_url: { url: imageData } }
-        ]
-      }]
-    : [{ role: 'user', content: instruction }];
-
-  const content = await callGroqChatCompletion({
-    model: imageData ? 'meta-llama/llama-4-scout-17b-16e-instruct' : 'llama-3.3-70b-versatile',
-    messages: message,
-    max_tokens: 2200,
-    temperature: 0.7
-  }, 60000);
-
-  const result = extractJsonObject(content);
-  const scenePlan = Array.isArray(result?.scene_plan)
-    ? result.scene_plan.slice(0, 12).map((scene, index) => ({
-        scene: index + 1,
-        start_sec: Math.max(0, Number(scene?.start_sec) || 0),
-        end_sec: Math.max(0, Number(scene?.end_sec) || Math.min(duration, (index + 1) * 4)),
-        visual: normalizeShortText(scene?.visual || '', 260),
-        on_screen_text: normalizeShortText(scene?.on_screen_text || '', 180),
-        motion: normalizeShortText(scene?.motion || '', 120),
-        sfx: normalizeShortText(scene?.sfx || '', 120)
-      }))
-    : [];
-
-  return {
-    title: normalizeShortText(result?.title || 'Instagram Reel Draft', 120),
-    hook: normalizeShortText(result?.hook || '', 180),
-    voiceover_script: String(result?.voiceover_script || '').trim().slice(0, 4000),
-    caption: String(result?.caption || '').trim().slice(0, 3000),
-    hashtags: normalizeStringList(result?.hashtags, 12, 40).map((tag) => tag.startsWith('#') ? tag : `#${tag.replace(/^#+/, '')}`),
-    editing_notes: normalizeStringList(result?.editing_notes, 12, 160),
-    scene_plan: scenePlan
-  };
-}
-
-function getAbsoluteAssetUrl(filePath, requestBaseUrl = '') {
-  const value = String(filePath || '').trim();
-  if (!value) return '';
-  if (/^https?:\/\//i.test(value)) return value;
-  const base = String(requestBaseUrl || getAppBaseUrl()).replace(/\/$/, '');
-  return `${base}${value.startsWith('/') ? '' : '/'}${value}`;
-}
-
-function createWavToneBuffer({
-  durationMs = 200,
-  sampleRate = 44100,
-  startFreq = 660,
-  endFreq = null,
-  volume = 0.22
-}) {
-  const totalSamples = Math.max(1, Math.floor((durationMs / 1000) * sampleRate));
-  const numChannels = 1;
-  const bitsPerSample = 16;
-  const blockAlign = numChannels * (bitsPerSample / 8);
-  const byteRate = sampleRate * blockAlign;
-  const dataSize = totalSamples * blockAlign;
-  const buffer = Buffer.alloc(44 + dataSize);
-
-  buffer.write('RIFF', 0);
-  buffer.writeUInt32LE(36 + dataSize, 4);
-  buffer.write('WAVE', 8);
-  buffer.write('fmt ', 12);
-  buffer.writeUInt32LE(16, 16);
-  buffer.writeUInt16LE(1, 20);
-  buffer.writeUInt16LE(numChannels, 22);
-  buffer.writeUInt32LE(sampleRate, 24);
-  buffer.writeUInt32LE(byteRate, 28);
-  buffer.writeUInt16LE(blockAlign, 32);
-  buffer.writeUInt16LE(bitsPerSample, 34);
-  buffer.write('data', 36);
-  buffer.writeUInt32LE(dataSize, 40);
-
-  for (let i = 0; i < totalSamples; i++) {
-    const progress = i / totalSamples;
-    const freq = endFreq ? startFreq + (endFreq - startFreq) * progress : startFreq;
-    const fadeIn = Math.min(1, progress * 18);
-    const fadeOut = Math.min(1, (1 - progress) * 14);
-    const envelope = Math.max(0, Math.min(1, fadeIn, fadeOut));
-    const sample = Math.sin((2 * Math.PI * freq * i) / sampleRate) * volume * envelope;
-    buffer.writeInt16LE(Math.max(-1, Math.min(1, sample)) * 32767, 44 + i * 2);
-  }
-
-  return buffer;
-}
-
-function ensureSocialMediaSfxFiles() {
-  const outputDir = path.join(__dirname, 'uploads', 'social-media');
-  const definitions = [
-    { name: 'sfx-click.wav', durationMs: 90, startFreq: 1500, endFreq: 900, volume: 0.22 },
-    { name: 'sfx-whoosh.wav', durationMs: 420, startFreq: 240, endFreq: 1100, volume: 0.17 },
-    { name: 'sfx-chime.wav', durationMs: 600, startFreq: 660, endFreq: 990, volume: 0.16 },
-    { name: 'bg-calm.wav', durationMs: 12000, startFreq: 220, endFreq: 330, volume: 0.06 },
-    { name: 'bg-uplift.wav', durationMs: 12000, startFreq: 330, endFreq: 520, volume: 0.07 }
-  ];
-
-  definitions.forEach((def) => {
-    const outPath = path.join(outputDir, def.name);
-    if (!fs.existsSync(outPath)) {
-      fs.writeFileSync(outPath, createWavToneBuffer(def));
-    }
-  });
-}
-
-function getSocialBackgroundMusicUrl(mode, requestBaseUrl = '') {
-  const selected = String(mode || 'none').trim().toLowerCase();
-  if (selected === 'built_in_calm') return getAbsoluteAssetUrl('/uploads/social-media/bg-calm.wav', requestBaseUrl);
-  if (selected === 'built_in_uplift') return getAbsoluteAssetUrl('/uploads/social-media/bg-uplift.wav', requestBaseUrl);
-  return '';
-}
-
-function normalizeScenePlanForRender(scenePlan, fallbackScript = '', durationSeconds = 30) {
-  const maxDuration = Math.max(10, Math.min(90, parseInt(durationSeconds, 10) || 30));
-  if (Array.isArray(scenePlan) && scenePlan.length > 0) {
-    return scenePlan.map((scene, index) => ({
-      scene: index + 1,
-      start_sec: Math.max(0, Number(scene?.start_sec) || 0),
-      end_sec: Math.max(0.5, Number(scene?.end_sec) || Math.min(maxDuration, (index + 1) * 4)),
-      visual: normalizeShortText(scene?.visual || '', 260),
-      on_screen_text: normalizeShortText(scene?.on_screen_text || '', 180),
-      motion: normalizeShortText(scene?.motion || '', 120),
-      sfx: normalizeShortText(scene?.sfx || '', 120)
-    }));
-  }
-
-  const lines = String(fallbackScript || '')
-    .split(/(?<=[.!?])\s+/)
-    .map((line) => normalizeShortText(line, 180))
-    .filter(Boolean)
-    .slice(0, 6);
-  const sceneDuration = Math.max(3, Math.floor(maxDuration / Math.max(1, lines.length || 1)));
-  return (lines.length ? lines : ['Celebrate this learning moment']).map((line, index) => ({
-    scene: index + 1,
-    start_sec: index * sceneDuration,
-    end_sec: Math.min(maxDuration, (index + 1) * sceneDuration),
-    visual: 'Show source media with animated text overlays',
-    on_screen_text: line,
-    motion: 'Gentle zoom with typewriter text',
-    sfx: 'Soft click'
-  }));
-}
-
-let socialMediaBundlePromise = null;
-const activeSocialMediaRenders = new Map();
-
-async function ensureSocialMediaBundle() {
-  if (!remotionBundle || !remotionBundle.bundle) {
-    throw new Error('Remotion bundler is not installed.');
-  }
-  if (socialMediaBundlePromise) return socialMediaBundlePromise;
-  socialMediaBundlePromise = remotionBundle.bundle({
-    entryPoint: path.join(__dirname, 'remotion', 'index.js'),
-    onProgress: () => {}
-  }).catch((err) => {
-    socialMediaBundlePromise = null;
-    throw err;
-  });
-  return socialMediaBundlePromise;
-}
-
-async function generateOpenAiVoiceover({
-  projectId,
-  script,
-  voiceChoice
-}) {
-  const apiKey = String(process.env.OPENAI_API_KEY || '').trim();
-  if (!apiKey) {
-    return { skipped: true, reason: 'OPENAI_API_KEY not configured' };
-  }
-
-  const cleanScript = String(script || '').trim();
-  if (!cleanScript) {
-    return { skipped: true, reason: 'No script available for voiceover' };
-  }
-
-  const fileName = `voiceover-${projectId}-${Date.now()}.mp3`;
-  const outputPath = path.join(__dirname, 'uploads', 'social-media', fileName);
-  const response = await axios.post(
-    'https://api.openai.com/v1/audio/speech',
-    {
-      model: process.env.OPENAI_TTS_MODEL || 'gpt-4o-mini-tts',
-      voice: String(voiceChoice || process.env.OPENAI_TTS_VOICE || 'coral').trim(),
-      input: cleanScript,
-      instructions: process.env.OPENAI_TTS_INSTRUCTIONS || 'Speak in a warm, confident, educational tone for a polished Instagram reel.',
-      response_format: 'mp3'
-    },
-    {
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json'
-      },
-      responseType: 'arraybuffer',
-      timeout: 120000
-    }
-  );
-
-  fs.writeFileSync(outputPath, Buffer.from(response.data));
-  return {
-    skipped: false,
-    outputPath,
-    url: `/uploads/social-media/${fileName}`
-  };
-}
-
-async function renderSocialMediaProject(projectId, requestBaseUrl = '') {
-  if (activeSocialMediaRenders.has(projectId)) return activeSocialMediaRenders.get(projectId);
-
-  const renderPromise = (async () => {
-    if (!remotionRenderer || !remotionRenderer.selectComposition || !remotionRenderer.renderMedia) {
-      throw new Error('Remotion renderer is not installed.');
-    }
-
-    const current = (await pool.query(`
-      SELECT *
-      FROM social_media_projects
-      WHERE id = $1
-      LIMIT 1
-    `, [projectId])).rows[0];
-    if (!current) throw new Error('Project not found');
-
-    const scenePlan = normalizeScenePlanForRender(
-      current.generated_scene_plan,
-      current.generated_voiceover_script || current.generated_hook || current.admin_prompt,
-      current.duration_seconds
-    );
-
-    const inputProps = {
-      title: current.title || 'Fluent Feathers Reel',
-      hook: current.generated_hook || '',
-      voiceoverScript: current.generated_voiceover_script || '',
-      caption: current.generated_caption || '',
-      scenePlan,
-      sourceMediaUrl: getAbsoluteAssetUrl(current.source_file_path, requestBaseUrl),
-      sourceMediaType: current.source_media_type || detectMediaType(current.source_file_name, current.source_file_path),
-      durationSeconds: Math.max(10, Math.min(90, parseInt(current.duration_seconds, 10) || 30)),
-      studentName: current.student_name || '',
-      contentStyle: current.content_style || 'warm educational',
-      captionStyle: current.caption_style || 'classic',
-      subtitleTiming: current.subtitle_timing || 'scene',
-      brandingTemplate: current.branding_template || 'academy',
-      logoUrl: getAbsoluteAssetUrl(process.env.LOGO_URL || '/logo.png', requestBaseUrl)
-    };
-
-    await pool.query(`
-      UPDATE social_media_projects
-      SET video_status = 'rendering',
-          render_progress = 5,
-          render_error = NULL,
-          render_started_at = CURRENT_TIMESTAMP,
-          updated_at = CURRENT_TIMESTAMP
-      WHERE id = $1
-    `, [projectId]);
-
-    ensureSocialMediaSfxFiles();
-    let voiceover;
-    try {
-      voiceover = await generateOpenAiVoiceover({
-        projectId,
-        script: current.generated_voiceover_script || current.generated_hook || current.admin_prompt,
-        voiceChoice: current.voice_choice || 'coral'
-      });
-    } catch (err) {
-      voiceover = { skipped: true, reason: String(err.message || err).slice(0, 500) };
-    }
-    if (!voiceover.skipped) {
-      inputProps.voiceoverAudioUrl = getAbsoluteAssetUrl(voiceover.url, requestBaseUrl);
-      await pool.query(`
-        UPDATE social_media_projects
-        SET voiceover_status = 'ready',
-            voiceover_audio_url = $1,
-            render_progress = GREATEST(render_progress, 18),
-            voiceover_error = NULL,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = $2
-      `, [voiceover.url, projectId]);
-    } else {
-      await pool.query(`
-        UPDATE social_media_projects
-        SET voiceover_status = 'skipped',
-            render_progress = GREATEST(render_progress, 18),
-            voiceover_error = $1,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = $2
-      `, [voiceover.reason, projectId]);
-    }
-
-    inputProps.sfxMap = {
-      click: getAbsoluteAssetUrl('/uploads/social-media/sfx-click.wav', requestBaseUrl),
-      whoosh: getAbsoluteAssetUrl('/uploads/social-media/sfx-whoosh.wav', requestBaseUrl),
-      chime: getAbsoluteAssetUrl('/uploads/social-media/sfx-chime.wav', requestBaseUrl)
-    };
-    inputProps.backgroundMusicUrl = current.background_music_mode === 'upload'
-      ? getAbsoluteAssetUrl(current.background_music_url, requestBaseUrl)
-      : getSocialBackgroundMusicUrl(current.background_music_mode, requestBaseUrl);
-
-    await pool.query(`
-      UPDATE social_media_projects
-      SET render_progress = GREATEST(render_progress, 28),
-          updated_at = CURRENT_TIMESTAMP
-      WHERE id = $1
-    `, [projectId]);
-
-    const serveUrl = await ensureSocialMediaBundle();
-    const composition = await remotionRenderer.selectComposition({
-      serveUrl,
-      id: 'SocialMediaReel',
-      inputProps
-    });
-
-    await pool.query(`
-      UPDATE social_media_projects
-      SET render_progress = GREATEST(render_progress, 40),
-          updated_at = CURRENT_TIMESTAMP
-      WHERE id = $1
-    `, [projectId]);
-
-    const outputFileName = `social-reel-${projectId}-${Date.now()}.mp4`;
-    const outputLocation = path.join(__dirname, 'uploads', 'social-media', outputFileName);
-
-    await remotionRenderer.renderMedia({
-      composition,
-      serveUrl,
-      codec: 'h264',
-      outputLocation,
-      inputProps,
-      overwrite: true,
-      chromiumOptions: { disableWebSecurity: true },
-      onProgress: ({ renderedFrames, encodedFrames, progress }) => {
-        const progressPercent = Math.max(
-          10,
-          Math.min(
-            95,
-            Math.round(
-              Number.isFinite(progress) ? progress * 100 : ((encodedFrames || renderedFrames || 0) / Math.max(1, composition.durationInFrames)) * 100
-            )
-          )
-        );
-        pool.query(`
-          UPDATE social_media_projects
-          SET render_progress = $1,
-              updated_at = CURRENT_TIMESTAMP
-          WHERE id = $2
-        `, [progressPercent, projectId]).catch(() => {});
-      }
-    });
-
-    const videoUrl = `/uploads/social-media/${outputFileName}`;
-    await pool.query(`
-      UPDATE social_media_projects
-      SET video_status = 'ready',
-          render_progress = 100,
-          rendered_video_url = $1,
-          render_output_path = $2,
-          render_completed_at = CURRENT_TIMESTAMP,
-          updated_at = CURRENT_TIMESTAMP
-      WHERE id = $3
-    `, [videoUrl, outputLocation, projectId]);
-
-    return { success: true, videoUrl };
-  })()
-    .catch(async (err) => {
-      await pool.query(`
-        UPDATE social_media_projects
-        SET video_status = 'failed',
-            render_error = $1,
-            render_progress = 0,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = $2
-      `, [String(err.message || err).slice(0, 1000), projectId]).catch(() => {});
-      throw err;
-    })
-    .finally(() => {
-      activeSocialMediaRenders.delete(projectId);
-    });
-
-  activeSocialMediaRenders.set(projectId, renderPromise);
-  return renderPromise;
-}
-
-function classifyIntegrityRisk(score) {
-  if (score >= 70) return 'High concern';
-  if (score >= 40) return 'Medium concern';
-  return 'Low concern';
-}
-
-async function analyzeHomeworkIntegrityFromImage({ imageData, studentName, fileName }) {
-  if (!imageData) throw new Error('No image data provided for integrity analysis');
-
-  const prompt = `You are a careful teacher assistant checking a child's homework or classwork for likely AI-written or copied content.
-
-Important limits:
-- You only have the visible work in the image.
-- You are NOT a true internet plagiarism checker.
-- Do NOT claim certainty.
-- Make cautious estimates based on style, repetition, generic wording, sudden vocabulary jumps, essay structure, and mismatch between natural child writing and overly polished template-like text.
-- If the work looks genuinely child-written, say so clearly.
-
-Student name: ${studentName || 'Unknown student'}
-File name: ${fileName || 'submission'}
-
-Return ONLY valid JSON in this exact format:
-{
-  "ai_generated_score": 0,
-  "plagiarism_score": 0,
-  "humanized_ai_score": 0,
-  "student_originality_score": 100,
-  "summary": "One short teacher-facing summary.",
-  "suspected_ai_phrases": ["short phrase from the visible work that feels AI-like"],
-  "copied_indicators": ["specific reason the work may be copied or template-based"],
-  "humanized_ai_signals": ["signs the child may have lightly edited AI text"],
-  "originality_signals": ["signs of genuine child writing"],
-  "teacher_flags": ["practical teacher checks to confirm"],
-  "confidence": "low|medium|high"
-}
-
-Scoring rules:
-- ai_generated_score = likelihood the writing was mostly generated by AI.
-- plagiarism_score = likelihood the work was copied from another source or template.
-- humanized_ai_score = likelihood AI text was lightly edited to sound more human.
-- student_originality_score = estimated percentage of authentic student work.
-- Keep all scores between 0 and 100.
-- If evidence is weak, use low scores and confidence "low".
-- suspected_ai_phrases must quote only short visible phrases, not invented text.
-
-Return ONLY JSON. No markdown. No explanation.`;
-
-  const content = await callGroqChatCompletion(
-    {
-      model: 'meta-llama/llama-4-scout-17b-16e-instruct',
-      messages: [{
-        role: 'user',
-        content: [
-          { type: 'text', text: prompt },
-          { type: 'image_url', image_url: { url: imageData } }
-        ]
-      }],
-      max_tokens: 1200,
-      temperature: 0.1
-    },
-    45000
-  );
-
-  const raw = extractJsonObject(content);
-  const aiGeneratedScore = clampScore(raw?.ai_generated_score);
-  const plagiarismScore = clampScore(raw?.plagiarism_score);
-  const humanizedAiScore = clampScore(raw?.humanized_ai_score);
-  const studentOriginalityScore = clampScore(
-    raw?.student_originality_score,
-    Math.max(0, 100 - Math.max(aiGeneratedScore, plagiarismScore, humanizedAiScore))
-  );
-  const concernScore = Math.max(aiGeneratedScore, plagiarismScore, humanizedAiScore);
-
-  return {
-    ai_generated_score: aiGeneratedScore,
-    plagiarism_score: plagiarismScore,
-    humanized_ai_score: humanizedAiScore,
-    student_originality_score: studentOriginalityScore,
-    overall_concern_score: concernScore,
-    overall_risk_label: classifyIntegrityRisk(concernScore),
-    summary: normalizeShortText(raw?.summary, 320),
-    suspected_ai_phrases: normalizeStringList(raw?.suspected_ai_phrases, 5, 120),
-    copied_indicators: normalizeStringList(raw?.copied_indicators, 5, 180),
-    humanized_ai_signals: normalizeStringList(raw?.humanized_ai_signals, 5, 180),
-    originality_signals: normalizeStringList(raw?.originality_signals, 5, 180),
-    teacher_flags: normalizeStringList(raw?.teacher_flags, 5, 180),
-    confidence: ['low', 'medium', 'high'].includes(String(raw?.confidence || '').toLowerCase())
-      ? String(raw.confidence).toLowerCase()
-      : 'low'
-  };
-}
-
-async function saveMaterialIntegrityReport(materialId, report) {
-  if (!materialId || !report) return;
-  await pool.query(`
-    UPDATE materials
-    SET ai_generated_score = $1,
-        plagiarism_score = $2,
-        humanized_ai_score = $3,
-        student_originality_score = $4,
-        integrity_summary = $5,
-        integrity_details = $6,
-        integrity_checked_at = CURRENT_TIMESTAMP
-    WHERE id = $7
-  `, [
-    report.ai_generated_score,
-    report.plagiarism_score,
-    report.humanized_ai_score,
-    report.student_originality_score,
-    report.summary || null,
-    JSON.stringify(report),
-    materialId
-  ]);
-}
-
 // Calculate age from date of birth
 function calculateAge(dob) {
   if (!dob) return null;
@@ -1002,6 +320,44 @@ async function initializeDatabaseConnection() {
         // Initialize schema only once per process (avoids heavy repeat work on reconnect)
         await ensureDatabaseSchemaInitialized();
 
+        // One-time retroactive badge award for existing students
+        try {
+          const students = await pool.query(`
+            SELECT s.id, s.name, COALESCE(SUM(cp.points), 0) AS total_points
+            FROM students s
+            LEFT JOIN class_points cp ON s.id = cp.student_id
+            WHERE s.is_active = true
+            GROUP BY s.id, s.name
+            HAVING COALESCE(SUM(cp.points), 0) > 0
+          `);
+
+          let awarded = 0;
+          for (const student of students.rows) {
+            const total = parseInt(student.total_points);
+            if (total % 10 === 0) {
+              const badgeType = `class_points_${total}`;
+              const existing = await pool.query(
+                'SELECT id FROM student_badges WHERE student_id = $1 AND badge_type = $2',
+                [student.id, badgeType]
+              );
+              if (existing.rows.length === 0) {
+                const badgeName = `⭐ ${total} Class Points!`;
+                const badgeDesc = `Earned ${total} class points in live classes!`;
+                await pool.query(`
+                  INSERT INTO student_badges (student_id, badge_type, badge_name, badge_description)
+                  VALUES ($1, $2, $3, $4)
+                `, [student.id, badgeType, badgeName, badgeDesc]);
+                awarded++;
+              }
+            }
+          }
+          if (awarded > 0) {
+            console.log(`🏅 Awarded ${awarded} retroactive class points badges to existing students`);
+          }
+        } catch (err) {
+          console.error('Retroactive badge award error:', err.message);
+        }
+
         return true;
       } catch (err) {
         console.error(`❌ Database connection attempt ${attempt} failed:`, err.message);
@@ -1035,104 +391,6 @@ app.use((req, res, next) => {
   }
   next();
 });
-
-// ==================== PWA MANIFEST & FCM SERVICE WORKER (before static) ====================
-const APP_DISPLAY_NAME = process.env.APP_DISPLAY_NAME || 'Fluent Feathers Academy';
-const APP_SHORT_NAME = process.env.APP_SHORT_NAME || 'Fluent Feathers Academy';
-
-/** Same logo as /api/config (LOGO_URL or /logo.png), as an absolute URL for icons & push. */
-function resolveLogoAbsoluteUrl(baseNoSlash) {
-  const base = String(baseNoSlash || '').replace(/\/$/, '') || 'https://fluent-feathers-academy-lms.onrender.com';
-  const logo = process.env.LOGO_URL || '/logo.png';
-  if (logo.startsWith('http')) return logo;
-  return `${base}${logo.startsWith('/') ? '' : '/'}${logo}`;
-}
-
-app.get('/manifest.webmanifest', (req, res) => {
-  try {
-    const proto = req.get('x-forwarded-proto') || req.protocol || 'https';
-    const host = req.get('host') || '';
-    const base = (process.env.APP_URL || `${proto}://${host}`).replace(/\/$/, '');
-    const iconSrc = resolveLogoAbsoluteUrl(base);
-    res.type('application/manifest+json');
-    res.setHeader('Cache-Control', 'public, max-age=300');
-    res.json({
-      id: `${base}/`,
-      name: APP_DISPLAY_NAME,
-      short_name: APP_SHORT_NAME,
-      description: 'Parent portal, class reminders, and session updates.',
-      start_url: `${base}/index.html`,
-      scope: `${base}/`,
-      display: 'standalone',
-      orientation: 'portrait-primary',
-      background_color: '#f0f4f8',
-      theme_color: process.env.PWA_THEME_COLOR || '#B05D9E',
-      categories: ['education'],
-      icons: [
-        { src: iconSrc, sizes: '512x512', type: 'image/png', purpose: 'any' },
-        { src: iconSrc, sizes: '192x192', type: 'image/png', purpose: 'any' },
-        { src: iconSrc, sizes: '512x512', type: 'image/png', purpose: 'maskable' }
-      ]
-    });
-  } catch (err) {
-    res.status(500).json({ error: 'manifest failed' });
-  }
-});
-
-app.get('/firebase-messaging-sw.js', (req, res) => {
-  const cfg = {
-    apiKey: process.env.FIREBASE_API_KEY || '',
-    authDomain: process.env.FIREBASE_AUTH_DOMAIN || '',
-    projectId: process.env.FIREBASE_PROJECT_ID || '',
-    storageBucket: process.env.FIREBASE_STORAGE_BUCKET || '',
-    messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || '',
-    appId: process.env.FIREBASE_APP_ID || ''
-  };
-  if (!cfg.apiKey || !cfg.projectId) {
-    res.type('application/javascript');
-    return res.send('// Firebase web push not configured');
-  }
-  const proto = req.get('x-forwarded-proto') || req.protocol || 'https';
-  const host = req.get('host') || '';
-  const base = (process.env.APP_URL || `${proto}://${host}`).replace(/\/$/, '');
-  const logoAbs = resolveLogoAbsoluteUrl(base);
-  const js = `importScripts('https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js');
-importScripts('https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging-compat.js');
-firebase.initializeApp(${JSON.stringify(cfg)});
-const messaging = firebase.messaging();
-function buildNotificationMeta(payload) {
-  const data = payload.data || {};
-  const notification = payload.notification || {};
-  const title = data.title || notification.title || ${JSON.stringify(APP_DISPLAY_NAME)};
-  const body = data.body || notification.body || '';
-  const link = data.url || data.link || '/parent.html';
-  const tag = data.notificationTag || data.type || [title, body, link].filter(Boolean).join('|').slice(0, 180);
-  return { title, body, link, tag, data };
-}
-messaging.onBackgroundMessage((payload) => {
-  const meta = buildNotificationMeta(payload);
-  const opts = {
-    body: meta.body,
-    icon: ${JSON.stringify(logoAbs)},
-    badge: ${JSON.stringify(logoAbs)},
-    tag: meta.tag,
-    renotify: false,
-    data: { url: meta.link, notificationTag: meta.tag, ...(meta.data || {}) }
-  };
-  self.registration.showNotification(meta.title, opts);
-});
-self.addEventListener('notificationclick', (event) => {
-  event.notification.close();
-  const url = (event.notification.data && event.notification.data.url) || '/parent.html';
-  event.waitUntil(clients.openWindow(url));
-});
-`;
-  res.type('application/javascript');
-  res.setHeader('Service-Worker-Allowed', '/');
-  res.setHeader('Cache-Control', 'no-store');
-  res.send(js);
-});
-
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
@@ -1140,13 +398,9 @@ app.get('/demo', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'demo-register.html'));
 });
 
-function getAppBaseUrl() {
-  return process.env.APP_URL || 'https://fluent-feathers-academy-lms.onrender.com';
-}
-
-function getJoinClassUrl(sessionId) {
-  return `${getAppBaseUrl()}/join-class?sid=${encodeURIComponent(sessionId)}`;
-}
+app.get('/summer-camp', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'summer-camp-register.html'));
+});
 
 app.get('/b/:code', async (req, res) => {
   try {
@@ -1316,7 +570,7 @@ function joinClassTooEarlyPage(waitTime, studentName, sid, secondsRemaining) {
     </div>
     <div class="btn-row">
       <a href="${joinUrl}" class="retry-btn">🔄 Try Again</a>
-        <a href="${getAppBaseUrl()}/parent.html" class="portal-btn">🏠 Parent Portal</a>
+      <a href="${process.env.APP_URL || 'https://fluent-feathers-academy-lms.onrender.com'}/parent.html" class="portal-btn">🏠 Parent Portal</a>
     </div>
     <p class="auto-msg" id="autoMsg">This page will automatically open the class when it's time.</p>
   </div>
@@ -1367,7 +621,7 @@ function joinClassErrorPage(title, message) {
     <span class="icon">🔒</span>
     <h1>${title}</h1>
     <p>${message}</p>
-    <a href="${getAppBaseUrl()}/parent.html" class="portal-btn">🏠 Go to Parent Portal</a>
+    <a href="${process.env.APP_URL || 'https://fluent-feathers-academy-lms.onrender.com'}/parent.html" class="portal-btn">🏠 Go to Parent Portal</a>
   </div>
 </body>
 </html>`;
@@ -1412,7 +666,7 @@ app.use(async (req, res, next) => {
 });
 
 // Create upload directories
-['uploads', 'uploads/materials', 'uploads/homework', 'uploads/social-media'].forEach(dir => {
+['uploads', 'uploads/materials', 'uploads/homework'].forEach(dir => {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 });
 
@@ -1514,26 +768,27 @@ const handleUpload = (fieldName) => {
   };
 };
 
+// ==================== EXTERNAL PING ENDPOINT ====================
+// Add this endpoint to allow external services to ping your app
+app.get('/api/ping', (req, res) => {
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    database: dbReady ? 'connected' : 'disconnected'
+  });
+});
+
 // ==================== CONFIG API ====================
 // Endpoint to get logo URL and storage status for frontend
 app.get('/api/config', (req, res) => {
   try {
-    const firebaseWebConfigured = !!(process.env.FIREBASE_API_KEY && process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_MESSAGING_SENDER_ID && process.env.FIREBASE_APP_ID);
     res.json({
       logoUrl: process.env.LOGO_URL || '/logo.png',
       storageType: useCloudinary ? 'cloudinary' : 'local',
       cloudinaryConfigured: useCloudinary,
       cloudName: useCloudinary ? cloudName : null,
-      firebase: firebaseWebConfigured
-        ? {
-            apiKey: process.env.FIREBASE_API_KEY,
-            authDomain: process.env.FIREBASE_AUTH_DOMAIN || '',
-            projectId: process.env.FIREBASE_PROJECT_ID,
-            storageBucket: process.env.FIREBASE_STORAGE_BUCKET || '',
-            messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
-            appId: process.env.FIREBASE_APP_ID
-          }
-        : null,
+      firebase: getFirebaseWebConfig(),
       firebaseVapidKey: process.env.FIREBASE_VAPID_KEY || null
     });
   } catch (err) {
@@ -1541,85 +796,22 @@ app.get('/api/config', (req, res) => {
   }
 });
 
-app.post('/api/parent/register-fcm-token', async (req, res) => {
-  try {
-    const { email, token } = req.body || {};
-    const normalized = String(email || '').trim().toLowerCase();
-    if (!normalized || !token) {
-      return res.status(400).json({ error: 'email and token required' });
-    }
-    const studentOk = await pool.query(
-      `SELECT 1 FROM students WHERE LOWER(parent_email) = $1 AND is_active = true LIMIT 1`,
-      [normalized]
-    );
-    const credOk = await pool.query(
-      `SELECT 1 FROM parent_credentials WHERE LOWER(parent_email) = $1 LIMIT 1`,
-      [normalized]
-    );
-    if (studentOk.rows.length === 0 && credOk.rows.length === 0) {
-      return res.status(403).json({ error: 'Invalid parent email' });
-    }
-    await pool.query(
-      `INSERT INTO parent_fcm_tokens (parent_email, fcm_token, user_agent)
-       VALUES ($1, $2, $3)
-       ON CONFLICT (fcm_token) DO UPDATE SET parent_email = EXCLUDED.parent_email, user_agent = EXCLUDED.user_agent, updated_at = CURRENT_TIMESTAMP`,
-      [normalized, String(token), req.headers['user-agent'] || null]
-    );
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.delete('/api/parent/register-fcm-token', async (req, res) => {
-  try {
-    const { email, token } = req.body || {};
-    if (!token) {
-      return res.status(400).json({ error: 'token required' });
-    }
-    const normalized = String(email || '').trim().toLowerCase();
-    if (normalized) {
-      await pool.query(
-        `DELETE FROM parent_fcm_tokens WHERE fcm_token = $1 AND LOWER(parent_email) = $2`,
-        [String(token), normalized]
-      );
-    } else {
-      await pool.query(`DELETE FROM parent_fcm_tokens WHERE fcm_token = $1`, [String(token)]);
-    }
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
 app.post('/api/admin/register-fcm-token', async (req, res) => {
+  const { token } = req.body;
+  if (!token) {
+    return res.status(400).json({ error: 'FCM token is required' });
+  }
   try {
-    const { token } = req.body || {};
-    if (!token) {
-      return res.status(400).json({ error: 'token required' });
-    }
     await pool.query(
-      `INSERT INTO admin_fcm_tokens (fcm_token, user_agent)
-       VALUES ($1, $2)
-       ON CONFLICT (fcm_token) DO UPDATE SET user_agent = EXCLUDED.user_agent, updated_at = CURRENT_TIMESTAMP`,
-      [String(token), req.headers['user-agent'] || null]
+      `INSERT INTO admin_fcm_tokens (fcm_token, user_agent, updated_at)
+       VALUES ($1, $2, NOW())
+       ON CONFLICT (fcm_token) DO UPDATE SET user_agent = EXCLUDED.user_agent, updated_at = NOW()`,
+      [token, req.headers['user-agent'] || '']
     );
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.delete('/api/admin/register-fcm-token', async (req, res) => {
-  try {
-    const { token } = req.body || {};
-    if (!token) {
-      return res.status(400).json({ error: 'token required' });
-    }
-    await pool.query(`DELETE FROM admin_fcm_tokens WHERE fcm_token = $1`, [String(token)]);
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('Register FCM token error:', err.message);
+    res.status(500).json({ error: 'Failed to register FCM token' });
   }
 });
 
@@ -1629,7 +821,26 @@ app.post('/api/admin/login', async (req, res) => {
   if (!password) {
     return res.status(400).json({ error: 'Password is required' });
   }
-  
+
+  const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
+  if (password === adminPassword) {
+    // Generate a session token
+    const sessionToken = crypto.randomBytes(32).toString('hex');
+    // In a real app, you'd store this in a database with expiration
+    // For now, we'll just return success
+    res.json({ success: true, token: sessionToken });
+  } else {
+    res.status(401).json({ error: 'Invalid password' });
+  }
+});
+
+// Admin login endpoint
+app.post('/api/admin/login', async (req, res) => {
+  const { password } = req.body;
+  if (!password) {
+    return res.status(400).json({ error: 'Password is required' });
+  }
+
   const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
   if (password === adminPassword) {
     // Generate a session token
@@ -1922,13 +1133,6 @@ async function initializeDatabase() {
         feedback_comments TEXT,
         feedback_given INTEGER DEFAULT 0,
         feedback_date TIMESTAMP,
-        ai_generated_score INTEGER,
-        plagiarism_score INTEGER,
-        humanized_ai_score INTEGER,
-        student_originality_score INTEGER,
-        integrity_summary TEXT,
-        integrity_details TEXT,
-        integrity_checked_at TIMESTAMP,
         FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
         FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE,
         FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
@@ -2189,7 +1393,7 @@ async function runMigrations() {
     // Migration 1: Add date_of_birth to students
     try {
       await client.query(`
-        ALTER TABLE students 
+        ALTER TABLE students
         ADD COLUMN IF NOT EXISTS date_of_birth DATE;
       `);
       console.log('✅ Added date_of_birth column');
@@ -2204,7 +1408,7 @@ async function runMigrations() {
     // Migration 2: Add payment_method to students
     try {
       await client.query(`
-        ALTER TABLE students 
+        ALTER TABLE students
         ADD COLUMN IF NOT EXISTS payment_method TEXT;
       `);
       console.log('✅ Added payment_method column');
@@ -2664,7 +1868,7 @@ async function runMigrations() {
 
     // Migration 29: Enable Row Level Security on all tables (fixes Supabase security warning)
     try {
-      const tables = ['groups', 'group_timings', 'students', 'sessions', 'session_attendance', 'materials', 'events', 'event_registrations', 'email_log', 'announcements', 'parent_credentials', 'class_feedback', 'student_badges', 'monthly_assessments', 'student_certificates', 'payment_history', 'payment_renewals', 'makeup_classes', 'demo_leads', 'weekly_challenges', 'student_challenges', 'session_materials', 'admin_settings', 'expenses', 'resource_library', 'class_points', 'birthday_cards'];
+      const tables = ['groups', 'group_timings', 'students', 'sessions', 'session_attendance', 'materials', 'events', 'event_registrations', 'email_log', 'announcements', 'parent_credentials', 'class_feedback', 'student_badges', 'monthly_assessments', 'student_certificates', 'payment_history', 'payment_renewals', 'makeup_classes', 'demo_leads', 'weekly_challenges', 'student_challenges', 'session_materials', 'admin_settings', 'expenses', 'resource_library', 'class_points'];
       for (const table of tables) {
         try {
           await client.query(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY`);
@@ -2684,15 +1888,7 @@ async function runMigrations() {
       console.log('Migration 30 note:', err.message);
     }
 
-    // Migration 31: Track whether final package exhaustion email was already sent
-    try {
-      await client.query(`ALTER TABLE students ADD COLUMN IF NOT EXISTS package_exhausted_notice_sent BOOLEAN DEFAULT false`);
-      console.log('✅ Migration 31: Added package_exhausted_notice_sent column');
-    } catch (err) {
-      console.log('Migration 31 note:', err.message);
-    }
-
-    // Migration 32: Add performance indexes on frequently queried columns
+    // Migration 31: Add performance indexes on frequently queried columns
     try {
       await client.query('CREATE INDEX IF NOT EXISTS idx_session_attendance_student_id ON session_attendance(student_id)');
       await client.query('CREATE INDEX IF NOT EXISTS idx_session_attendance_session_id ON session_attendance(session_id)');
@@ -2702,9 +1898,9 @@ async function runMigrations() {
       await client.query('CREATE INDEX IF NOT EXISTS idx_sessions_student_id ON sessions(student_id)');
       await client.query('CREATE INDEX IF NOT EXISTS idx_sessions_group_id ON sessions(group_id)');
       await client.query('CREATE INDEX IF NOT EXISTS idx_sessions_session_date ON sessions(session_date)');
-      console.log('✅ Migration 32: Added performance indexes');
+      console.log('✅ Migration 31: Added performance indexes');
     } catch (err) {
-      console.log('Migration 32 note:', err.message);
+      console.log('Migration 31 note:', err.message);
     }
 
     // Migration 32: Add notes column to sessions table
@@ -2834,6 +2030,15 @@ async function runMigrations() {
       console.log('Migration 39 note:', err.message);
     }
 
+    // Migration 40: Add type column to demo_leads for summer camp
+    try {
+      await client.query(`ALTER TABLE demo_leads ADD COLUMN IF NOT EXISTS type TEXT DEFAULT 'demo'`);
+      await client.query(`UPDATE demo_leads SET type = 'demo' WHERE type IS NULL`);
+      console.log('✅ Migration 40: Added type column to demo_leads');
+    } catch (err) {
+      console.log('Migration 40 note:', err.message);
+    }
+
     // Migration 40: Add session_topic column to sessions table
     try {
       await client.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS session_topic TEXT`);
@@ -2875,14 +2080,6 @@ async function runMigrations() {
     // Migration 43: One-time fix - increment remaining_sessions for existing students who have
     // upcoming scheduled makeup classes that were scheduled before the fix (remaining was never incremented)
     try {
-      const migration43Key = 'migration_43_makeup_remaining_backfill_done';
-      const migration43State = await client.query(
-        `SELECT setting_value FROM admin_settings WHERE setting_key = $1`,
-        [migration43Key]
-      );
-      if (migration43State.rows[0]?.setting_value === 'true') {
-        console.log('Migration 43: makeup remaining-session backfill already applied');
-      } else {
       const fixResult = await client.query(`
         UPDATE students s
         SET remaining_sessions = remaining_sessions + sub.makeup_pending
@@ -2904,56 +2101,8 @@ async function runMigrations() {
       } else {
         console.log('✅ Migration 43: No students needed remaining_sessions makeup backfill');
       }
-      await client.query(`
-        INSERT INTO admin_settings (setting_key, setting_value, updated_at)
-        VALUES ($1, 'true', CURRENT_TIMESTAMP)
-        ON CONFLICT (setting_key)
-        DO UPDATE SET setting_value = EXCLUDED.setting_value, updated_at = CURRENT_TIMESTAMP
-      `, [migration43Key]);
-      }
     } catch (err) {
       console.log('Migration 43 note:', err.message);
-    }
-
-    // Migration 44: Backfill old scheduled makeup credits that already belong to resolved sessions
-    try {
-      const migration44Key = 'migration_44_makeup_status_backfill_done';
-      const migration44State = await client.query(
-        `SELECT setting_value FROM admin_settings WHERE setting_key = $1`,
-        [migration44Key]
-      );
-      if (migration44State.rows[0]?.setting_value === 'true') {
-        console.log('Migration 44: makeup status backfill already applied');
-      } else {
-        const fixResult = await client.query(`
-          UPDATE makeup_classes mc
-          SET status = 'Used'
-          WHERE LOWER(mc.status) = 'scheduled'
-            AND EXISTS (
-              SELECT 1
-              FROM sessions s
-              LEFT JOIN session_attendance sa
-                ON sa.session_id = s.id
-               AND sa.student_id = mc.student_id
-              WHERE s.id = mc.scheduled_session_id
-                AND (
-                  (s.session_type = 'Private' AND s.status NOT IN ('Pending', 'Scheduled'))
-                  OR
-                  (s.session_type = 'Group' AND COALESCE(sa.attendance, 'Pending') <> 'Pending')
-                )
-            )
-          RETURNING mc.id
-        `);
-        console.log(`✅ Migration 44: Marked ${fixResult.rows.length} resolved scheduled makeup credit(s) as Used`);
-        await client.query(`
-          INSERT INTO admin_settings (setting_key, setting_value, updated_at)
-          VALUES ($1, 'true', CURRENT_TIMESTAMP)
-          ON CONFLICT (setting_key)
-          DO UPDATE SET setting_value = EXCLUDED.setting_value, updated_at = CURRENT_TIMESTAMP
-        `, [migration44Key]);
-      }
-    } catch (err) {
-      console.log('Migration 44 note:', err.message);
     }
 
     // Migration 44A: Create short birthday card links table
@@ -2993,7 +2142,7 @@ async function runMigrations() {
 
     // Migration 46: Harden RLS policies and cover tables missed by earlier migration
     try {
-      const tables = ['groups', 'group_timings', 'students', 'sessions', 'session_attendance', 'materials', 'events', 'event_registrations', 'email_log', 'announcements', 'parent_credentials', 'class_feedback', 'student_badges', 'monthly_assessments', 'student_certificates', 'payment_history', 'payment_renewals', 'makeup_classes', 'demo_leads', 'weekly_challenges', 'student_challenges', 'session_materials', 'admin_settings', 'expenses', 'resource_library', 'class_points', 'birthday_cards', 'parent_fcm_tokens'];
+      const tables = ['groups', 'group_timings', 'students', 'sessions', 'session_attendance', 'materials', 'events', 'event_registrations', 'email_log', 'announcements', 'parent_credentials', 'class_feedback', 'student_badges', 'monthly_assessments', 'student_certificates', 'payment_history', 'payment_renewals', 'makeup_classes', 'demo_leads', 'weekly_challenges', 'student_challenges', 'session_materials', 'admin_settings', 'expenses', 'resource_library', 'class_points'];
       for (const table of tables) {
         try {
           await client.query(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY`);
@@ -3008,142 +2157,14 @@ async function runMigrations() {
       console.log('Migration 46 note:', err.message);
     }
 
-    // Migration 47: FCM device tokens for parent push notifications (paired with email)
+    // Migration 47: Add is_summer_camp column to students table
     try {
       await client.query(`
-        CREATE TABLE IF NOT EXISTS parent_fcm_tokens (
-          id SERIAL PRIMARY KEY,
-          parent_email TEXT NOT NULL,
-          fcm_token TEXT NOT NULL UNIQUE,
-          user_agent TEXT,
-          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
+        ALTER TABLE students ADD COLUMN IF NOT EXISTS is_summer_camp BOOLEAN DEFAULT false
       `);
-      await client.query(`CREATE INDEX IF NOT EXISTS idx_parent_fcm_tokens_email ON parent_fcm_tokens (LOWER(parent_email))`);
-      await client.query(`ALTER TABLE parent_fcm_tokens ENABLE ROW LEVEL SECURITY`);
-      await client.query(`DROP POLICY IF EXISTS "Allow all for service role" ON parent_fcm_tokens`);
-      await client.query(`DROP POLICY IF EXISTS "Service role full access" ON parent_fcm_tokens`);
-      await client.query(`DROP POLICY IF EXISTS "Service role only" ON parent_fcm_tokens`);
-      await client.query(`CREATE POLICY "Service role only" ON parent_fcm_tokens FOR ALL TO service_role USING (true) WITH CHECK (true)`);
-      console.log('✅ Migration 47: Created parent_fcm_tokens for Firebase push');
+      console.log('✅ Migration 47: Added is_summer_camp column to students table');
     } catch (err) {
       console.log('Migration 47 note:', err.message);
-    }
-
-    // Migration 48: Lock down late-added public tables for Supabase Security Advisor
-    try {
-      const tables = ['birthday_cards', 'parent_fcm_tokens'];
-      for (const table of tables) {
-        try {
-          await client.query(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY`);
-          await client.query(`DROP POLICY IF EXISTS "Allow all for service role" ON ${table}`);
-          await client.query(`DROP POLICY IF EXISTS "Service role full access" ON ${table}`);
-          await client.query(`DROP POLICY IF EXISTS "Service role only" ON ${table}`);
-          await client.query(`CREATE POLICY "Service role only" ON ${table} FOR ALL TO service_role USING (true) WITH CHECK (true)`);
-        } catch (e) { /* table may not exist yet */ }
-      }
-      console.log('✅ Migration 48: Secured birthday_cards and parent_fcm_tokens');
-    } catch (err) {
-      console.log('Migration 48 note:', err.message);
-    }
-
-    // Migration 49: Admin FCM tokens for admin push notifications
-    try {
-      await client.query(`
-        CREATE TABLE IF NOT EXISTS admin_fcm_tokens (
-          id SERIAL PRIMARY KEY,
-          fcm_token TEXT NOT NULL UNIQUE,
-          user_agent TEXT,
-          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-      `);
-      await client.query(`CREATE INDEX IF NOT EXISTS idx_admin_fcm_tokens_updated_at ON admin_fcm_tokens (updated_at)`);
-      await client.query(`ALTER TABLE admin_fcm_tokens ENABLE ROW LEVEL SECURITY`);
-      await client.query(`DROP POLICY IF EXISTS "Allow all for service role" ON admin_fcm_tokens`);
-      await client.query(`DROP POLICY IF EXISTS "Service role full access" ON admin_fcm_tokens`);
-      await client.query(`DROP POLICY IF EXISTS "Service role only" ON admin_fcm_tokens`);
-      await client.query(`CREATE POLICY "Service role only" ON admin_fcm_tokens FOR ALL TO service_role USING (true) WITH CHECK (true)`);
-      console.log('✅ Migration 49: Created admin_fcm_tokens for admin push');
-    } catch (err) {
-      console.log('Migration 49 note:', err.message);
-    }
-
-    // Migration 50: Store AI/copy-detection signals for homework/classwork submissions
-    try {
-      await client.query(`ALTER TABLE materials ADD COLUMN IF NOT EXISTS ai_generated_score INTEGER`);
-      await client.query(`ALTER TABLE materials ADD COLUMN IF NOT EXISTS plagiarism_score INTEGER`);
-      await client.query(`ALTER TABLE materials ADD COLUMN IF NOT EXISTS humanized_ai_score INTEGER`);
-      await client.query(`ALTER TABLE materials ADD COLUMN IF NOT EXISTS student_originality_score INTEGER`);
-      await client.query(`ALTER TABLE materials ADD COLUMN IF NOT EXISTS integrity_summary TEXT`);
-      await client.query(`ALTER TABLE materials ADD COLUMN IF NOT EXISTS integrity_details TEXT`);
-      await client.query(`ALTER TABLE materials ADD COLUMN IF NOT EXISTS integrity_checked_at TIMESTAMP`);
-      console.log('✅ Migration 50: Added homework AI/copy-detection fields');
-    } catch (err) {
-      console.log('Migration 50 note:', err.message);
-    }
-
-    // Migration 51: Social media reel script drafts for admin review-first workflow
-    try {
-      await client.query(`
-        CREATE TABLE IF NOT EXISTS social_media_projects (
-          id SERIAL PRIMARY KEY,
-          title TEXT,
-          admin_prompt TEXT NOT NULL,
-          platform TEXT DEFAULT 'Instagram',
-          content_style TEXT,
-          duration_seconds INTEGER DEFAULT 30,
-          student_name TEXT,
-          source_excerpt TEXT,
-          source_file_name TEXT,
-          source_file_path TEXT,
-          source_media_type TEXT,
-          generated_hook TEXT,
-          generated_voiceover_script TEXT,
-          generated_caption TEXT,
-          generated_hashtags TEXT,
-          generated_editing_notes TEXT,
-          generated_scene_plan JSONB,
-          caption_style TEXT DEFAULT 'classic',
-          subtitle_timing TEXT DEFAULT 'scene',
-          voice_choice TEXT DEFAULT 'coral',
-          branding_template TEXT DEFAULT 'academy',
-          background_music_mode TEXT DEFAULT 'none',
-          background_music_url TEXT,
-          status TEXT DEFAULT 'script_ready',
-          video_status TEXT DEFAULT 'not_started',
-          render_progress INTEGER DEFAULT 0,
-          rendered_video_url TEXT,
-          render_output_path TEXT,
-          render_error TEXT,
-          voiceover_audio_url TEXT,
-          voiceover_status TEXT DEFAULT 'not_started',
-          voiceover_error TEXT,
-          render_started_at TIMESTAMP,
-          render_completed_at TIMESTAMP,
-          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-      `);
-      await client.query(`ALTER TABLE social_media_projects ADD COLUMN IF NOT EXISTS render_progress INTEGER DEFAULT 0`);
-      await client.query(`ALTER TABLE social_media_projects ADD COLUMN IF NOT EXISTS caption_style TEXT DEFAULT 'classic'`);
-      await client.query(`ALTER TABLE social_media_projects ADD COLUMN IF NOT EXISTS subtitle_timing TEXT DEFAULT 'scene'`);
-      await client.query(`ALTER TABLE social_media_projects ADD COLUMN IF NOT EXISTS voice_choice TEXT DEFAULT 'coral'`);
-      await client.query(`ALTER TABLE social_media_projects ADD COLUMN IF NOT EXISTS branding_template TEXT DEFAULT 'academy'`);
-      await client.query(`ALTER TABLE social_media_projects ADD COLUMN IF NOT EXISTS background_music_mode TEXT DEFAULT 'none'`);
-      await client.query(`ALTER TABLE social_media_projects ADD COLUMN IF NOT EXISTS background_music_url TEXT`);
-      await client.query(`ALTER TABLE social_media_projects ADD COLUMN IF NOT EXISTS rendered_video_url TEXT`);
-      await client.query(`ALTER TABLE social_media_projects ADD COLUMN IF NOT EXISTS render_output_path TEXT`);
-      await client.query(`ALTER TABLE social_media_projects ADD COLUMN IF NOT EXISTS render_error TEXT`);
-      await client.query(`ALTER TABLE social_media_projects ADD COLUMN IF NOT EXISTS voiceover_audio_url TEXT`);
-      await client.query(`ALTER TABLE social_media_projects ADD COLUMN IF NOT EXISTS voiceover_status TEXT DEFAULT 'not_started'`);
-      await client.query(`ALTER TABLE social_media_projects ADD COLUMN IF NOT EXISTS voiceover_error TEXT`);
-      await client.query(`ALTER TABLE social_media_projects ADD COLUMN IF NOT EXISTS render_started_at TIMESTAMP`);
-      await client.query(`ALTER TABLE social_media_projects ADD COLUMN IF NOT EXISTS render_completed_at TIMESTAMP`);
-      await client.query(`CREATE INDEX IF NOT EXISTS idx_social_media_projects_updated_at ON social_media_projects (updated_at DESC)`);
-      await client.query(`CREATE INDEX IF NOT EXISTS idx_social_media_projects_status ON social_media_projects (status)`);
-      console.log('✅ Migration 51: Added social media projects table');
-    } catch (err) {
-      console.log('Migration 51 note:', err.message);
     }
 
     console.log('✅ All database migrations completed successfully!');
@@ -3698,7 +2719,6 @@ async function notifyAdminsStudentSubmission({
 }
 
 async function sendEmail(to, subject, html, recipientName, emailType, options = {}) {
-  let finalHtml;
   const normalizedEmailType = String(emailType || '').trim();
   const effectiveSubject =
     normalizedEmailType === 'Classwork-Feedback'
@@ -3722,13 +2742,9 @@ async function sendEmail(to, subject, html, recipientName, emailType, options = 
         </a>
       </div>
     `;
-    finalHtml = html;
-    finalHtml = addInstallAppLinksToPortalEmails(finalHtml);
+    let finalHtml = html;
     if (typeof finalHtml === 'string' && !finalHtml.includes(websiteLink)) {
-      const madeWithPattern = /(<(p|span)\b[^>]*>\s*Made with[\s\S]*?By Aaliya\s*<\/\2>)/i;
-      if (madeWithPattern.test(finalHtml)) {
-        finalHtml = finalHtml.replace(madeWithPattern, `${websiteFooter}\n$1`);
-      } else if (finalHtml.includes('</body>')) {
+      if (finalHtml.includes('</body>')) {
         finalHtml = finalHtml.replace('</body>', `${websiteFooter}\n</body>`);
       } else {
         finalHtml += websiteFooter;
@@ -3750,84 +2766,107 @@ async function sendEmail(to, subject, html, recipientName, emailType, options = 
   }
 }
 
-async function resetPackageExhaustedNotice(studentId, dbClient = pool) {
-  if (!studentId) return;
-  await dbClient.query(
-    `UPDATE students SET package_exhausted_notice_sent = false WHERE id = $1`,
-    [studentId]
-  );
-}
-
-async function markScheduledMakeupCreditUsed(sessionId, studentId, dbClient = pool) {
-  if (!sessionId || !studentId) return;
-
-  await dbClient.query(`
-    UPDATE makeup_classes
-    SET status = 'Used'
-    WHERE scheduled_session_id = $1
-      AND student_id = $2
-      AND LOWER(status) = 'scheduled'
-  `, [sessionId, studentId]);
-}
-
-async function sendPackageExhaustedNoticeIfNeeded(studentId, dbClient = pool) {
-  if (!studentId) return false;
-
-  const studentResult = await dbClient.query(`
-    SELECT id, name, parent_name, parent_email, program_name, per_session_fee, currency,
-           COALESCE(remaining_sessions, 0) AS remaining_sessions,
-           COALESCE(package_exhausted_notice_sent, false) AS package_exhausted_notice_sent
-    FROM students
-    WHERE id = $1 AND is_active = true
-  `, [studentId]);
-
-  const student = studentResult.rows[0];
-  if (!student || !student.parent_email || student.package_exhausted_notice_sent) return false;
-
-  const counts = await dbClient.query(`
-    SELECT
-      COALESCE(SUM(CASE WHEN LOWER(mc.status) = 'available' THEN 1 ELSE 0 END), 0) AS available_makeup,
-      COALESCE(SUM(CASE WHEN LOWER(mc.status) = 'scheduled' THEN 1 ELSE 0 END), 0) AS scheduled_makeup_pending
-    FROM makeup_classes mc
-    WHERE mc.student_id = $1
-  `, [studentId]);
-
-  const availableMakeup = parseInt(counts.rows[0]?.available_makeup, 10) || 0;
-  const scheduledMakeupPending = parseInt(counts.rows[0]?.scheduled_makeup_pending, 10) || 0;
-  const remainingSessions = parseInt(student.remaining_sessions, 10) || 0;
-
-  if (availableMakeup > 0) return false;
-  if (remainingSessions > scheduledMakeupPending) return false;
-
-  const emailHTML = getPackageExhaustedAfterMakeupEmail({
-    parentName: student.parent_name,
-    studentName: student.name,
-    programName: student.program_name,
-    perSessionFee: student.per_session_fee,
-    currency: student.currency,
-    scheduledMakeupCount: scheduledMakeupPending
-  });
-
-  const subject = scheduledMakeupPending > 0
-    ? `⏰ Final Makeup Classes Booked - Renew to Secure ${student.name}'s Slot`
-    : `🚨 All Classes Completed - Renew to Secure ${student.name}'s Slot`;
-
-  const sent = await sendEmail(
-    student.parent_email,
-    subject,
-    emailHTML,
-    student.parent_name,
-    'Package-Exhausted'
-  );
-
-  if (sent) {
-    await dbClient.query(
-      `UPDATE students SET package_exhausted_notice_sent = true WHERE id = $1`,
-      [studentId]
-    );
+function getFirebaseWebConfig() {
+  if (process.env.FIREBASE_CONFIG) {
+    try {
+      return JSON.parse(process.env.FIREBASE_CONFIG);
+    } catch (err) {
+      console.warn('Invalid FIREBASE_CONFIG JSON:', err.message);
+    }
   }
+  if (process.env.FIREBASE_API_KEY && process.env.FIREBASE_AUTH_DOMAIN && process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_MESSAGING_SENDER_ID && process.env.FIREBASE_APP_ID) {
+    return {
+      apiKey: process.env.FIREBASE_API_KEY,
+      authDomain: process.env.FIREBASE_AUTH_DOMAIN,
+      projectId: process.env.FIREBASE_PROJECT_ID,
+      messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
+      appId: process.env.FIREBASE_APP_ID,
+      measurementId: process.env.FIREBASE_MEASUREMENT_ID || undefined
+    };
+  }
+  return null;
+}
 
-  return sent;
+let firebaseAdminMessaging = null;
+let firebaseAdminInitAttempted = false;
+function getFirebaseAdminMessaging() {
+  if (firebaseAdminInitAttempted) return firebaseAdminMessaging;
+  firebaseAdminInitAttempted = true;
+  try {
+    if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+      const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+      firebaseAdmin.initializeApp({ credential: firebaseAdmin.credential.cert(serviceAccount) });
+    } else if (process.env.FIREBASE_SERVICE_ACCOUNT_PATH) {
+      firebaseAdmin.initializeApp({ credential: firebaseAdmin.credential.cert(require(process.env.FIREBASE_SERVICE_ACCOUNT_PATH)) });
+    } else if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+      firebaseAdmin.initializeApp();
+    } else {
+      return null;
+    }
+    firebaseAdminMessaging = firebaseAdmin.messaging();
+  } catch (err) {
+    console.error('Firebase Admin init failed:', err.message);
+    firebaseAdminMessaging = null;
+  }
+  return firebaseAdminMessaging;
+}
+
+async function sendAdminPushNotification(title, body, data = {}) {
+  try {
+    const result = await pool.query('SELECT fcm_token FROM admin_fcm_tokens');
+    const tokens = result.rows.map(row => row.fcm_token).filter(Boolean);
+    if (!tokens.length) return false;
+
+    const appUrl = process.env.APP_URL || process.env.PARENT_PORTAL_URL || '/';
+    const webpush = { fcmOptions: { link: appUrl } };
+    const messageData = Object.fromEntries(
+      Object.entries({ ...data, title, body, type: data.type || 'admin_notification' }).map(([k, v]) => [k, typeof v === 'string' ? v : JSON.stringify(v)])
+    );
+
+    const firebaseMessaging = getFirebaseAdminMessaging();
+    if (firebaseMessaging) {
+      const response = await firebaseMessaging.sendMulticast({
+        tokens,
+        notification: { title, body },
+        data: messageData,
+        webpush
+      });
+      if (response.failureCount) {
+        const invalidTokens = [];
+        response.responses.forEach((resp, index) => {
+          if (!resp.success && resp.error && ['messaging/invalid-registration-token', 'messaging/registration-token-not-registered'].includes(resp.error.code)) {
+            invalidTokens.push(tokens[index]);
+          }
+        });
+        if (invalidTokens.length) {
+          await pool.query('DELETE FROM admin_fcm_tokens WHERE fcm_token = ANY($1)', [invalidTokens]);
+        }
+      }
+      return true;
+    }
+
+    const serverKey = process.env.FIREBASE_SERVER_KEY;
+    if (serverKey) {
+      await axios.post('https://fcm.googleapis.com/fcm/send', {
+        registration_ids: tokens,
+        notification: { title, body },
+        data: messageData,
+        webpush: { fcm_options: { link: appUrl } }
+      }, {
+        headers: {
+          Authorization: `key ${serverKey}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      return true;
+    }
+
+    console.warn('No Firebase push configuration available for admin notifications.');
+    return false;
+  } catch (err) {
+    console.error('Admin push notification error:', err.message);
+    return false;
+  }
 }
 
 function getWelcomeEmail(data) {
@@ -4700,11 +3739,13 @@ function getHomeworkFeedbackEmail(data) {
     grade,
     comments,
     fileName,
-    workType = 'Homework',
+    workType,
+    materialType,
     actionLabel = 'Reviewed'
   } = data;
-  const normalizedWorkType = workType === 'Classwork' ? 'Classwork' : 'Homework';
+  const normalizedWorkType = (workType || materialType) === 'Classwork' ? 'Classwork' : 'Homework';
   const lowerWorkType = normalizedWorkType.toLowerCase();
+  const typeLabel = normalizedWorkType;
 
   // Get emoji based on grade
   const g = (grade || '').toLowerCase();
@@ -4721,23 +3762,23 @@ function getHomeworkFeedbackEmail(data) {
 <body style="margin: 0; padding: 0; background-color: #f0f4f8; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
   <div style="max-width: 600px; margin: 20px auto; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.1);">
     <div style="background: linear-gradient(135deg, #38a169 0%, #2f855a 100%); padding: 40px 30px; text-align: center;">
-      <h1 style="margin: 0; color: white; font-size: 28px; font-weight: bold;">📝 Homework Reviewed!</h1>
-      <p style="margin: 10px 0 0; color: rgba(255,255,255,0.95); font-size: 16px;">Great job on completing your homework!</p>
+      <h1 style="margin: 0; color: white; font-size: 28px; font-weight: bold;">📝 ${typeLabel} Reviewed!</h1>
+      <p style="margin: 10px 0 0; color: rgba(255,255,255,0.95); font-size: 16px;">Great job on completing your ${typeLabel.toLowerCase()}!</p>
     </div>
     <div style="padding: 40px 30px;">
       <p style="margin: 0 0 20px; font-size: 16px; color: #2d3748;">
         Dear <strong>${parentName || studentName + "'s Parent"}</strong>,
       </p>
       <p style="margin: 0 0 25px; font-size: 15px; color: #4a5568; line-height: 1.6;">
-        We're happy to let you know that ${studentName}'s homework has been reviewed! Here are the details:
+        We're happy to let you know that ${studentName}'s ${typeLabel.toLowerCase()} has been reviewed! Here are the details:
       </p>
 
       <div style="background: linear-gradient(135deg, #f0fff4 0%, #c6f6d5 100%); padding: 25px; border-radius: 10px; border-left: 4px solid #38a169; margin-bottom: 25px;">
-        <h2 style="margin: 0 0 15px; color: #38a169; font-size: 20px;">📋 Homework Details</h2>
+        <h2 style="margin: 0 0 15px; color: #38a169; font-size: 20px;">📋 ${typeLabel} Details</h2>
         <table style="width: 100%; border-collapse: collapse;">
           <tr>
             <td style="padding: 8px 0; color: #4a5568; font-size: 15px;"><strong>File:</strong></td>
-            <td style="padding: 8px 0; color: #2d3748; font-size: 15px; text-align: right;">${fileName || 'Homework submission'}</td>
+            <td style="padding: 8px 0; color: #2d3748; font-size: 15px; text-align: right;">${fileName || typeLabel + ' submission'}</td>
           </tr>
           <tr>
             <td style="padding: 8px 0; color: #4a5568; font-size: 15px;"><strong>Grade:</strong></td>
@@ -4761,7 +3802,7 @@ function getHomeworkFeedbackEmail(data) {
 
       <div style="background: #e6fffa; border: 1px solid #38b2ac; padding: 15px; border-radius: 8px; margin-top: 25px;">
         <p style="margin: 0; color: #234e52; font-size: 14px; line-height: 1.5;">
-          <strong>🎯 Keep it up!</strong> Regular homework completion helps reinforce learning and build good study habits. We're proud of ${studentName}'s progress!
+          <strong>🎯 Keep it up!</strong> Regular ${typeLabel.toLowerCase()} completion helps reinforce learning and build good study habits. We're proud of ${studentName}'s progress!
         </p>
       </div>
 
@@ -5000,75 +4041,6 @@ function getSlotsReleasingEmail(data) {
 </html>`;
 }
 
-function getPackageExhaustedAfterMakeupEmail(data) {
-  const { parentName, studentName, programName, perSessionFee, currency, scheduledMakeupCount } = data;
-  const hasScheduledMakeup = scheduledMakeupCount > 0;
-
-  return `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-</head>
-<body style="margin: 0; padding: 0; background-color: #f0f4f8; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
-  <div style="max-width: 600px; margin: 20px auto; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.1);">
-    <div style="background: linear-gradient(135deg, #dd6b20 0%, #c05621 100%); padding: 40px 30px; text-align: center;">
-      <div style="font-size: 50px; margin-bottom: 10px;">⏰</div>
-      <h1 style="margin: 0; color: white; font-size: 28px; font-weight: bold;">Renew to Secure the Slot</h1>
-      <p style="color: rgba(255,255,255,0.9); margin: 10px 0 0; font-size: 14px;">Fluent Feathers Academy By Aaliya</p>
-    </div>
-    <div style="padding: 40px 30px;">
-      <p style="margin: 0 0 20px; font-size: 16px; color: #2d3748;">
-        Dear <strong>${parentName}</strong>,
-      </p>
-
-      <div style="background: linear-gradient(135deg, #fff7ed 0%, #feebc8 100%); padding: 25px; border-radius: 12px; border-left: 4px solid #dd6b20; margin: 25px 0;">
-        <p style="margin: 0; font-size: 18px; color: #c05621; font-weight: bold; text-align: center;">
-          ${hasScheduledMakeup
-            ? `${studentName}'s regular sessions are over and all makeup credits are now booked.`
-            : `${studentName}'s regular sessions and makeup credits are now fully used.`}
-        </p>
-      </div>
-
-      <p style="margin: 0 0 20px; font-size: 15px; color: #4a5568; line-height: 1.7;">
-        ${hasScheduledMakeup
-          ? `${studentName} now has ${scheduledMakeupCount} final makeup class${scheduledMakeupCount > 1 ? 'es' : ''} scheduled under <strong>${programName || 'the program'}</strong>. After these are completed, there will be no sessions or makeup credits left in the package.`
-          : `All paid sessions and makeup credits for <strong>${studentName}</strong> under <strong>${programName || 'the program'}</strong> have now been completed.`}
-      </p>
-
-      <div style="background: #fff5f5; padding: 20px; border-radius: 10px; border-left: 4px solid #e53e3e; margin: 25px 0;">
-        <p style="margin: 0; font-size: 15px; color: #742a2a; line-height: 1.7;">
-          <strong>📌 Action needed:</strong> Please renew now if you'd like us to continue holding ${studentName}'s class slot and schedule the next set of sessions without interruption.
-        </p>
-      </div>
-
-      ${perSessionFee ? `
-      <div style="background: #f7fafc; padding: 15px; border-radius: 8px; margin: 20px 0;">
-        <p style="margin: 0; font-size: 14px; color: #4a5568;">
-          <strong>💰 Per Session Fee:</strong> ${currency || '₹'}${perSessionFee}
-        </p>
-      </div>
-      ` : ''}
-
-      <p style="margin: 25px 0; font-size: 15px; color: #4a5568; line-height: 1.7;">
-        To renew, simply reply to this email or contact us directly. We’ll be happy to help secure the next set of classes for ${studentName}.
-      </p>
-
-      <p style="margin: 25px 0 0; font-size: 15px; color: #4a5568;">
-        Warm regards,<br>
-        <strong style="color: #667eea;">Team Fluent Feathers Academy</strong>
-      </p>
-    </div>
-    <div style="background: #f7fafc; padding: 20px 30px; text-align: center; border-top: 1px solid #e2e8f0;">
-      <p style="margin: 0; color: #718096; font-size: 13px;">
-        Made with ❤️ By Aaliya
-      </p>
-    </div>
-  </div>
-</body>
-</html>`;
-}
-
 function getClassCancelledEmail(data) {
   const { parentName, studentName, sessionDate, sessionTime, cancelledBy, reason, hasMakeupCredit } = data;
 
@@ -5251,11 +4223,9 @@ function getCertificateEmail(data) {
 }
 
 function getMonthlyReportCardEmail(data) {
-  const { assessmentId, studentName, month, year, skills, skillRatings, certificateTitle, performanceSummary, areasOfImprovement, teacherComments } = data;
+  const { assessmentId, studentName, month, year, skills, certificateTitle, performanceSummary, areasOfImprovement, teacherComments } = data;
   const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   const skillsList = skills && skills.length > 0 ? skills : [];
-  const ratings = skillRatings && typeof skillRatings === 'object' ? skillRatings : {};
-  const ratingEntries = Object.entries(ratings).filter(([, value]) => Number(value) > 0);
   const appUrl = process.env.BASE_URL || process.env.APP_URL || 'https://fluent-feathers-academy-lms.onrender.com';
   const certificateUrl = `${appUrl}/monthly-certificate.html?id=${assessmentId}`;
 
@@ -5307,28 +4277,6 @@ function getMonthlyReportCardEmail(data) {
             ✓ ${skill}
           </div>
           `).join('')}
-        </div>
-      </div>
-      ` : ''}
-
-      ${ratingEntries.length > 0 ? `
-      <div style="margin-bottom: 30px;">
-        <h3 style="color: #2d3748; font-size: 20px; margin: 0 0 15px; display: flex; align-items: center; gap: 8px;">
-          <span>⭐</span> Star Ratings
-        </h3>
-        <div style="display: grid; grid-template-columns: 1fr; gap: 12px;">
-          ${ratingEntries.map(([skill, value]) => {
-            const rating = Math.max(0, Math.min(5, Number(value) || 0));
-            const filled = '★'.repeat(rating);
-            const empty = '☆'.repeat(5 - rating);
-            return `
-          <div style="background: #f7fafc; padding: 14px 16px; border-radius: 10px; border-left: 4px solid #f6ad55;">
-            <div style="display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap;">
-              <span style="font-size: 14px; color: #2d3748; font-weight: 700;">${skill}</span>
-              <span style="font-size: 18px; color: #f6ad55; letter-spacing: 2px;">${filled}<span style="color: #cbd5e0;">${empty}</span></span>
-            </div>
-          </div>`;
-          }).join('')}
         </div>
       </div>
       ` : ''}
@@ -5614,10 +4562,8 @@ function getDemoFollowUp7DayEmail(data) {
 
 // Demo Assessment Email Template
 function getDemoAssessmentEmail(data) {
-  const { assessmentId, childName, childGrade, demoDate, skills, skillRatings, certificateTitle, performanceSummary, areasOfImprovement, teacherComments } = data;
+  const { assessmentId, childName, childGrade, demoDate, skills, certificateTitle, performanceSummary, areasOfImprovement, teacherComments } = data;
   const skillsList = skills && skills.length > 0 ? skills : [];
-  const ratings = skillRatings && typeof skillRatings === 'object' ? skillRatings : {};
-  const ratingEntries = Object.entries(ratings).filter(([, value]) => Number(value) > 0);
   const formattedDate = demoDate ? new Date(demoDate).toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) : 'Demo Class';
   const appUrl = process.env.BASE_URL || process.env.APP_URL || 'https://fluent-feathers-academy-lms.onrender.com';
   const certificateUrl = `${appUrl}/demo-certificate.html?id=${assessmentId}`;
@@ -5679,28 +4625,6 @@ function getDemoAssessmentEmail(data) {
             ✓ ${skill}
           </div>
           `).join('')}
-        </div>
-      </div>
-      ` : ''}
-
-      ${ratingEntries.length > 0 ? `
-      <div style="margin-bottom: 30px;">
-        <h3 style="color: #234e52; font-size: 20px; margin: 0 0 15px; display: flex; align-items: center; gap: 8px;">
-          <span>⭐</span> Star Ratings
-        </h3>
-        <div style="display: grid; grid-template-columns: 1fr; gap: 12px;">
-          ${ratingEntries.map(([skill, value]) => {
-            const rating = Math.max(0, Math.min(5, Number(value) || 0));
-            const filled = '★'.repeat(rating);
-            const empty = '☆'.repeat(5 - rating);
-            return `
-          <div style="background: #e6fffa; padding: 14px 16px; border-radius: 10px; border-left: 4px solid #38b2ac;">
-            <div style="display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap;">
-              <span style="font-size: 14px; color: #234e52; font-weight: 700;">${skill}</span>
-              <span style="font-size: 18px; color: #38b2ac; letter-spacing: 2px;">${filled}<span style="color: #9ae6b4;">${empty}</span></span>
-            </div>
-          </div>`;
-          }).join('')}
         </div>
       </div>
       ` : ''}
@@ -5834,7 +4758,6 @@ function getEventCertificateEmail(data) {
 // Function to check and send class reminders (used by both cron and manual trigger)
 async function checkAndSendReminders() {
   const now = new Date();
-  const adminReminderSentThisRun = new Set();
   console.log('🔔 Checking for upcoming classes to send reminders...');
   console.log(`⏰ Current server time (UTC): ${now.toISOString()}`);
 
@@ -5942,7 +4865,7 @@ async function checkAndSendReminders() {
             console.log(`📍 Using parent timezone: ${parentTimezone} for ${session.student_name}`);
             const localTime = formatUTCToLocal(session.session_date, session.session_time, parentTimezone);
             console.log(`📧 Converted time: ${localTime.date} ${localTime.time} (${localTime.day})`);
-            const joinGateUrl5 = getJoinClassUrl(session.id);
+            const joinGateUrl5 = `${process.env.APP_URL || 'https://fluent-feathers-academy-lms.onrender.com'}/join-class?sid=${session.id}`;
             const reminderEmailHTML = getClassReminderEmail({
               studentName: session.student_name,
               localDate: localTime.date,
@@ -5950,8 +4873,7 @@ async function checkAndSendReminders() {
               localDay: localTime.day,
               classLink: joinGateUrl5,
               hoursBeforeClass: 5,
-              timezoneLabel: getTimezoneLabel(parentTimezone),
-              isDemo: session.is_demo
+              timezoneLabel: getTimezoneLabel(parentTimezone)
             });
 
             const subjectPrefix = session.is_demo ? `🎯 Demo Class Reminder` : session.is_group ? `⏰ Group Class Reminder (${session.group_name})` : '⏰ Class Reminder';
@@ -5973,7 +4895,6 @@ async function checkAndSendReminders() {
         if (hoursDiff > 0.5 && hoursDiff <= 1.5) {
           const emailType1hr = session.is_demo ? 'Reminder-1hr-Demo' : session.is_group ? 'Reminder-1hr-Group' : 'Reminder-1hr';
           const sidCheck1hr = session.is_demo ? `DEMO:${session.id}` : session.id;
-          const adminReminderKey = `${session.is_demo ? 'demo' : session.is_group ? 'group' : 'private'}:${sidCheck1hr}`;
           console.log(`⏰ ${sessionTypeLabel} Session #${session.session_number} (ID:${session.id}) is within 1-hour window, checking if reminder already sent...`);
           // Check if 1-hour reminder already sent for this SPECIFIC session using unique session ID
           const sentCheck = await pool.query(
@@ -5995,7 +4916,7 @@ async function checkAndSendReminders() {
             console.log(`📍 Using parent timezone: ${parentTimezone} for ${session.student_name}`);
             const localTime = formatUTCToLocal(session.session_date, session.session_time, parentTimezone);
             console.log(`📧 Converted time: ${localTime.date} ${localTime.time} (${localTime.day})`);
-            const joinGateUrl1 = getJoinClassUrl(session.id);
+            const joinGateUrl1 = `${process.env.APP_URL || 'https://fluent-feathers-academy-lms.onrender.com'}/join-class?sid=${session.id}`;
             const reminderEmailHTML = getClassReminderEmail({
               studentName: session.student_name,
               localDate: localTime.date,
@@ -6003,8 +4924,7 @@ async function checkAndSendReminders() {
               localDay: localTime.day,
               classLink: joinGateUrl1,
               hoursBeforeClass: 1,
-              timezoneLabel: getTimezoneLabel(parentTimezone),
-              isDemo: session.is_demo
+              timezoneLabel: getTimezoneLabel(parentTimezone)
             });
 
             const subjectPrefix1hr = session.is_demo ? `🎯 Demo Class Reminder` : session.is_group ? `⏰ Group Class Reminder (${session.group_name})` : '⏰ Class Reminder';
@@ -6019,40 +4939,6 @@ async function checkAndSendReminders() {
             console.log(`✅ Sent 1-hour ${sessionTypeLabel} reminder to ${session.parent_email} for Session #${session.session_number} (ID:${session.id})`);
           } else {
             console.log(`⏭️ 1-hour reminder already sent for ${sessionTypeLabel} Session #${session.session_number} (ID:${session.id})`);
-          }
-
-          if (!adminReminderSentThisRun.has(adminReminderKey)) {
-            const adminSentCheck = await pool.query(
-              `SELECT id FROM email_log
-               WHERE email_type = 'Admin-Reminder-1hr'
-                 AND subject LIKE $1
-               LIMIT 1`,
-              [`%[SID:${sidCheck1hr}]%`]
-            );
-
-            if (adminSentCheck.rows.length === 0) {
-              const adminTitle = session.is_demo ? 'Demo Class in 1 Hour' : session.is_group ? 'Group Class in 1 Hour' : 'Class in 1 Hour';
-              const adminBody = session.is_demo
-                ? `${session.student_name} demo class starts in 1 hour.`
-                : session.is_group
-                  ? `${session.group_name || 'Group'} starts in 1 hour.`
-                  : `${session.student_name} starts in 1 hour.`;
-              await sendPushToAdmins(adminTitle, adminBody, {
-                type: 'admin_class_reminder_1hr',
-                session_id: String(session.id),
-                session_kind: session.is_demo ? 'demo' : session.is_group ? 'group' : 'private'
-              });
-              await pool.query(
-                `INSERT INTO email_log (recipient_name, recipient_email, email_type, subject, status, email_body)
-                 VALUES ($1, $2, $3, $4, 'Sent', $5)`,
-                ['Admin', 'admin-push', 'Admin-Reminder-1hr', `${adminTitle} [SID:${sidCheck1hr}]`, adminBody]
-              );
-              console.log(`✅ Sent 1-hour admin reminder for ${sessionTypeLabel} Session #${session.session_number} (ID:${session.id})`);
-            } else {
-              console.log(`⏭️ 1-hour admin reminder already sent for ${sessionTypeLabel} Session #${session.session_number} (ID:${session.id})`);
-            }
-
-            adminReminderSentThisRun.add(adminReminderKey);
           }
         }
       } catch (sessionErr) {
@@ -6496,22 +5382,6 @@ let adminPastCache = { data: null, ts: 0 };
 const ADMIN_UPCOMING_TTL_MS = 60 * 1000;      // 1 minute (refreshes quickly)
 const ADMIN_PAST_TTL_MS = 3 * 60 * 1000;     // 3 minutes
 
-function paginateUpcomingClassesPayload(payload, page = 1, limit = 9) {
-  const classes = Array.isArray(payload?.classes) ? payload.classes : [];
-  const currentPage = Math.max(parseInt(page, 10) || 1, 1);
-  const pageSize = Math.min(Math.max(parseInt(limit, 10) || 9, 1), 50);
-  const startIndex = (currentPage - 1) * pageSize;
-
-  return {
-    success: payload?.success !== false,
-    classes: classes.slice(startIndex, startIndex + pageSize),
-    page: currentPage,
-    limit: pageSize,
-    total: classes.length,
-    hasMore: startIndex + pageSize < classes.length
-  };
-}
-
 function clearAdminDashboardCache() {
   adminUpcomingCache = { data: null, ts: 0 };
   adminPastCache = { data: null, ts: 0 };
@@ -6664,13 +5534,10 @@ app.get('/api/calendar/sessions', async (req, res) => {
 });
 
 app.get('/api/dashboard/upcoming-classes', async (req, res) => {
-  const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
-  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 9, 1), 50);
-
   // Serve from cache if fresh
   if (adminUpcomingCache.data && (Date.now() - adminUpcomingCache.ts) < ADMIN_UPCOMING_TTL_MS) {
     res.set('X-Cache', 'HIT');
-    return res.json(paginateUpcomingClassesPayload(adminUpcomingCache.data, page, limit));
+    return res.json(adminUpcomingCache.data);
   }
   try {
     // Fire all 4 independent queries in parallel
@@ -6785,7 +5652,7 @@ app.get('/api/dashboard/upcoming-classes', async (req, res) => {
         console.error('Error sorting sessions:', e);
         return 0;
       }
-    });
+    }).slice(0, 9); // Show 9 upcoming classes
 
    // For group sessions, fetch enrolled students with their attendance/cancellation status
    const groupSessionIds = upcoming.filter(s => s.display_type === 'Group').map(s => s.id);
@@ -6820,14 +5687,14 @@ app.get('/api/dashboard/upcoming-classes', async (req, res) => {
    // SUCCESS
   const upcomingResp = { success: true, classes: upcoming };
   adminUpcomingCache = { data: upcomingResp, ts: Date.now() };
-res.json(paginateUpcomingClassesPayload(upcomingResp, page, limit));
+res.json(upcomingResp);
 
   } catch (err) {
     console.error('Error loading upcoming classes:', err);
     // ERROR
   const errResp = { success: false, classes: [] };
   adminUpcomingCache = { data: errResp, ts: Date.now() - ADMIN_UPCOMING_TTL_MS + 10000 }; // retry in 10s
-res.status(500).json(paginateUpcomingClassesPayload(errResp, page, limit));
+res.status(500).json(errResp);
 
   }
 });
@@ -6905,7 +5772,7 @@ app.post('/api/demo-leads', async (req, res) => {
           adminName: settings.admin_name || 'Aaliya',
           adminTitle: settings.admin_title || 'Founder & Lead Instructor',
           adminBio: settings.admin_bio || '',
-          classLink: getJoinClassUrl(r.rows[0].id)
+          classLink: DEFAULT_CLASS
         });
 
         emailSent = await sendEmail(
@@ -7010,7 +5877,7 @@ app.put('/api/demo-leads/:id', async (req, res) => {
           adminName: settings.admin_name || 'Aaliya',
           adminTitle: settings.admin_title || 'Founder & Lead Instructor',
           adminBio: settings.admin_bio || '',
-          classLink: getJoinClassUrl(req.params.id)
+          classLink: DEFAULT_CLASS
         });
 
         emailSent = await sendEmail(
@@ -7037,7 +5904,7 @@ app.put('/api/demo-leads/:id', async (req, res) => {
 
 // Convert demo lead to permanent student
 app.post('/api/demo-leads/:id/convert', async (req, res) => {
-  const { program_name, duration, per_session_fee, currency, total_sessions, amount_paid, payment_method, timezone, parent_timezone, send_welcome_email, class_type, group_id } = req.body;
+  const { program_name, duration, per_session_fee, currency, total_sessions, amount_paid, payment_method, timezone, parent_timezone, send_welcome_email, class_type, group_id, is_summer_camp } = req.body;
   try {
     // Get demo lead info
     const lead = await pool.query('SELECT * FROM demo_leads WHERE id = $1', [req.params.id]);
@@ -7058,10 +5925,10 @@ app.post('/api/demo-leads/:id/convert', async (req, res) => {
 
     // Create new student from demo lead
     const studentResult = await pool.query(`
-      INSERT INTO students (name, grade, parent_name, parent_email, primary_contact, timezone, parent_timezone, program_name, class_type, duration, currency, per_session_fee, total_sessions, completed_sessions, remaining_sessions, fees_paid, payment_method, is_active, group_id, group_name)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 0, $13, $14, $15, true, $16, $17)
+      INSERT INTO students (name, grade, parent_name, parent_email, primary_contact, timezone, parent_timezone, program_name, class_type, duration, currency, per_session_fee, total_sessions, completed_sessions, remaining_sessions, fees_paid, payment_method, is_active, group_id, group_name, is_summer_camp)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 0, $13, $14, $15, true, $16, $17, $18)
       RETURNING *
-    `, [demoLead.child_name, demoLead.child_grade, demoLead.parent_name, demoLead.parent_email, demoLead.phone, studentTimezone, parentTimezone, program_name, class_type || 'Private', duration, currency, per_session_fee, total_sessions, amount_paid, payment_method, group_id || null, groupName]);
+    `, [demoLead.child_name, demoLead.child_grade, demoLead.parent_name, demoLead.parent_email, demoLead.phone, studentTimezone, parentTimezone, program_name, class_type || 'Private', duration, currency, per_session_fee, total_sessions, amount_paid, payment_method, group_id || null, groupName, is_summer_camp || false]);
 
     const newStudent = studentResult.rows[0];
 
@@ -7141,27 +6008,15 @@ app.get('/api/students', async (req, res) => {
   try {
     const r = await executeQuery(`
       SELECT s.*,
-        COALESCE(pt.parent_push_enabled, false) AS parent_push_enabled,
-        COALESCE(pt.parent_push_device_count, 0) AS parent_push_device_count,
-        pt.parent_push_last_seen_at,
         COUNT(DISTINCT m.id) as makeup_credits,
         GREATEST(COALESCE(s.missed_sessions, 0), COALESCE((SELECT COUNT(*) FROM sessions WHERE student_id = s.id AND status IN ('Missed', 'Excused', 'Unexcused')), 0)) as missed_sessions,
         (SELECT MAX(created_at) FROM monthly_assessments WHERE student_id = s.id AND assessment_type = 'monthly') as last_assessment_date,
         (SELECT COUNT(*) FROM monthly_assessments WHERE student_id = s.id AND assessment_type = 'monthly') as total_assessments,
         CASE WHEN EXISTS (SELECT 1 FROM parent_fcm_tokens WHERE parent_email = s.parent_email) THEN true ELSE false END as parent_push_enabled
       FROM students s
-      LEFT JOIN (
-        SELECT
-          LOWER(parent_email) AS email_key,
-          true AS parent_push_enabled,
-          COUNT(*)::int AS parent_push_device_count,
-          MAX(updated_at) AS parent_push_last_seen_at
-        FROM parent_fcm_tokens
-        GROUP BY LOWER(parent_email)
-      ) pt ON pt.email_key = LOWER(s.parent_email)
       LEFT JOIN makeup_classes m ON s.id = m.student_id AND m.status = 'Available'
       WHERE s.is_active = true
-      GROUP BY s.id, pt.parent_push_enabled, pt.parent_push_device_count, pt.parent_push_last_seen_at
+      GROUP BY s.id
       ORDER BY s.created_at DESC
     `);
 
@@ -7713,11 +6568,6 @@ app.post('/api/schedule/private-classes', async (req, res) => {
     const makeupMsg = makeupClasses.length > 0 ? ` (${makeupClasses.length} using makeup credits)` : '';
     const emailMsg = emailSent === true ? ' and email sent!' : emailSent === false ? ' (email failed to send)' : '';
     const message = 'Classes scheduled successfully!' + emailMsg + makeupMsg;
-    sendPushToAdmins(
-      'Class Scheduled',
-      `${student.name}: ${classes.length} class${classes.length !== 1 ? 'es' : ''} scheduled${makeupClasses.length > 0 ? `, including ${makeupClasses.length} makeup` : ''}.`,
-      { type: 'admin_schedule_private', student_id: String(student_id) }
-    ).catch(() => {});
     res.json({ success: true, message, emailSent });
   } catch (err) {
     await client.query('ROLLBACK');
@@ -7917,11 +6767,6 @@ app.post('/api/schedule/group-classes', async (req, res) => {
 
     const emailMsg = send_email !== false && emailsSent > 0 ? ` and emails sent to ${emailsSent} students` : '';
     const message = `Group classes scheduled successfully!${emailMsg}${makeupMsg}`;
-    sendPushToAdmins(
-      'Classes Scheduled',
-      `${group.group_name}: ${classes.length} class${classes.length !== 1 ? 'es' : ''} scheduled.`,
-      { type: 'admin_schedule_group', group_id: String(group_id) }
-    ).catch(() => {});
     res.json({ success: true, message, emailsSent });
   } catch (err) {
     await client.query('ROLLBACK');
@@ -8118,40 +6963,14 @@ app.get('/api/groups/:groupId/matching-private-sessions', async (req, res) => {
       ORDER BY s.session_date, s.session_time, st.name
     `, [req.params.groupId])).rows;
 
-    const existingGroupSessions = (await pool.query(`
-      SELECT s.id, s.session_date, s.session_time
-      FROM sessions s
-      WHERE s.group_id = $1
-        AND s.session_type = 'Group'
-        AND s.status IN ('Pending', 'Scheduled')
-    `, [req.params.groupId])).rows;
-
     const grouped = new Map();
-    for (const sess of existingGroupSessions) {
-      const key = `${sess.session_date}|${sess.session_time}`;
-      if (!grouped.has(key)) {
-        grouped.set(key, {
-          session_date: sess.session_date,
-          session_time: sess.session_time,
-          students: [],
-          existing_group_session_id: sess.id,
-          existing_group_count: 1
-        });
-      } else {
-        grouped.get(key).existing_group_session_id = sess.id;
-        grouped.get(key).existing_group_count = 1;
-      }
-    }
-
     for (const row of rows) {
       const key = `${row.session_date}|${row.session_time}`;
       if (!grouped.has(key)) {
         grouped.set(key, {
           session_date: row.session_date,
           session_time: row.session_time,
-          students: [],
-          existing_group_session_id: null,
-          existing_group_count: 0
+          students: []
         });
       }
       grouped.get(key).students.push({
@@ -8166,10 +6985,10 @@ app.get('/api/groups/:groupId/matching-private-sessions', async (req, res) => {
     }
 
     const matches = Array.from(grouped.values())
-      .filter(slot => slot.students.length + (slot.existing_group_count || 0) >= 2)
+      .filter(slot => slot.students.length >= 2)
       .map(slot => ({
         ...slot,
-        student_count: slot.students.length + (slot.existing_group_count || 0)
+        student_count: slot.students.length
       }));
 
     res.json(matches);
@@ -8314,7 +7133,6 @@ app.get('/api/sessions/:studentId', async (req, res) => {
             SELECT json_agg(
               json_build_object(
                 'file_path', file_path,
-                'file_type', file_type,
                 'feedback_grade', feedback_grade,
                 'feedback_comments', feedback_comments,
                 'corrected_file_path', corrected_file_path,
@@ -8324,7 +7142,7 @@ app.get('/api/sessions/:studentId', async (req, res) => {
               ) ORDER BY uploaded_at ASC NULLS LAST
             ) as hw_submissions
             FROM materials
-            WHERE session_id = s.id AND student_id = $1 AND file_type IN ('Homework', 'Classwork') AND uploaded_by IN ('Parent', 'Admin')
+            WHERE session_id = s.id AND student_id = $1 AND file_type = 'Homework' AND uploaded_by IN ('Parent', 'Admin')
           ) ma ON true
           LEFT JOIN class_feedback cf ON cf.session_id = s.id AND cf.student_id = $1
           WHERE s.student_id = $1 AND s.session_type = 'Private'
@@ -8364,7 +7182,6 @@ app.get('/api/sessions/:studentId', async (req, res) => {
               SELECT json_agg(
                 json_build_object(
                   'file_path', file_path,
-                  'file_type', file_type,
                   'feedback_grade', feedback_grade,
                   'feedback_comments', feedback_comments,
                   'corrected_file_path', corrected_file_path,
@@ -8374,7 +7191,7 @@ app.get('/api/sessions/:studentId', async (req, res) => {
                 ) ORDER BY uploaded_at ASC NULLS LAST
               ) as hw_submissions
               FROM materials
-              WHERE session_id = s.id AND student_id = $1 AND file_type IN ('Homework', 'Classwork') AND uploaded_by IN ('Parent', 'Admin')
+              WHERE session_id = s.id AND student_id = $1 AND file_type = 'Homework' AND uploaded_by IN ('Parent', 'Admin')
             ) ma ON true
             LEFT JOIN class_feedback cf ON cf.session_id = s.id AND cf.student_id = $1
             WHERE s.group_id = $2 AND s.session_type = 'Group'
@@ -8508,7 +7325,7 @@ app.put('/api/sessions/:sessionId', async (req, res) => {
     const sessionRes = await pool.query('SELECT * FROM sessions WHERE id = $1', [req.params.sessionId]);
     if (sessionRes.rows.length === 0) return res.status(404).json({ error: 'Session not found' });
     const session = sessionRes.rows[0];
-    
+
     // Convert database date objects to ISO string (YYYY-MM-DD)
     let oldDate = session.session_date;
     if (oldDate instanceof Date) {
@@ -8533,7 +7350,7 @@ app.put('/api/sessions/:sessionId', async (req, res) => {
 
     // Clear old reminder email logs for this session so new reminders can be sent
     await pool.query(
-      `DELETE FROM email_log WHERE email_type IN ('Reminder-5hrs', 'Reminder-5hrs-Group', 'Reminder-1hr', 'Reminder-1hr-Group', 'Admin-Reminder-1hr') AND subject LIKE $1`,
+      `DELETE FROM email_log WHERE email_type IN ('Reminder-5hrs', 'Reminder-5hrs-Group', 'Reminder-1hr', 'Reminder-1hr-Group') AND subject LIKE $1`,
       [`%[SID:${req.params.sessionId}]%`]
     );
 
@@ -8613,7 +7430,6 @@ app.post('/api/sessions/:sessionId/cancel', async (req, res) => {
         INSERT INTO makeup_classes (student_id, original_session_id, reason, credit_date, status, added_by, notes)
         VALUES ($1, $2, $3, CURRENT_DATE, 'Available', 'admin', $4)
       `, [session.student_id, session.id, reason || 'Teacher cancelled', notes || '']);
-      await resetPackageExhaustedNotice(session.student_id);
     }
 
     // Decrement remaining_sessions for the student (private sessions only)
@@ -8804,22 +7620,6 @@ app.put('/api/sessions/:sessionId/topic', async (req, res) => {
   }
 });
 
-app.post('/api/sessions/:sessionId/teacher-joined', async (req, res) => {
-  try {
-    const result = await notifyParentsTeacherJoinedSession(req.params.sessionId);
-    if (!result.success) {
-      const status =
-        result.reason === 'not_found' ? 404 :
-        result.reason === 'invalid_session' ? 400 : 200;
-      return res.status(status).json(result);
-    }
-    res.json(result);
-  } catch (err) {
-    console.error('Teacher-joined notification error:', err);
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
 app.post('/api/sessions/:sessionId/attendance', async (req, res) => {
   try {
     const { attendance } = req.body;
@@ -8876,7 +7676,6 @@ app.post('/api/sessions/:sessionId/attendance', async (req, res) => {
             INSERT INTO makeup_classes (student_id, original_session_id, reason, credit_date, status, added_by)
             VALUES ($1, $2, 'Excused absence', CURRENT_DATE, 'Available', 'admin')
           `, [studentId, sessionId]);
-          await resetPackageExhaustedNotice(studentId);
         }
       } else {
         if (!alreadyCounted) {
@@ -8884,8 +7683,6 @@ app.post('/api/sessions/:sessionId/attendance', async (req, res) => {
           await pool.query('UPDATE students SET remaining_sessions = GREATEST(remaining_sessions - 1, 0), renewal_reminder_sent = false WHERE id = $1', [studentId]);
         }
       }
-
-      await markScheduledMakeupCreditUsed(sessionId, studentId);
     }
 
     const message = attendance === 'Present' ? 'Marked as Present' :
@@ -9021,13 +7818,18 @@ app.post('/api/sessions/:sessionId/group-attendance', async (req, res) => {
           if (completedCount === 50) await awardBadge(record.student_id, '50_classes', '💎 50 Classes Diamond', 'Amazing milestone!');
         }
       } else if (record.attendance === 'Excused') {
-        // Excused absence - grant makeup credit (only if not already excused)
+        // Excused absence - grant makeup credit (only if not already excused and not a summer camp student)
         if (!wasExcused) {
-          await client.query(`
-            INSERT INTO makeup_classes (student_id, original_session_id, reason, credit_date, status, added_by)
-            VALUES ($1, $2, 'Excused absence (group class)', CURRENT_DATE, 'Available', 'admin')
-          `, [record.student_id, sessionId]);
-          await resetPackageExhaustedNotice(record.student_id, client);
+          // Check if student is a summer camp student
+          const studentCheck = await client.query('SELECT is_summer_camp FROM students WHERE id = $1', [record.student_id]);
+          const isSummerCamp = studentCheck.rows.length > 0 && studentCheck.rows[0].is_summer_camp;
+
+          if (!isSummerCamp) {
+            await client.query(`
+              INSERT INTO makeup_classes (student_id, original_session_id, reason, credit_date, status, added_by)
+              VALUES ($1, $2, 'Excused absence (group class)', CURRENT_DATE, 'Available', 'admin')
+            `, [record.student_id, sessionId]);
+          }
 
           // Decrement remaining sessions if coming from Pending
           if (wasPending) {
@@ -9040,8 +7842,6 @@ app.post('/api/sessions/:sessionId/group-attendance', async (req, res) => {
           await client.query(`UPDATE students SET remaining_sessions = GREATEST(remaining_sessions - 1, 0), renewal_reminder_sent = false WHERE id = $1`, [record.student_id]);
         }
       }
-
-      await markScheduledMakeupCreditUsed(sessionId, record.student_id, client);
     }
 
     await client.query('UPDATE sessions SET status = $1 WHERE id = $2', ['Completed', sessionId]);
@@ -9098,11 +7898,11 @@ app.post('/api/sessions/:sessionId/reschedule', async (req, res) => {
 
     const renumberedSession = await client.query('SELECT session_number FROM sessions WHERE id = $1', [sessionId]);
     const updatedSessionNumber = renumberedSession.rows[0]?.session_number || session.session_number;
-  
+
 
     // Clear old reminder email logs for this session so new reminders can be sent
     await client.query(
-      `DELETE FROM email_log WHERE email_type IN ('Reminder-5hrs', 'Reminder-5hrs-Group', 'Reminder-1hr', 'Reminder-1hr-Group', 'Admin-Reminder-1hr') AND subject LIKE $1`,
+      `DELETE FROM email_log WHERE email_type IN ('Reminder-5hrs', 'Reminder-5hrs-Group', 'Reminder-1hr', 'Reminder-1hr-Group') AND subject LIKE $1`,
       [`%[SID:${sessionId}]%`]
     );
 
@@ -9322,12 +8122,11 @@ app.get('/api/materials/:studentId', async (req, res) => {
 app.post('/api/upload/homework/:studentId', handleUpload('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded. If using Cloudinary, check credentials in Render environment variables.' });
   try {
-    const submissionType = req.body.submissionType === 'Classwork' ? 'Classwork' : 'Homework';
     // Duplicate guard: block re-submission of the same filename for the same session
     if (req.body.sessionId) {
       const dup = await pool.query(
-        `SELECT id FROM materials WHERE student_id = $1 AND session_id = $2 AND file_name = $3 AND file_type = $4 AND uploaded_by = 'Parent'`,
-        [req.params.studentId, req.body.sessionId, req.file.originalname, submissionType]
+        `SELECT id FROM materials WHERE student_id = $1 AND session_id = $2 AND file_name = $3 AND uploaded_by = 'Parent'`,
+        [req.params.studentId, req.body.sessionId, req.file.originalname]
       );
       if (dup.rows.length > 0) {
         return res.status(409).json({ error: 'duplicate', message: `'${req.file.originalname}' was already submitted for this session.` });
@@ -9350,29 +8149,21 @@ app.post('/api/upload/homework/:studentId', handleUpload('file'), async (req, re
 
     await pool.query(`
       INSERT INTO materials (student_id, session_id, session_date, file_type, file_name, file_path, uploaded_by)
-      VALUES ($1, $2, CURRENT_DATE, $3, $4, $5, 'Parent')
-    `, [req.params.studentId, req.body.sessionId, submissionType, req.file.originalname, filePath]);
+      VALUES ($1, $2, CURRENT_DATE, 'Homework', $3, $4, 'Parent')
+    `, [req.params.studentId, req.body.sessionId, req.file.originalname, filePath]);
 
-    if (submissionType === 'Homework') {
-      // Homework-only badges should not be awarded for classwork uploads.
-      await awardBadge(req.params.studentId, 'hw_submit', '📝 Homework Hero', 'Submitted homework on time');
+    // Award homework submission badge
+    await awardBadge(req.params.studentId, 'hw_submit', '📝 Homework Hero', 'Submitted homework on time');
 
-      const hwCount = await pool.query('SELECT COUNT(*) as count FROM materials WHERE student_id = $1 AND file_type = \'Homework\'', [req.params.studentId]);
-      const count = parseInt(hwCount.rows[0].count);
+    // Check total homework submissions for milestone badges
+    const hwCount = await pool.query('SELECT COUNT(*) as count FROM materials WHERE student_id = $1 AND file_type = \'Homework\'', [req.params.studentId]);
+    const count = parseInt(hwCount.rows[0].count);
 
-      if (count === 5) await awardBadge(req.params.studentId, '5_homework', '📚 5 Homework Superstar', 'Submitted 5 homework assignments!');
-      if (count === 10) await awardBadge(req.params.studentId, '10_homework', '🎓 10 Homework Champion', 'Submitted 10 homework assignments!');
-      if (count === 25) await awardBadge(req.params.studentId, '25_homework', '🏅 25 Homework Master', 'Submitted 25 homework assignments!');
-    }
+    if (count === 5) await awardBadge(req.params.studentId, '5_homework', '📚 5 Homework Superstar', 'Submitted 5 homework assignments!');
+    if (count === 10) await awardBadge(req.params.studentId, '10_homework', '🎓 10 Homework Champion', 'Submitted 10 homework assignments!');
+    if (count === 25) await awardBadge(req.params.studentId, '25_homework', '🏅 25 Homework Master', 'Submitted 25 homework assignments!');
 
-    await notifyAdminsStudentSubmission({
-      studentId: req.params.studentId,
-      submissionType,
-      sessionId: req.body.sessionId || null,
-      fileName: req.file.originalname || ''
-    });
-
-    res.json({ message: `${submissionType} uploaded successfully!`, file_type: submissionType });
+    res.json({ message: 'Homework uploaded successfully!' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -9822,6 +8613,105 @@ app.post('/api/public/demo-register', async (req, res) => {
   }
 });
 
+// Summer Camp Registration
+app.post('/api/public/summer-camp-register', async (req, res) => {
+  try {
+    const { child_name, child_age, parent_name, email, phone, timezone } = req.body;
+
+    // Validate required fields
+    if (!child_name || !child_age || !parent_name || !email || !phone || !timezone) {
+      return res.status(400).json({ error: 'All fields are required' });
+    }
+
+    // Check for duplicate email in demo_leads (prevent double registrations)
+    const existing = await pool.query(
+      `SELECT id FROM demo_leads WHERE parent_email = $1 AND type = 'summer_camp' AND status NOT IN ('Converted', 'Not Interested', 'No Show')`,
+      [email]
+    );
+    if (existing.rows.length > 0) {
+      return res.status(400).json({ error: 'You have already registered for summer camp. We will contact you shortly!' });
+    }
+
+    // Insert into demo_leads with type summer_camp
+    const result = await pool.query(`
+      INSERT INTO demo_leads (child_name, child_grade, parent_name, parent_email, phone, student_timezone, parent_timezone, source, status, type)
+      VALUES ($1, $2, $3, $4, $5, $6, $6, 'Website Form', 'Pending', 'summer_camp')
+      RETURNING *
+    `, [child_name, child_age, parent_name, email, phone, timezone]);
+
+    // Send confirmation email
+    try {
+      const confirmationHTML = `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="margin: 0; padding: 0; background-color: #f0f4f8; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
+  <div style="max-width: 600px; margin: 20px auto; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.1);">
+    <div style="background: linear-gradient(135deg, #B05D9E 0%, #764ba2 100%); padding: 40px 30px; text-align: center;">
+      <div style="font-size: 50px; margin-bottom: 10px;">☀️</div>
+      <h1 style="margin: 0; color: white; font-size: 28px;">Summer Camp Registration</h1>
+      <p style="color: rgba(255,255,255,0.9); margin-top: 10px; font-size: 16px;">We're excited to have ${child_name} join our summer camp!</p>
+    </div>
+    <div style="padding: 30px;">
+      <p style="font-size: 16px; color: #2d3748; margin-bottom: 20px;">Dear <strong>${parent_name}</strong>,</p>
+      <p style="font-size: 15px; color: #4a5568; line-height: 1.7; margin-bottom: 20px;">
+        Thank you for registering <strong>${child_name}</strong> for our exciting <strong style="color: #B05D9E;">Summer Camp</strong> at Fluent Feathers Academy!
+      </p>
+      <div style="background: #f7fafc; padding: 20px; border-radius: 10px; margin: 25px 0;">
+        <h3 style="margin: 0 0 15px; color: #2d3748; font-size: 16px;">Registration Details:</h3>
+        <table style="width: 100%; font-size: 14px; color: #4a5568;">
+          <tr><td style="padding: 8px 0;">Child's Name:</td><td style="padding: 8px 0; text-align: right; font-weight: bold;">${child_name}</td></tr>
+          <tr><td style="padding: 8px 0;">Age:</td><td style="padding: 8px 0; text-align: right; font-weight: bold;">${child_age}</td></tr>
+          <tr><td style="padding: 8px 0;">Timezone:</td><td style="padding: 8px 0; text-align: right; font-weight: bold;">${timezone}</td></tr>
+        </table>
+      </div>
+
+      <div style="background: linear-gradient(135deg, #e9d8fd 0%, #faf5ff 100%); padding: 20px; border-radius: 10px; border-left: 4px solid #B05D9E; margin: 25px 0;">
+        <p style="margin: 0; font-size: 15px; color: #553c9a; line-height: 1.6;">
+          <strong>What's next?</strong><br>
+          Our team will contact you shortly with more details about the summer camp schedule and activities. Stay tuned!
+        </p>
+      </div>
+
+      <p style="margin: 25px 0 0; font-size: 15px; color: #4a5568;">
+        Warm regards,<br>
+        <strong style="color: #B05D9E;">Team Fluent Feathers Academy</strong>
+      </p>
+    </div>
+    <div style="background: #f7fafc; padding: 15px 30px; text-align: center; border-top: 1px solid #e2e8f0;">
+      <p style="margin: 0; color: #718096; font-size: 13px;">Made with ❤️ By Aaliya</p>
+    </div>
+  </div>
+</body></html>`;
+
+      await sendEmail(
+        email,
+        `☀️ Summer Camp Registration Confirmed - ${child_name} | Fluent Feathers Academy`,
+        confirmationHTML,
+        parent_name,
+        'Summer-Camp-Registration'
+      );
+    } catch (emailErr) {
+      console.error('Failed to send summer camp registration email:', emailErr);
+      // Registration still succeeds even if email fails
+    }
+
+    console.log(`✅ New summer camp registration from website: ${child_name} - ${parent_name} <${email}>`);
+    res.json({ success: true, message: 'Summer camp registration successful!' });
+  } catch (err) {
+    console.error('Summer camp registration error:', err);
+    res.status(500).json({ error: 'Registration failed. Please try again.' });
+  }
+});
+
+// Get summer camp leads
+app.get('/api/summer-camp-leads', async (req, res) => {
+  try {
+    const r = await pool.query("SELECT * FROM demo_leads WHERE type = 'summer_camp' ORDER BY created_at DESC");
+    res.json(r.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post('/api/public/birthday-cards', async (req, res) => {
   try {
     const name = String(req.body.name || '').trim().slice(0, 60);
@@ -10016,7 +8906,7 @@ app.get('/api/sessions/past/all', async (req, res) => {
   try {
     const today = new Date().toISOString().split('T')[0];
     const requestedLimit = Math.min(Math.max(parseInt(req.query.limit) || 50, 10), 300);
-    
+
     // Compute chronological session numbering per student/group (oldest -> newest)
     const r = await executeQuery(`
       WITH numbered_sessions AS (
@@ -10140,7 +9030,6 @@ app.post('/api/sessions/:sessionId/group-cancel-student', async (req, res) => {
           INSERT INTO makeup_classes (student_id, original_session_id, reason, credit_date, status, added_by, notes)
           VALUES ($1, $2, $3, CURRENT_DATE, 'Available', 'admin', $4)
         `, [student_id, sessionId, reason || 'Parent requested cancellation (group class)', notes || '']);
-        await resetPackageExhaustedNotice(student_id, client);
       }
 
       if (wasPending) {
@@ -10221,6 +9110,12 @@ app.post('/api/sessions/:sessionId/group-cancel-student', async (req, res) => {
 app.post('/api/parent/cancel-class', async (req, res) => {
   const id = req.adminStudentId || req.body.student_id;
   try {
+    // Check if student is a summer camp student
+    const studentCheck = await pool.query('SELECT is_summer_camp FROM students WHERE id = $1', [id]);
+    if (studentCheck.rows.length > 0 && studentCheck.rows[0].is_summer_camp) {
+      return res.status(400).json({ error: 'Summer camp students cannot cancel classes. Recordings will be provided for missed sessions.' });
+    }
+
     // Try private session first
     let session = (await pool.query('SELECT * FROM sessions WHERE id = $1 AND student_id = $2', [req.body.session_id, id])).rows[0];
     let isGroup = false;
@@ -10268,13 +9163,6 @@ app.post('/api/parent/cancel-class', async (req, res) => {
 
     // Give makeup credit in both cases
     await pool.query(`INSERT INTO makeup_classes (student_id, original_session_id, reason, credit_date, status, added_by) VALUES ($1, $2, $3, CURRENT_DATE, 'Available', 'parent')`, [id, session.id, req.body.reason || 'Parent cancelled']);
-    await resetPackageExhaustedNotice(id);
-
-    sendPushToAdmins(
-      'Class Cancelled by Parent',
-      `${student ? student.name : 'A student'} cancelled a ${isGroup ? 'group' : 'private'} class. Reason: ${req.body.reason || 'Parent cancelled'}.`,
-      { type: 'admin_parent_cancel', student_id: String(id), session_id: String(session.id) }
-    ).catch(() => {});
 
     // Send cancellation confirmation email to parent
     if (student && student.parent_email) {
@@ -10351,7 +9239,6 @@ app.post('/api/students/:studentId/makeup-credits', async (req, res) => {
       INSERT INTO makeup_classes (student_id, reason, credit_date, status, added_by, notes)
       VALUES ($1, $2, CURRENT_DATE, 'Available', 'admin', $3)
     `, [studentId, reason || 'Emergency - added by admin', notes || '']);
-    await resetPackageExhaustedNotice(studentId);
 
     // Send email to parent about makeup credit
     if (student && student.parent_email) {
@@ -10409,6 +9296,12 @@ app.put('/api/makeup-credits/:creditId/schedule', async (req, res) => {
   try {
     const { creditId } = req.params;
     const { session_date, session_time, student_id } = req.body;
+
+    // Check if student is a summer camp student
+    const studentCheck = await client.query('SELECT is_summer_camp FROM students WHERE id = $1', [student_id]);
+    if (studentCheck.rows.length > 0 && studentCheck.rows[0].is_summer_camp) {
+      return res.status(400).json({ error: 'Summer camp students cannot use makeup credits. Recordings are provided for missed sessions.' });
+    }
 
     // Verify credit exists and is available
     const credit = await client.query('SELECT * FROM makeup_classes WHERE id = $1 AND status = $2', [creditId, 'Available']);
@@ -10710,8 +9603,7 @@ app.post('/api/students/:id/renewal', async (req, res) => {
         remaining_sessions = remaining_sessions + $1,
         fees_paid = fees_paid + $2,
         renewal_reminder_sent = false,
-        last_reminder_remaining = NULL,
-        package_exhausted_notice_sent = false
+        last_reminder_remaining = NULL
       WHERE id = $3
     `, [sessionsNum, amount, req.params.id]);
     await renumberPrivateSessionsForStudent(req.params.id, client);
@@ -11543,7 +10435,7 @@ app.get('/api/cleanup/orphaned-count', async (req, res) => {
 
 // ==================== EDIT & DELETE STUDENT ====================
 app.put('/api/students/:id', async (req, res) => {
-  const { name, grade, parent_name, parent_email, primary_contact, timezone, parent_timezone, program_name, class_type, duration, per_session_fee, currency, date_of_birth, class_link } = req.body;
+  const { name, grade, parent_name, parent_email, primary_contact, timezone, parent_timezone, program_name, duration, per_session_fee, currency, date_of_birth, class_link } = req.body;
   try {
     const studentTimezone = timezone || parent_timezone || 'Asia/Kolkata';
     const parentTimezone = studentTimezone; // single timezone — admin sets one value for everything
@@ -11551,10 +10443,10 @@ app.put('/api/students/:id', async (req, res) => {
       UPDATE students SET
         name = $1, grade = $2, parent_name = $3, parent_email = $4,
         primary_contact = $5, timezone = $6, parent_timezone = $7, program_name = $8,
-        class_type = $9, duration = $10, per_session_fee = $11, currency = $12,
-        date_of_birth = $13, class_link = $14
-      WHERE id = $15
-    `, [name, grade, parent_name, parent_email, primary_contact, studentTimezone, parentTimezone, program_name, class_type || 'Private', duration, per_session_fee, currency, date_of_birth || null, class_link || null, req.params.id]);
+        duration = $9, per_session_fee = $10, currency = $11,
+        date_of_birth = $12, class_link = $13
+      WHERE id = $14
+    `, [name, grade, parent_name, parent_email, primary_contact, studentTimezone, parentTimezone, program_name, duration, per_session_fee, currency, date_of_birth || null, class_link || null, req.params.id]);
     // Sync parent_credentials so the stored value is authoritative
     if (parent_email) {
       await pool.query(
@@ -12680,6 +11572,7 @@ app.post('/api/materials/:id/grade', async (req, res) => {
       // Send email notification to parent
       if (material.parent_email) {
         try {
+          const materialType = material.file_type === 'Classwork' ? 'Classwork' : 'Homework';
           const feedbackEmailHTML = getHomeworkFeedbackEmail({
             studentName: material.student_name,
             parentName: material.parent_name,
@@ -12692,7 +11585,7 @@ app.post('/api/materials/:id/grade', async (req, res) => {
 
           await sendEmail(
             material.parent_email,
-            `📝 Homework Feedback - ${material.student_name}'s Homework Reviewed`,
+            `📝 ${materialType} Feedback - ${material.student_name}'s ${materialType} Reviewed`,
             feedbackEmailHTML,
             material.parent_name,
             `${materialType}-Feedback`
@@ -12776,7 +11669,7 @@ app.post('/api/materials/:id/annotate', express.json({ limit: '20mb' }), async (
         });
         await sendEmail(
           material.parent_email,
-          `📝 Homework Corrected - ${material.student_name}'s Homework Reviewed`,
+          `📝 ${materialType} Corrected - ${material.student_name}'s ${materialType} Reviewed`,
           feedbackEmailHTML,
           material.parent_name,
           `${materialType}-Feedback`
@@ -12819,12 +11712,12 @@ app.get('/api/students/:id/homework', async (req, res) => {
 // AI auto-correct homework using GPT-4 Vision
 app.post('/api/homework/ai-annotate', express.json({ limit: '20mb' }), async (req, res) => {
   try {
-    const groqKey = getGroqApiKey();
+    const groqKey = process.env.GROQ_API_KEY;
     if (!groqKey) {
       return res.status(400).json({ error: 'GROQ_API_KEY is not configured. Add it to your environment variables on Render. Get a free key at console.groq.com' });
     }
 
-    const { image_data, student_name, minimal, material_id, file_name } = req.body;
+    const { image_data, student_name, minimal } = req.body;
     if (!image_data) return res.status(400).json({ error: 'No image data provided' });
 
     const studentLabel = student_name ? `Student: ${student_name}. ` : '';
@@ -12866,7 +11759,8 @@ For x and y: estimate the percentage position (0-100) from the TOP-LEFT corner o
 If the writing has no errors, return {"corrections": [], "grade": "A+", "summary": "${student_name ? student_name + ', excellent' : 'Excellent'} work! No errors found."}
 Return ONLY the JSON. No markdown. No explanation.`;
 
-    const content = await callGroqChatCompletion(
+    const response = await axios.post(
+      'https://api.groq.com/openai/v1/chat/completions',
       {
         model: 'meta-llama/llama-4-scout-17b-16e-instruct',
         messages: [{
@@ -12879,14 +11773,26 @@ Return ONLY the JSON. No markdown. No explanation.`;
         max_tokens: 4096,
         temperature: 0.1
       },
-      45000
+      { headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${groqKey}` }, timeout: 45000 }
     );
+
+    const content = response.data.choices?.[0]?.message?.content?.trim();
+    if (!content) return res.status(500).json({ error: 'Groq returned empty response' });
+
+    // Extract JSON block, strip markdown fences if present
+    let jsonStr = content;
+    const fenceMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    if (fenceMatch) jsonStr = fenceMatch[1].trim();
+    else { const braceMatch = content.match(/\{[\s\S]*\}/); if (braceMatch) jsonStr = braceMatch[0]; }
 
     let result;
     try {
-      result = extractJsonObject(content);
+      result = JSON.parse(jsonStr);
     } catch (parseErr) {
-      return res.status(500).json({ error: 'AI returned malformed JSON', raw: String(content || '').slice(0, 300) });
+      // Attempt to sanitize common issues: replace unescaped newlines inside strings
+      const sanitized = jsonStr.replace(/[\r\n]+/g, ' ').replace(/([^\\])\\'/g, "$1'");
+      try { result = JSON.parse(sanitized); }
+      catch (e2) { return res.status(500).json({ error: 'AI returned malformed JSON', raw: jsonStr.slice(0, 300) }); }
     }
     const allowedTypes = new Set(['spelling', 'grammar', 'punctuation', 'capitalization']);
     const defaultNotes = {
@@ -12916,51 +11822,15 @@ Return ONLY the JSON. No markdown. No explanation.`;
         }).filter((item) => item.correct || item.note)
       : [];
 
-    let integrity = null;
-    try {
-      integrity = await analyzeHomeworkIntegrityFromImage({
-        imageData: image_data,
-        studentName: student_name,
-        fileName: file_name
-      });
-      if (material_id) await saveMaterialIntegrityReport(material_id, integrity);
-    } catch (integrityErr) {
-      console.warn('AI integrity analysis failed:', integrityErr.message);
-    }
-
     res.json({
       corrections: normalizedCorrections,
       grade: String(result?.grade || '').trim().slice(0, 20),
-      summary: String(result?.summary || '').trim().slice(0, 240),
-      integrity
+      summary: String(result?.summary || '').trim().slice(0, 240)
     });
   } catch (err) {
     console.error('AI annotate error:', err.response?.data || err.message);
     const msg = err.response?.data?.error?.message || err.message;
     res.status(500).json({ error: msg });
-  }
-});
-
-app.post('/api/homework/ai-integrity', express.json({ limit: '20mb' }), async (req, res) => {
-  try {
-    if (!getGroqApiKey()) {
-      return res.status(400).json({ error: 'GROQ_API_KEY is not configured. Add it to your environment variables on Render. Get a free key at console.groq.com' });
-    }
-
-    const { image_data, student_name, file_name, material_id } = req.body;
-    if (!image_data) return res.status(400).json({ error: 'No image data provided' });
-
-    const integrity = await analyzeHomeworkIntegrityFromImage({
-      imageData: image_data,
-      studentName: student_name,
-      fileName: file_name
-    });
-
-    if (material_id) await saveMaterialIntegrityReport(material_id, integrity);
-    res.json(integrity);
-  } catch (err) {
-    console.error('AI integrity error:', err.response?.data || err.message);
-    res.status(500).json({ error: err.response?.data?.error?.message || err.message });
   }
 });
 
@@ -13479,13 +12349,6 @@ app.post('/api/challenges/:challengeId/student/:studentId/submit', handleUpload(
       );
     }
 
-    await notifyAdminsStudentSubmission({
-      studentId,
-      submissionType: 'Challenge',
-      challengeId,
-      fileName
-    });
-
     res.json({ success: true, message: 'Challenge submitted for review!' });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -13511,12 +12374,6 @@ app.put('/api/challenges/:challengeId/student/:studentId/submit', async (req, re
         [challengeId, studentId]
       );
     }
-
-    await notifyAdminsStudentSubmission({
-      studentId,
-      submissionType: 'Challenge',
-      challengeId
-    });
 
     res.json({ success: true, message: 'Challenge submitted for review!' });
   } catch (err) {
@@ -13696,33 +12553,38 @@ app.get('/api/students/:id/expectations', async (req, res) => {
 
 // Update student expectations (parent or admin)
 app.put('/api/students/:id/expectations', async (req, res) => {
-  const { expectations } = req.body;
+  const { expectations, source } = req.body;
   try {
     await pool.query('UPDATE students SET parent_expectations = $1 WHERE id = $2', [expectations, req.params.id]);
+    if (source === 'parent') {
+      const studentResult = await pool.query('SELECT name, parent_name FROM students WHERE id = $1', [req.params.id]);
+      const student = studentResult.rows[0];
+      if (student) {
+        await sendAdminPushNotification(
+          'Parent Expectations Submitted',
+          `${student.parent_name || 'A parent'} submitted expectations for ${student.name}.`,
+          { studentId: req.params.id, type: 'parent_expectations_submitted' }
+        );
+      }
+    }
     res.json({ success: true, message: 'Expectations updated' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// Ask parent to fill expectations from the parent portal
 app.post('/api/students/:id/expectations/request', async (req, res) => {
   try {
-    const studentResult = await pool.query(
-      `SELECT name, parent_name, parent_email
-       FROM students
-       WHERE id = $1 AND is_active = true`,
-      [req.params.id]
-    );
+    const studentResult = await pool.query('SELECT name, parent_name, parent_email FROM students WHERE id = $1', [req.params.id]);
     const student = studentResult.rows[0];
     if (!student) {
-      return res.status(404).json({ success: false, error: 'Student not found' });
+      return res.status(404).json({ error: 'Student not found' });
     }
     if (!student.parent_email) {
-      return res.status(400).json({ success: false, error: 'No parent email found for this student' });
+      return res.status(400).json({ error: 'Parent email not available' });
     }
 
-    const portalUrl = `${getAppBaseUrl()}/parent.html`;
+    const portalLink = process.env.PARENT_PORTAL_URL || `${req.protocol}://${req.get('host')}/parent.html`;
     const emailHtml = `
       <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 14px; overflow: hidden;">
         <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 28px 24px; color: white; text-align: center;">
@@ -13735,43 +12597,61 @@ app.post('/api/students/:id/expectations/request', async (req, res) => {
             We would love to know what you hope ${escapeHtml(student.name)} will gain from classes at Fluent Feathers Academy.
           </p>
           <p style="font-size: 15px; line-height: 1.7; color: #4a5568; margin: 0 0 22px;">
-            Please open the parent portal, go to the <strong>Profile/Expectations</strong> section, scroll down, and submit your expectations there. This helps us align lessons with your goals.
+            Please open the parent portal, go to the <strong>Profile / Expectations</strong> section, scroll down, and submit your expectations there. This helps us align lessons with your goals.
           </p>
           <div style="text-align: center; margin: 26px 0;">
-            <a href="${portalUrl}" style="display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 13px 30px; text-decoration: none; border-radius: 999px; font-weight: 700; font-size: 15px;">
+            <a href="${portalLink}" style="display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 13px 30px; text-decoration: none; border-radius: 999px; font-weight: 700; font-size: 15px;">
               Open Parent Portal
             </a>
           </div>
           <p style="font-size: 13px; color: #718096; margin: 0;">
-            If you already have the app installed, open the parent portal, go to <strong>Profile/Expectations</strong>, scroll down, and submit the expectations there.
+            If you already have the app installed, open the parent portal, go to <strong>Profile / Expectations</strong>, scroll down, and submit the expectations there.
           </p>
         </div>
       </div>
     `;
 
-    const sent = await sendEmail(
-      student.parent_email,
-      `💭 Please share your expectations for ${student.name}`,
-      emailHtml,
-      student.parent_name,
-      'Parent Expectations Request'
-    );
-
-    if (!sent) {
-      return res.status(500).json({ success: false, error: 'Email could not be sent right now' });
-    }
-
-    res.json({ success: true, message: `Request sent to ${student.parent_email}` });
+    const sent = await sendEmail(student.parent_email, `Please share your expectations for ${student.name}`, emailHtml, student.parent_name, 'Expectation Request');
+    res.json({ success: !!sent, message: sent ? 'Request email sent to parent.' : 'Unable to send the request email right now.' });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({ error: err.message });
   }
 });
 
-// ==================== ANNOUNCEMENTS API ====================
-app.get('/api/announcements', async (req, res) => {
+// One-time endpoint to award retroactive class points badges
+app.post('/api/admin/award-retroactive-badges', async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM announcements WHERE is_active = true ORDER BY created_at DESC');
-    res.json(result.rows);
+    const students = await pool.query(`
+      SELECT s.id, s.name, COALESCE(SUM(cp.points), 0) AS total_points
+      FROM students s
+      LEFT JOIN class_points cp ON s.id = cp.student_id
+      WHERE s.is_active = true
+      GROUP BY s.id, s.name
+      HAVING COALESCE(SUM(cp.points), 0) > 0
+    `);
+
+    let awarded = 0;
+    for (const student of students.rows) {
+      const total = parseInt(student.total_points);
+      if (total % 10 === 0) {
+        const badgeType = `class_points_${total}`;
+        const existing = await pool.query(
+          'SELECT id FROM student_badges WHERE student_id = $1 AND badge_type = $2',
+          [student.id, badgeType]
+        );
+        if (existing.rows.length === 0) {
+          const badgeName = `⭐ ${total} Class Points!`;
+          const badgeDesc = `Earned ${total} class points in live classes!`;
+          await pool.query(`
+            INSERT INTO student_badges (student_id, badge_type, badge_name, badge_description)
+            VALUES ($1, $2, $3, $4)
+          `, [student.id, badgeType, badgeName, badgeDesc]);
+          awarded++;
+        }
+      }
+    }
+
+    res.json({ success: true, message: `Awarded ${awarded} retroactive badges` });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -14290,6 +13170,8 @@ app.post('/api/groups/:groupId/merge-matching-sessions', async (req, res) => {
     const affectedStudents = new Set();
 
     for (const slotRows of grouped.values()) {
+      if (slotRows.length < 2) continue;
+
       const { session_date, session_time } = slotRows[0];
       let groupSession = (await client.query(`
         SELECT id
@@ -14300,8 +13182,6 @@ app.post('/api/groups/:groupId/merge-matching-sessions', async (req, res) => {
           AND session_time = $3
         LIMIT 1
       `, [groupId, session_date, session_time])).rows[0];
-
-      if (!groupSession && slotRows.length < 2) continue;
 
       if (!groupSession) {
         groupSession = (await client.query(`
@@ -14324,14 +13204,6 @@ app.post('/api/groups/:groupId/merge-matching-sessions', async (req, res) => {
           SET session_id = $1
           WHERE session_id = $2
         `, [groupSession.id, row.session_id]);
-
-        await client.query(`
-          UPDATE makeup_classes
-          SET scheduled_session_id = $1,
-              scheduled_date = $2,
-              scheduled_time = $3
-          WHERE scheduled_session_id = $4
-        `, [groupSession.id, session_date, session_time, row.session_id]);
 
         await client.query(`
           INSERT INTO session_attendance (session_id, student_id, attendance)
@@ -14379,10 +13251,10 @@ app.post('/api/assessments', async (req, res) => {
     if (isDemo) {
       // Demo assessment - linked to demo_lead
       result = await pool.query(`
-        INSERT INTO monthly_assessments (demo_lead_id, assessment_type, skills, skill_ratings, certificate_title, performance_summary, areas_of_improvement, teacher_comments)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        INSERT INTO monthly_assessments (demo_lead_id, assessment_type, skills, certificate_title, performance_summary, areas_of_improvement, teacher_comments)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
         RETURNING *
-      `, [demo_lead_id, 'demo', skills, skill_ratings ? JSON.stringify(skill_ratings) : null, certificate_title, performance_summary, areas_of_improvement, teacher_comments]);
+      `, [demo_lead_id, 'demo', skills, certificate_title, performance_summary, areas_of_improvement, teacher_comments]);
 
       // Send demo assessment email if requested
       if (send_email) {
@@ -14396,7 +13268,6 @@ app.post('/api/assessments', async (req, res) => {
             childGrade: lead.rows[0].child_grade,
             demoDate: lead.rows[0].demo_date,
             skills: skillsArray,
-            skillRatings: skill_ratings || {},
             certificateTitle: certificate_title,
             performanceSummary: performance_summary,
             areasOfImprovement: areas_of_improvement,
@@ -14415,6 +13286,20 @@ app.post('/api/assessments', async (req, res) => {
       }
     } else {
       // Monthly assessment - linked to student
+      const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+      const today = new Date();
+      const day = today.getDate();
+      const prev = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      const allowedMonth = prev.getMonth() + 1;
+      const allowedYear = prev.getFullYear();
+
+      if (day < 1 || day > 10) {
+        return res.status(400).json({ error: 'Monthly assessments can only be filled between the 1st and 10th of the next month for the previous month.' });
+      }
+      if (month !== allowedMonth || year !== allowedYear) {
+        return res.status(400).json({ error: `Monthly assessment must be for ${monthNames[allowedMonth - 1]} ${allowedYear} during this window.` });
+      }
+
       result = await pool.query(`
         INSERT INTO monthly_assessments (student_id, assessment_type, month, year, skills, skill_ratings, certificate_title, performance_summary, areas_of_improvement, teacher_comments)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
@@ -14433,7 +13318,6 @@ app.post('/api/assessments', async (req, res) => {
             month: month,
             year: year,
             skills: skillsArray,
-            skillRatings: skill_ratings || {},
             certificateTitle: certificate_title,
             performanceSummary: performance_summary,
             areasOfImprovement: areas_of_improvement,
@@ -14683,302 +13567,6 @@ app.post('/api/resources/upload', (req, res, next) => {
     res.json({ filePath, fileName: req.file.originalname });
   } catch (err) {
     console.error('Resource upload error:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Upload source media for admin social media drafts
-app.post('/api/social-media/upload', (req, res, next) => {
-  upload.single('file')(req, res, (err) => {
-    if (err) {
-      console.error('Social media upload error:', err);
-      return res.status(400).json({ error: err.message || 'File upload failed' });
-    }
-    next();
-  });
-}, async (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-  try {
-    let filePath;
-    if (req.file.path && (req.file.path.includes('cloudinary') || req.file.path.includes('res.cloudinary.com'))) {
-      filePath = req.file.path;
-    } else if (req.file.filename) {
-      filePath = '/uploads/materials/' + req.file.filename;
-    } else {
-      filePath = req.file.path;
-    }
-    const fileName = req.file.originalname || req.file.filename || 'source-media';
-    res.json({
-      success: true,
-      filePath,
-      fileName,
-      mediaType: detectMediaType(fileName, filePath)
-    });
-  } catch (err) {
-    console.error('Social media source upload error:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.get('/api/social-media/projects', async (req, res) => {
-  try {
-    const result = await pool.query(`
-      SELECT id, title, admin_prompt, platform, content_style, duration_seconds, student_name,
-             source_excerpt, source_file_name, source_file_path, source_media_type,
-             generated_hook, generated_voiceover_script, generated_caption, generated_hashtags,
-             generated_editing_notes, generated_scene_plan, caption_style, subtitle_timing,
-             voice_choice, branding_template, background_music_mode, background_music_url,
-             status, video_status,
-             render_progress, rendered_video_url, render_output_path, render_error,
-             voiceover_audio_url, voiceover_status, voiceover_error,
-             render_started_at, render_completed_at,
-             created_at, updated_at
-      FROM social_media_projects
-      ORDER BY updated_at DESC, id DESC
-      LIMIT 50
-    `);
-    res.json(result.rows);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post('/api/social-media/projects/generate-script', express.json({ limit: '20mb' }), async (req, res) => {
-  try {
-    const {
-      project_id,
-      prompt,
-      title,
-      platform,
-      content_style,
-      duration_seconds,
-      student_name,
-      source_excerpt,
-      source_file_name,
-      source_file_path,
-      source_media_type,
-      caption_style,
-      subtitle_timing,
-      voice_choice,
-      branding_template,
-      background_music_mode,
-      background_music_url,
-      image_data
-    } = req.body || {};
-
-    if (!String(prompt || '').trim()) {
-      return res.status(400).json({ error: 'Prompt is required' });
-    }
-
-    if (!getGroqApiKey()) {
-      return res.status(400).json({ error: 'GROQ_API_KEY is not configured on Render. Add it before generating scripts.' });
-    }
-
-    const generated = await generateSocialMediaScript({
-      prompt,
-      platform,
-      contentStyle: content_style,
-      durationSeconds: duration_seconds,
-      studentName: student_name,
-      sourceExcerpt: source_excerpt,
-      sourceFileName: source_file_name,
-      sourceMediaType: source_media_type || detectMediaType(source_file_name, source_file_path),
-      imageData: image_data
-    });
-
-    const values = [
-      normalizeShortText(title || generated.title, 120),
-      String(prompt || '').trim(),
-      normalizeShortText(platform || 'Instagram', 40),
-      normalizeShortText(content_style || '', 80),
-      Math.max(10, Math.min(90, parseInt(duration_seconds, 10) || 30)),
-      normalizeShortText(student_name || '', 80),
-      String(source_excerpt || '').trim().slice(0, 2500),
-      normalizeShortText(source_file_name || '', 180),
-      normalizeShortText(source_file_path || '', 1000),
-      normalizeShortText(source_media_type || detectMediaType(source_file_name, source_file_path), 30),
-      normalizeShortText(caption_style || 'classic', 40),
-      normalizeShortText(subtitle_timing || 'scene', 40),
-      normalizeShortText(voice_choice || 'coral', 40),
-      normalizeShortText(branding_template || 'academy', 40),
-      normalizeShortText(background_music_mode || 'none', 40),
-      normalizeShortText(background_music_url || '', 1000),
-      generated.hook,
-      generated.voiceover_script,
-      generated.caption,
-      generated.hashtags.join(' '),
-      generated.editing_notes.join('\n'),
-      JSON.stringify(generated.scene_plan)
-    ];
-
-    let project;
-    if (project_id) {
-      const updated = await pool.query(`
-        UPDATE social_media_projects
-        SET title = $1,
-            admin_prompt = $2,
-            platform = $3,
-            content_style = $4,
-            duration_seconds = $5,
-            student_name = $6,
-            source_excerpt = $7,
-            source_file_name = $8,
-            source_file_path = $9,
-            source_media_type = $10,
-            caption_style = $11,
-            subtitle_timing = $12,
-            voice_choice = $13,
-            branding_template = $14,
-            background_music_mode = $15,
-            background_music_url = $16,
-            generated_hook = $17,
-            generated_voiceover_script = $18,
-            generated_caption = $19,
-            generated_hashtags = $20,
-            generated_editing_notes = $21,
-            generated_scene_plan = $22::jsonb,
-            status = 'script_ready',
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = $23
-        RETURNING *
-      `, [...values, project_id]);
-      project = updated.rows[0];
-    } else {
-      const inserted = await pool.query(`
-        INSERT INTO social_media_projects (
-          title, admin_prompt, platform, content_style, duration_seconds, student_name,
-          source_excerpt, source_file_name, source_file_path, source_media_type,
-          caption_style, subtitle_timing, voice_choice, branding_template, background_music_mode, background_music_url,
-          generated_hook, generated_voiceover_script, generated_caption, generated_hashtags,
-          generated_editing_notes, generated_scene_plan, status, video_status
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22::jsonb, 'script_ready', 'not_started')
-        RETURNING *
-      `, values);
-      project = inserted.rows[0];
-    }
-
-    res.json({ success: true, project });
-  } catch (err) {
-    console.error('Social media script generation error:', err.response?.data || err.message);
-    res.status(500).json({ error: err.response?.data?.error?.message || err.message });
-  }
-});
-
-app.put('/api/social-media/projects/:id', express.json({ limit: '5mb' }), async (req, res) => {
-  try {
-    const {
-      title,
-      generated_hook,
-      generated_voiceover_script,
-      generated_caption,
-      generated_hashtags,
-      generated_editing_notes,
-      generated_scene_plan,
-      caption_style,
-      subtitle_timing,
-      voice_choice,
-      branding_template,
-      background_music_mode,
-      background_music_url,
-      status,
-      video_status
-    } = req.body || {};
-
-    const scenePlanValue = (() => {
-      if (Array.isArray(generated_scene_plan)) return JSON.stringify(generated_scene_plan);
-      if (typeof generated_scene_plan === 'string' && generated_scene_plan.trim()) return generated_scene_plan;
-      return JSON.stringify([]);
-    })();
-
-    const result = await pool.query(`
-      UPDATE social_media_projects
-      SET title = $1,
-          generated_hook = $2,
-          generated_voiceover_script = $3,
-          generated_caption = $4,
-          generated_hashtags = $5,
-          generated_editing_notes = $6,
-          generated_scene_plan = $7::jsonb,
-          caption_style = COALESCE($8, caption_style),
-          subtitle_timing = COALESCE($9, subtitle_timing),
-          voice_choice = COALESCE($10, voice_choice),
-          branding_template = COALESCE($11, branding_template),
-          background_music_mode = COALESCE($12, background_music_mode),
-          background_music_url = COALESCE($13, background_music_url),
-          status = COALESCE($14, status),
-          video_status = COALESCE($15, video_status),
-          render_error = CASE WHEN COALESCE($15, video_status) = 'not_started' THEN NULL ELSE render_error END,
-          updated_at = CURRENT_TIMESTAMP
-      WHERE id = $16
-      RETURNING *
-    `, [
-      normalizeShortText(title || '', 120),
-      String(generated_hook || '').trim().slice(0, 180),
-      String(generated_voiceover_script || '').trim().slice(0, 4000),
-      String(generated_caption || '').trim().slice(0, 3000),
-      String(generated_hashtags || '').trim().slice(0, 500),
-      String(generated_editing_notes || '').trim().slice(0, 3000),
-      scenePlanValue,
-      caption_style ? normalizeShortText(caption_style, 40) : null,
-      subtitle_timing ? normalizeShortText(subtitle_timing, 40) : null,
-      voice_choice ? normalizeShortText(voice_choice, 40) : null,
-      branding_template ? normalizeShortText(branding_template, 40) : null,
-      background_music_mode ? normalizeShortText(background_music_mode, 40) : null,
-      background_music_url ? normalizeShortText(background_music_url, 1000) : null,
-      status ? normalizeShortText(status, 40) : null,
-      video_status ? normalizeShortText(video_status, 40) : null,
-      req.params.id
-    ]);
-
-    if (!result.rows[0]) return res.status(404).json({ error: 'Project not found' });
-    res.json({ success: true, project: result.rows[0] });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post('/api/social-media/projects/:id/render', async (req, res) => {
-  try {
-    const projectId = parseInt(req.params.id, 10);
-    if (!projectId) return res.status(400).json({ error: 'Invalid project id' });
-
-    const project = (await pool.query(`
-      SELECT id, status, video_status, generated_voiceover_script, source_file_path
-      FROM social_media_projects
-      WHERE id = $1
-      LIMIT 1
-    `, [projectId])).rows[0];
-    if (!project) return res.status(404).json({ error: 'Project not found' });
-    if (!project.generated_voiceover_script && !project.source_file_path) {
-      return res.status(400).json({ error: 'Add a script or source media before rendering.' });
-    }
-    if (project.video_status === 'rendering') {
-      return res.json({ success: true, queued: false, message: 'Render already in progress.' });
-    }
-
-    await pool.query(`
-      UPDATE social_media_projects
-      SET status = 'approved_for_video',
-          video_status = 'queued',
-          render_progress = 0,
-          render_error = NULL,
-          voiceover_status = 'not_started',
-          voiceover_error = NULL,
-          updated_at = CURRENT_TIMESTAMP
-      WHERE id = $1
-    `, [projectId]);
-
-    const proto = req.get('x-forwarded-proto') || req.protocol || 'https';
-    const host = req.get('host') || '';
-    const requestBaseUrl = `${proto}://${host}`;
-
-    renderSocialMediaProject(projectId, requestBaseUrl).catch((err) => {
-      console.error('Social media render failed:', err.message);
-    });
-
-    res.json({ success: true, queued: true, message: 'Video render started.' });
-  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
@@ -15421,8 +14009,17 @@ app.get('/api/health', async (req, res) => {
   }
 });
 
-// ==================== KEEPALIVE PING ====================
-// Keep the public app endpoint warm and keep the DB connection active.
+// ==================== EXTERNAL PING ENDPOINT ====================
+// Add this endpoint to allow external services to ping your app
+app.get('/api/ping', (req, res) => {
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    database: dbReady ? 'connected' : 'disconnected'
+  });
+});
+// Self-ping every 25 seconds to keep free-tier service and DB awake
 const SELF_PING_INTERVAL = Math.max(20 * 1000, Number(process.env.SELF_PING_INTERVAL_MS) || 25 * 1000);
 const DB_CHECK_INTERVAL = 25 * 1000;        // Check DB every 25 seconds
 let selfPingUrl = null;
@@ -15599,7 +14196,7 @@ app.post('/api/sessions/bulk-reschedule', async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    
+
     const rescheduled = [];
     const affectedStudents = new Set();
     const affectedGroups = new Set();
@@ -15613,10 +14210,10 @@ app.post('/api/sessions/bulk-reschedule', async (req, res) => {
       } else if (session.student_id) {
         affectedStudents.add(String(session.student_id));
       }
-      
+
       // Convert to UTC
       const utc = istToUTC(s.new_date, s.new_time);
-      
+
       // Save old date, update new
       await client.query(`
         UPDATE sessions SET
@@ -15662,7 +14259,7 @@ app.post('/api/sessions/bulk-reschedule', async (req, res) => {
       for (const [sid, sessions] of Object.entries(studentSessions)) {
         const student = await pool.query('SELECT * FROM students WHERE id = $1', [sid]);
         if (!student.rows[0]?.parent_email) continue;
-        
+
         const s = student.rows[0];
         const sortedSessions = [...sessions].sort((a, b) => {
           const aDateTime = new Date(`${a.session_date}T${(a.session_time || '00:00:00').toString().substring(0, 8)}Z`);
