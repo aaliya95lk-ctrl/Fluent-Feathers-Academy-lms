@@ -403,6 +403,7 @@
       <nav class="sidebar-nav">
         <button class="nav-btn active" onclick="showTab('upcoming', event)">📅 <span>Upcoming</span></button>
         <button class="nav-btn" onclick="showTab('students', event)">👥 <span>Students</span></button>
+        <button class="nav-btn" onclick="showTab('recoveryStudents', event)">🔄 <span>Recover Students</span></button>
         <button class="nav-btn" onclick="showTab('demoStudents', event)">🎯 <span>Demo Leads</span></button>
         <button class="nav-btn" onclick="showTab('summerCamp', event)">☀️ <span>Summer Camp</span></button>
         <button class="nav-btn" onclick="showTab('groups', event)">👨‍👩‍👧 <span>Groups</span></button>
@@ -743,6 +744,35 @@
         </div>
         <div class="table-responsive">
         <table id="studentsTable"><thead><tr><th>Name</th><th>Age</th><th>Program</th><th>Type</th><th>Sessions (C/R)</th><th>Makeup</th><th>Parent App</th><th>Status</th><th>Actions</th></tr></thead><tbody id="studentsBody"><tr><td colspan="9">Loading...</td></tr></tbody></table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Recovery Students Tab -->
+    <div id="recoveryStudentsTab" class="tab-content">
+      <div class="section">
+        <h2>🔄 Recover Deleted Students</h2>
+        <p style="color: #718096; margin-bottom: 20px;">View and restore students that were accidentally deleted. All their data is safely stored and can be reactivated instantly.</p>
+        <div style="margin-bottom: 15px;">
+          <button onclick="loadDeletedStudents()" class="btn btn-primary">🔄 Load Deleted Students</button>
+        </div>
+        <div class="table-responsive">
+          <table style="width: 100%; border-collapse: collapse;">
+            <thead>
+              <tr style="background: #f0f4f8; border-bottom: 2px solid #e2e8f0;">
+                <th style="padding: 12px; text-align: left;">Name</th>
+                <th style="padding: 12px; text-align: left;">Age</th>
+                <th style="padding: 12px; text-align: left;">Program</th>
+                <th style="padding: 12px; text-align: left;">Parent</th>
+                <th style="padding: 12px; text-align: left;">Email</th>
+                <th style="padding: 12px; text-align: left;">Deleted</th>
+                <th style="padding: 12px; text-align: center;">Action</th>
+              </tr>
+            </thead>
+            <tbody id="deletedStudentsBody">
+              <tr><td colspan="7" style="text-align: center; padding: 20px; color: #718096;">Click "Load Deleted Students" to view</td></tr>
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
@@ -8729,6 +8759,58 @@ async function saveEditedPayment() {
         }
       } catch (err) {
         alert('Error: ' + err.message);
+      }
+    }
+
+    async function loadDeletedStudents() {
+      try {
+        const res = await fetch('/api/students/deleted/all');
+        const deletedStudents = await res.json();
+        const tbody = document.getElementById('deletedStudentsBody');
+        
+        if (deletedStudents.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 20px; color: #718096;">No deleted students found</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = deletedStudents.map(s => `
+          <tr style="border-bottom: 1px solid #e2e8f0;">
+            <td style="padding: 12px;"><strong>${s.name}</strong></td>
+            <td style="padding: 12px;">${getAgeDisplay(s)}</td>
+            <td style="padding: 12px;">${s.program_name || '-'}</td>
+            <td style="padding: 12px;">${s.parent_name || '-'}</td>
+            <td style="padding: 12px; font-size: 12px;">${s.parent_email || '-'}</td>
+            <td style="padding: 12px; font-size: 12px;">${new Date(s.updated_at).toLocaleDateString()}</td>
+            <td style="padding: 12px; text-align: center;">
+              <button onclick="restoreStudent(${s.id}, '${s.name}')" class="btn btn-sm" style="background: #38a169; color: white; padding: 6px 12px; border: none; border-radius: 6px; cursor: pointer;">✅ Restore</button>
+            </td>
+          </tr>
+        `).join('');
+      } catch (err) {
+        alert('Error loading deleted students: ' + err.message);
+        console.error(err);
+      }
+    }
+
+    async function restoreStudent(id, name) {
+      if (!confirm(`Are you sure you want to restore ${name}? All their details and data will be restored.`)) return;
+      
+      try {
+        const res = await fetch(`/api/students/${id}/restore`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' }
+        });
+        
+        if (res.ok) {
+          alert(`✅ ${name} has been successfully restored!`);
+          loadDeletedStudents(); // Refresh the list
+          loadStudents(); // Refresh active students list
+        } else {
+          const error = await res.json();
+          alert('❌ Failed to restore: ' + (error.error || 'Unknown error'));
+        }
+      } catch (err) {
+        alert('❌ Error restoring student: ' + err.message);
       }
     }
 

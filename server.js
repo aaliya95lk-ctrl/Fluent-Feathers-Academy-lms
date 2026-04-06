@@ -6183,6 +6183,40 @@ app.delete('/api/students/:id', async (req, res) => {
   }
 });
 
+// ==================== GET DELETED/INACTIVE STUDENTS ====================
+app.get('/api/students/deleted/all', async (req, res) => {
+  try {
+    const r = await executeQuery(`
+      SELECT s.*,
+        COUNT(DISTINCT m.id) as makeup_credits
+      FROM students s
+      LEFT JOIN makeup_classes m ON s.id = m.student_id AND m.status = 'Available'
+      WHERE s.is_active = false
+      GROUP BY s.id
+      ORDER BY s.updated_at DESC
+    `);
+    res.json(r.rows);
+  } catch (err) {
+    console.error('Error fetching deleted students:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ==================== RESTORE DELETED STUDENT ====================
+app.put('/api/students/:id/restore', async (req, res) => {
+  try {
+    const studentId = req.params.id;
+    
+    // Restore the student to active status
+    await executeQuery('UPDATE students SET is_active = true WHERE id = $1', [studentId]);
+    
+    res.json({ success: true, message: 'Student restored successfully with all details intact!' });
+  } catch (err) {
+    console.error('Error restoring student:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post('/api/students/:id/payment', async (req, res) => {
   const { amount, currency, payment_method, receipt_number, sessions_covered, notes, send_email } = req.body;
   const client = await pool.connect();
