@@ -6193,7 +6193,7 @@ app.get('/api/students/deleted/all', async (req, res) => {
       LEFT JOIN makeup_classes m ON s.id = m.student_id AND m.status = 'Available'
       WHERE s.is_active = false
       GROUP BY s.id
-      ORDER BY s.updated_at DESC
+      ORDER BY s.created_at DESC
     `);
     res.json(r.rows);
   } catch (err) {
