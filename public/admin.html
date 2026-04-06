@@ -8767,7 +8767,19 @@ async function saveEditedPayment() {
         const res = await fetch('/api/students/deleted/all');
         const deletedStudents = await res.json();
         const tbody = document.getElementById('deletedStudentsBody');
-        
+
+        if (!res.ok) {
+          const message = deletedStudents?.error || deletedStudents?.message || 'Unable to load deleted students';
+          tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; padding: 20px; color: #e53e3e;">${message}</td></tr>`;
+          return;
+        }
+
+        if (!Array.isArray(deletedStudents)) {
+          console.error('Expected array from /api/students/deleted/all, got:', deletedStudents);
+          tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 20px; color: #e53e3e;">Unexpected response format from server.</td></tr>';
+          return;
+        }
+
         if (deletedStudents.length === 0) {
           tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 20px; color: #718096;">No deleted students found</td></tr>';
           return;
@@ -8787,7 +8799,10 @@ async function saveEditedPayment() {
           </tr>
         `).join('');
       } catch (err) {
-        alert('Error loading deleted students: ' + err.message);
+        const tbody = document.getElementById('deletedStudentsBody');
+        if (tbody) {
+          tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; padding: 20px; color: #e53e3e;">Error loading deleted students: ${err.message}</td></tr>`;
+        }
         console.error(err);
       }
     }
