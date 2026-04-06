@@ -784,7 +784,7 @@ app.get('/api/ping', (req, res) => {
 app.get('/api/config', (req, res) => {
   try {
     res.json({
-      logoUrl: process.env.LOGO_URL || '/logo.svg',
+      logoUrl: process.env.LOGO_URL || '/logo.png',
       storageType: useCloudinary ? 'cloudinary' : 'local',
       cloudinaryConfigured: useCloudinary,
       cloudName: useCloudinary ? cloudName : null,

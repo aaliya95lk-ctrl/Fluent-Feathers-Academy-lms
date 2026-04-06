@@ -10,8 +10,8 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Fluent Feathers Academy">
-  <link rel="icon" id="pwaFavicon" href="/logo.svg" type="image/svg+xml">
-  <link rel="apple-touch-icon" id="pwaAppleTouch" href="/logo.svg">
+  <link rel="icon" id="pwaFavicon" href="/logo.png" type="image/png">
+  <link rel="apple-touch-icon" id="pwaAppleTouch" href="/logo.png">
   <!-- PDF Generation Libraries -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -624,7 +624,7 @@
   <!-- Loading Screen -->
 <div id="serverLoadingScreen">
   <div style="text-align:center; color:white;">
-    <img id="loadingLogo" src="/logo.svg" alt="Fluent Feathers" height="100"
+    <img id="loadingLogo" src="/logo.png" alt="Fluent Feathers" height="100"
      onerror="this.outerHTML='🎓'">
     <h1>Welcome to Fluent Feathers Academy By Aaliya</h1>
     <p id="loadingMessage">Preparing your learning portal...</p>
@@ -720,7 +720,7 @@
     <div id="dashboardSection" style="display: none;">
       <header>
         <div style="display: flex; align-items: center; gap: 15px;">
-          <img id="headerLogo" src="/logo.svg" alt="Fluent Feathers" style="height: 50px;">
+          <img id="headerLogo" src="/logo.png" alt="Fluent Feathers" style="height: 50px;">
           <div>
             <h1 style="margin: 0; font-size: 24px;">Fluent Feathers Academy By Aaliya</h1>
             <p style="margin: 5px 0 0; color: #718096; font-size: 12px; font-weight: 500;">Empowering Young Minds Through Language & Communication</p>
@@ -1446,7 +1446,7 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
     let allMyStudents = [];
     let selectedRating = 0;
     let checkedFeedbackSessions = new Set();
-    let appConfig = { logoUrl: '/logo.svg' };
+    let appConfig = { logoUrl: '/logo.png' };
     const PORTAL_AUTO_REFRESH_MS = 5 * 60 * 1000;
     let portalAutoRefreshTimerId = null;
 
