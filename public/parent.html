@@ -5,9 +5,19 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Parent Portal - Fluent Feathers Academy By Aaliya</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#B05D9E">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Fluent Feathers Academy">
+  <link rel="icon" id="pwaFavicon" href="/logo.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" id="pwaAppleTouch" href="/logo.svg">
   <!-- PDF Generation Libraries -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <!-- Firebase Libraries -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging-compat.js"></script>
   <style>
   /* Base styles */
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -614,7 +624,7 @@
   <!-- Loading Screen -->
 <div id="serverLoadingScreen">
   <div style="text-align:center; color:white;">
-    <img id="loadingLogo" src="/logo.png" alt="Fluent Feathers" height="100"
+    <img id="loadingLogo" src="/logo.svg" alt="Fluent Feathers" height="100"
      onerror="this.outerHTML='🎓'">
     <h1>Welcome to Fluent Feathers Academy By Aaliya</h1>
     <p id="loadingMessage">Preparing your learning portal...</p>
@@ -710,7 +720,7 @@
     <div id="dashboardSection" style="display: none;">
       <header>
         <div style="display: flex; align-items: center; gap: 15px;">
-          <img id="headerLogo" src="/logo.png" alt="Fluent Feathers" style="height: 50px;">
+          <img id="headerLogo" src="/logo.svg" alt="Fluent Feathers" style="height: 50px;">
           <div>
             <h1 style="margin: 0; font-size: 24px;">Fluent Feathers Academy By Aaliya</h1>
             <p style="margin: 5px 0 0; color: #718096; font-size: 12px; font-weight: 500;">Empowering Young Minds Through Language & Communication</p>
@@ -1436,7 +1446,7 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
     let allMyStudents = [];
     let selectedRating = 0;
     let checkedFeedbackSessions = new Set();
-    let appConfig = { logoUrl: '/logo.png' };
+    let appConfig = { logoUrl: '/logo.svg' };
     const PORTAL_AUTO_REFRESH_MS = 5 * 60 * 1000;
     let portalAutoRefreshTimerId = null;
 
@@ -1468,10 +1478,103 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
     if (loadingLogo && appConfig.logoUrl) {
       loadingLogo.src = appConfig.logoUrl;
     }
+    
+    // Update favicon and apple touch icon
+    const fav = document.getElementById('pwaFavicon');
+    const apple = document.getElementById('pwaAppleTouch');
+    if (fav && appConfig.logoUrl) fav.href = appConfig.logoUrl;
+    if (apple && appConfig.logoUrl) apple.href = appConfig.logoUrl;
   } catch (e) {
     console.log('Using default config');
   }
 }
+
+    // Initialize Firebase messaging for push notifications
+    async function initializeFirebaseMessaging() {
+      if (!appConfig.firebase || !appConfig.firebaseVapidKey) {
+        console.log('Firebase not configured, skipping push notifications');
+        return;
+      }
+
+      try {
+        // Request notification permission
+        let perm = Notification.permission;
+        if (perm === 'default') {
+          perm = await Notification.requestPermission();
+        }
+        if (perm !== 'granted') {
+          console.log('Notification permission not granted');
+          return;
+        }
+
+        // Register service worker
+        const reg = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+
+        // Initialize Firebase if not already done
+        if (!firebase.apps.length) {
+          firebase.initializeApp(appConfig.firebase);
+        }
+
+        const messaging = firebase.messaging();
+        const token = await messaging.getToken({
+          vapidKey: appConfig.firebaseVapidKey,
+          serviceWorkerRegistration: reg
+        });
+
+        if (!token) {
+          console.warn('Could not get FCM token');
+          return;
+        }
+
+        // Store token globally
+        window.__ffParentPushToken = token;
+
+        // Register token with server
+        const parentEmail = sessionStorage.getItem('parentEmail');
+        if (parentEmail) {
+          await fetch('/api/parent/register-fcm-token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token, email: parentEmail })
+          });
+        }
+
+        // Handle foreground messages
+        window.__ffParentPushOnMessageBound = window.__ffParentPushOnMessageBound === true;
+        window.__ffParentLastForegroundNotification = window.__ffParentLastForegroundNotification || { tag: '', ts: 0 };
+
+        if (!window.__ffParentPushOnMessageBound) {
+          messaging.onMessage((payload) => {
+            const data = payload.data || {};
+            const n = payload.notification || {};
+            const iconUrl = appConfig.logoUrl || '/logo.png';
+            const title = data.title || n.title;
+            const body = data.body || n.body || '';
+            const tag = data.notificationTag || data.type || [title, body].filter(Boolean).join('|').slice(0, 180);
+            const now = Date.now();
+            const last = window.__ffParentLastForegroundNotification || { tag: '', ts: 0 };
+
+            if (last.tag === tag && now - last.ts < 10000) return;
+
+            window.__ffParentLastForegroundNotification = { tag, ts: now };
+
+            // Show notification
+            new Notification(title, {
+              body,
+              icon: iconUrl,
+              badge: iconUrl,
+              tag,
+              data: data
+            });
+          });
+          window.__ffParentPushOnMessageBound = true;
+        }
+
+        console.log('Firebase messaging initialized for parent');
+      } catch (err) {
+        console.warn('Firebase messaging initialization failed:', err);
+      }
+    }
 
     const adminToken = sessionStorage.getItem('adminParentToken');
     function authHeaders() {
@@ -1634,9 +1737,11 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
       }
     }
 
-    document.addEventListener('DOMContentLoaded', () => {
+    document.addEventListener('DOMContentLoaded', async () => {
       // Load app configuration (logo URL)
-      loadConfig();
+      await loadConfig();
+      // Initialize Firebase messaging for push notifications
+      initializeFirebaseMessaging();
       startPortalAutoRefresh();
       setPortalTimezone(getBrowserTimezone());
       renderUpcomingTimezoneLabel();

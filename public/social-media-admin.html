@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Social Media Studio - Fluent Feathers Academy</title>
-  <link rel="icon" type="image/png" href="/logo.png">
+  <link rel="icon" id="pwaFavicon" href="/logo.svg" type="image/svg+xml">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -160,7 +160,7 @@
   <div class="container">
     <div class="header">
       <div class="header-left">
-        <img id="headerLogo" src="/logo.png" alt="Logo">
+        <img id="headerLogo" src="/logo.svg" alt="Logo">
         <div>
           <h1>Social Media Studio</h1>
           <p>Create, review, and render clean Instagram-style reels from student work and ideas.</p>
@@ -408,7 +408,7 @@
 
   <script>
     const ADMIN_LOGIN_KEY = 'ff_admin_logged_in';
-    let appConfig = { logoUrl: '/logo.png' };
+    let appConfig = { logoUrl: '/logo.svg' };
     let socialMediaProjectsCache = [];
     let currentSocialMediaProject = null;
     let socialSourceUpload = null;
@@ -432,6 +432,8 @@
         appConfig = await res.json();
         const logo = document.getElementById('headerLogo');
         if (logo && appConfig.logoUrl) logo.src = appConfig.logoUrl;
+        const fav = document.getElementById('pwaFavicon');
+        if (fav && appConfig.logoUrl) fav.href = appConfig.logoUrl;
       } catch (e) {}
     }
 

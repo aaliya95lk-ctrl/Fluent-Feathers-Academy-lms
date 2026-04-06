@@ -784,7 +784,7 @@ app.get('/api/ping', (req, res) => {
 app.get('/api/config', (req, res) => {
   try {
     res.json({
-      logoUrl: process.env.LOGO_URL || '/logo.png',
+      logoUrl: process.env.LOGO_URL || '/logo.svg',
       storageType: useCloudinary ? 'cloudinary' : 'local',
       cloudinaryConfigured: useCloudinary,
       cloudName: useCloudinary ? cloudName : null,
@@ -811,6 +811,25 @@ app.post('/api/admin/register-fcm-token', async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     console.error('Register FCM token error:', err.message);
+    res.status(500).json({ error: 'Failed to register FCM token' });
+  }
+});
+
+app.post('/api/parent/register-fcm-token', async (req, res) => {
+  const { token, email } = req.body;
+  if (!token || !email) {
+    return res.status(400).json({ error: 'FCM token and email are required' });
+  }
+  try {
+    await pool.query(
+      `INSERT INTO parent_fcm_tokens (fcm_token, parent_email, user_agent, updated_at)
+       VALUES ($1, $2, $3, NOW())
+       ON CONFLICT (fcm_token) DO UPDATE SET parent_email = EXCLUDED.parent_email, user_agent = EXCLUDED.user_agent, updated_at = NOW()`,
+      [token, email.toLowerCase().trim(), req.headers['user-agent'] || '']
+    );
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Register parent FCM token error:', err.message);
     res.status(500).json({ error: 'Failed to register FCM token' });
   }
 });
