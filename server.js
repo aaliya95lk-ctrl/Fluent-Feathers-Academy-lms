@@ -14611,29 +14611,15 @@ app.get('/api/ping', (req, res) => {
 // Self-ping every 25 seconds to keep free-tier service and DB awake
 const SELF_PING_INTERVAL = Math.max(20 * 1000, Number(process.env.SELF_PING_INTERVAL_MS) || 25 * 1000);
 const DB_CHECK_INTERVAL = 25 * 1000;        // Check DB every 25 seconds
+const DB_KEEPALIVE_INTERVAL = Math.max(20 * 1000, Number(process.env.DB_KEEPALIVE_INTERVAL_MS) || 30 * 1000);
 let selfPingUrl = null;
 let selfPingInFlight = false;
+const SELF_PING_PATH = '/api/health/light';
 
 function getSelfPingBaseUrl(port) {
   const explicitSelfPingUrl = (process.env.SELF_PING_URL || '').trim().replace(/\/$/, '');
   if (explicitSelfPingUrl) return explicitSelfPingUrl;
-
-  const publicAppUrl = (
-    process.env.RENDER_EXTERNAL_URL ||
-    process.env.APP_URL ||
-    process.env.BASE_URL ||
-    getAppBaseUrl() ||
-    ''
-  ).replace(/\/$/, '');
-
-  const forcePublic = String(process.env.SELF_PING_USE_PUBLIC_URL).toLowerCase() === 'true';
-  // On Render, default to public self-ping when available so edge traffic keeps the service warm.
-  const preferPublicOnRender = !!(process.env.RENDER_EXTERNAL_URL && publicAppUrl);
-  if (forcePublic || preferPublicOnRender) {
-    return publicAppUrl || `http://127.0.0.1:${port}`;
-  }
-
-  // Fallback to local loopback unless public mode is explicitly/preferentially enabled.
+  // Default to local loopback so keepalive never depends on Cloudflare/public routing.
   return `http://127.0.0.1:${port}`;
 }
 
@@ -14738,7 +14724,7 @@ function startKeepAlive() {
     _connectPingClient();
     setInterval(_sendDbPing, 8 * 1000);
   } else {
-    console.log('🏓 Dedicated DB ping client disabled for pooled database host; using /api/db/ping keepalive only');
+    console.log('🏓 Dedicated DB ping client disabled for pooled database host; using lightweight keepalive only');
   }
 
   // Pool health check every 30 seconds — detects pool-level issues
@@ -14748,28 +14734,41 @@ function startKeepAlive() {
   }, DB_CHECK_INTERVAL);
 
   selfPingUrl = getSelfPingBaseUrl(PORT);
-  console.log(`🏓 Keepalive ping enabled for: ${selfPingUrl}/api/db/ping every ${Math.round(SELF_PING_INTERVAL / 1000)}s`);
+  console.log(`🏓 Keepalive ping enabled for: ${selfPingUrl}${SELF_PING_PATH} every ${Math.round(SELF_PING_INTERVAL / 1000)}s`);
+  console.log(`🏓 DB keepalive enabled for: ${selfPingUrl}/api/db/ping every ${Math.round(DB_KEEPALIVE_INTERVAL / 1000)}s`);
 
   setInterval(async () => {
     if (selfPingInFlight) return;
     selfPingInFlight = true;
     try {
-      const response = await axios.get(`${selfPingUrl}/api/db/ping`, { timeout: 15000 });
+      const response = await axios.get(`${selfPingUrl}${SELF_PING_PATH}`, { timeout: 15000 });
       const data = response.data;
-      const dbStatus = data?.dbReady ? 'connected' : 'disconnected';
-      console.log(`🏓 Keepalive: ok=${data?.ok === true}, DB: ${dbStatus} at ${new Date().toISOString()}`);
-
-      if (!data?.dbReady) {
-        console.log('🔄 Database disconnected, triggering reconnect...');
-        await checkDatabaseHealth();
-      }
+      console.log(`🏓 Keepalive: status=${data?.status || 'unknown'} at ${new Date().toISOString()}`);
     } catch (err) {
       console.log(`🏓 Keepalive ping failed: ${err.message}`);
+      if (err?.response?.status === 521 && !selfPingUrl.includes('127.0.0.1')) {
+        selfPingUrl = `http://127.0.0.1:${PORT}`;
+        console.log(`🏓 Switched keepalive to local loopback after 521: ${selfPingUrl}${SELF_PING_PATH}`);
+      }
       checkDatabaseHealth().catch(() => {});
     } finally {
       selfPingInFlight = false;
     }
   }, SELF_PING_INTERVAL);
+
+  // Separate DB keepalive so Postgres stays warm even when HTTP keepalive is lightweight.
+  setInterval(async () => {
+    try {
+      await axios.get(`${selfPingUrl}/api/db/ping`, { timeout: 15000 });
+    } catch (err) {
+      console.log(`🏓 DB keepalive failed: ${err.message}`);
+      if (err?.response?.status === 521 && !selfPingUrl.includes('127.0.0.1')) {
+        selfPingUrl = `http://127.0.0.1:${PORT}`;
+        console.log(`🏓 Switched DB keepalive to local loopback after 521: ${selfPingUrl}/api/db/ping`);
+      }
+      checkDatabaseHealth().catch(() => {});
+    }
+  }, DB_KEEPALIVE_INTERVAL);
 }
 
 // Graceful shutdown handler
