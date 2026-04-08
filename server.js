@@ -14618,11 +14618,6 @@ function getSelfPingBaseUrl(port) {
   const explicitSelfPingUrl = (process.env.SELF_PING_URL || '').trim().replace(/\/$/, '');
   if (explicitSelfPingUrl) return explicitSelfPingUrl;
 
-  // Default to local loopback to avoid dependency on Cloudflare/origin routing.
-  if (String(process.env.SELF_PING_USE_PUBLIC_URL).toLowerCase() !== 'true') {
-    return `http://127.0.0.1:${port}`;
-  }
-
   const publicAppUrl = (
     process.env.RENDER_EXTERNAL_URL ||
     process.env.APP_URL ||
@@ -14631,7 +14626,15 @@ function getSelfPingBaseUrl(port) {
     ''
   ).replace(/\/$/, '');
 
-  return publicAppUrl || `http://127.0.0.1:${port}`;
+  const forcePublic = String(process.env.SELF_PING_USE_PUBLIC_URL).toLowerCase() === 'true';
+  // On Render, default to public self-ping when available so edge traffic keeps the service warm.
+  const preferPublicOnRender = !!(process.env.RENDER_EXTERNAL_URL && publicAppUrl);
+  if (forcePublic || preferPublicOnRender) {
+    return publicAppUrl || `http://127.0.0.1:${port}`;
+  }
+
+  // Fallback to local loopback unless public mode is explicitly/preferentially enabled.
+  return `http://127.0.0.1:${port}`;
 }
 
 // ─── Dedicated persistent ping client ───────────────────────────────────────
