@@ -14149,6 +14149,26 @@ const DB_CHECK_INTERVAL = 25 * 1000;        // Check DB every 25 seconds
 let selfPingUrl = null;
 let selfPingInFlight = false;
 
+function getSelfPingBaseUrl(port) {
+  const explicitSelfPingUrl = (process.env.SELF_PING_URL || '').trim().replace(/\/$/, '');
+  if (explicitSelfPingUrl) return explicitSelfPingUrl;
+
+  // Default to local loopback to avoid dependency on Cloudflare/origin routing.
+  if (String(process.env.SELF_PING_USE_PUBLIC_URL).toLowerCase() !== 'true') {
+    return `http://127.0.0.1:${port}`;
+  }
+
+  const publicAppUrl = (
+    process.env.RENDER_EXTERNAL_URL ||
+    process.env.APP_URL ||
+    process.env.BASE_URL ||
+    getAppBaseUrl() ||
+    ''
+  ).replace(/\/$/, '');
+
+  return publicAppUrl || `http://127.0.0.1:${port}`;
+}
+
 // ─── Dedicated persistent ping client ───────────────────────────────────────
 // Completely separate from the pool. Leave this off for transaction poolers
 // like Supabase because a sticky client can compete with real traffic.
@@ -14259,15 +14279,7 @@ function startKeepAlive() {
     await checkDatabaseHealth();
   }, DB_CHECK_INTERVAL);
 
-  // Always prefer the public app URL so the host sees inbound traffic.
-  const publicAppUrl = (
-    process.env.RENDER_EXTERNAL_URL ||
-    process.env.APP_URL ||
-    process.env.BASE_URL ||
-    getAppBaseUrl() ||
-    ''
-  ).replace(/\/$/, '');
-  selfPingUrl = publicAppUrl || `http://localhost:${PORT}`;
+  selfPingUrl = getSelfPingBaseUrl(PORT);
   console.log(`🏓 Keepalive ping enabled for: ${selfPingUrl}/api/db/ping every ${Math.round(SELF_PING_INTERVAL / 1000)}s`);
 
   setInterval(async () => {
