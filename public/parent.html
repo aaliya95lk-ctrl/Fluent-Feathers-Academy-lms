@@ -1494,11 +1494,19 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
         const token = window.__ffParentPushToken;
         const normalizedEmail = String(email || '').trim().toLowerCase();
         if (!token || !normalizedEmail) return false;
-        await fetch('/api/parent/register-fcm-token', {
+        const resp = await fetch('/api/parent/register-fcm-token', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ token, email: normalizedEmail })
         });
+        if (!resp.ok) {
+          let details = '';
+          try {
+            const data = await resp.json();
+            details = data && data.error ? ` - ${data.error}` : '';
+          } catch (_) {}
+          throw new Error(`Token register failed (${resp.status})${details}`);
+        }
         sessionStorage.setItem('parentEmail', normalizedEmail);
         return true;
       } catch (err) {

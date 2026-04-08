@@ -860,12 +860,50 @@ app.get('/api/config', (req, res) => {
   }
 });
 
+let pushTokenSchemaReady = false;
+let pushTokenSchemaInitPromise = null;
+async function ensurePushTokenTables() {
+  if (pushTokenSchemaReady) return;
+  if (pushTokenSchemaInitPromise) {
+    await pushTokenSchemaInitPromise;
+    return;
+  }
+  pushTokenSchemaInitPromise = (async () => {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS parent_fcm_tokens (
+        id SERIAL PRIMARY KEY,
+        parent_email TEXT NOT NULL,
+        fcm_token TEXT NOT NULL UNIQUE,
+        user_agent TEXT,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS admin_fcm_tokens (
+        id SERIAL PRIMARY KEY,
+        fcm_token TEXT NOT NULL UNIQUE,
+        user_agent TEXT,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_parent_fcm_tokens_email ON parent_fcm_tokens(LOWER(parent_email))`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_admin_fcm_tokens_updated_at ON admin_fcm_tokens(updated_at)`);
+    pushTokenSchemaReady = true;
+  })();
+  try {
+    await pushTokenSchemaInitPromise;
+  } finally {
+    pushTokenSchemaInitPromise = null;
+  }
+}
+
 app.post('/api/admin/register-fcm-token', async (req, res) => {
   const { token } = req.body;
   if (!token) {
     return res.status(400).json({ error: 'FCM token is required' });
   }
   try {
+    await ensurePushTokenTables();
     await pool.query(
       `INSERT INTO admin_fcm_tokens (fcm_token, user_agent, updated_at)
        VALUES ($1, $2, NOW())
@@ -885,6 +923,7 @@ app.post('/api/parent/register-fcm-token', async (req, res) => {
     return res.status(400).json({ error: 'FCM token and email are required' });
   }
   try {
+    await ensurePushTokenTables();
     await pool.query(
       `INSERT INTO parent_fcm_tokens (fcm_token, parent_email, user_agent, updated_at)
        VALUES ($1, $2, $3, NOW())
@@ -2255,6 +2294,32 @@ async function runMigrations() {
       console.log('Migration 47 note:', err.message);
     }
 
+    // Migration 48: Ensure push token tables exist for app notifications
+    try {
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS parent_fcm_tokens (
+          id SERIAL PRIMARY KEY,
+          parent_email TEXT NOT NULL,
+          fcm_token TEXT NOT NULL UNIQUE,
+          user_agent TEXT,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS admin_fcm_tokens (
+          id SERIAL PRIMARY KEY,
+          fcm_token TEXT NOT NULL UNIQUE,
+          user_agent TEXT,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      await client.query(`CREATE INDEX IF NOT EXISTS idx_parent_fcm_tokens_email ON parent_fcm_tokens(LOWER(parent_email))`);
+      await client.query(`CREATE INDEX IF NOT EXISTS idx_admin_fcm_tokens_updated_at ON admin_fcm_tokens(updated_at)`);
+      console.log('✅ Migration 48: Ensured push token tables and indexes');
+    } catch (err) {
+      console.log('Migration 48 note:', err.message);
+    }
+
     console.log('✅ All database migrations completed successfully!');
 
     // Auto-sync badges for students who should have them
@@ -2563,8 +2628,13 @@ async function logPushInEmailLog({ recipientName, recipientEmail, emailType, sub
 }
 
 async function sendPushToParentByEmail(parentEmail, title, body, data = {}) {
+  try {
+    await ensurePushTokenTables();
+  } catch (e) {
+    console.warn('Push schema ensure failed:', e.message);
+    return { sent: 0, reason: 'schema_unavailable' };
+  }
   const firebaseMessaging = getFirebaseAdminMessaging();
-  if (!firebaseMessaging) return { sent: 0, reason: 'firebase_disabled' };
   const norm = String(parentEmail || '').trim().toLowerCase();
   if (!norm) return { sent: 0, reason: 'invalid_email' };
   let tokens;
@@ -2584,6 +2654,60 @@ async function sendPushToParentByEmail(parentEmail, title, body, data = {}) {
   const safeTitle = String(title || APP_DISPLAY_NAME).slice(0, 200);
   const safeBody = String(body || '').slice(0, 240);
   const notificationTag = String(data.notificationTag || data.type || `${safeTitle}|${safeBody}|${targetLink}`).slice(0, 180);
+
+  if (!firebaseMessaging) {
+    const serverKey = process.env.FIREBASE_SERVER_KEY;
+    if (!serverKey) return { sent: 0, reason: 'firebase_disabled' };
+    try {
+      const messageData = Object.fromEntries(
+        Object.entries({ ...data, title: safeTitle, body: safeBody, url: targetLink, link: targetLink, click_action: targetLink, notificationTag })
+          .map(([k, v]) => [k, typeof v === 'string' ? v : JSON.stringify(v)])
+      );
+      const legacyResp = await axios.post('https://fcm.googleapis.com/fcm/send', {
+        registration_ids: tokens,
+        notification: { title: safeTitle, body: safeBody },
+        data: messageData,
+        webpush: { fcm_options: { link: targetLink } }
+      }, {
+        headers: {
+          Authorization: `key ${serverKey}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const results = Array.isArray(legacyResp?.data?.results) ? legacyResp.data.results : [];
+      results.forEach((x, i) => {
+        if (x && (x.error === 'NotRegistered' || x.error === 'InvalidRegistration')) {
+          pool.query('DELETE FROM parent_fcm_tokens WHERE fcm_token = $1', [tokens[i]]).catch(() => {});
+        }
+      });
+
+      const sent = Number(legacyResp?.data?.success || 0);
+      const failed = Number(legacyResp?.data?.failure || Math.max(tokens.length - sent, 0));
+      await logPushInEmailLog({
+        recipientName: data.parentName || 'Parent',
+        recipientEmail: norm,
+        emailType: 'Push-Parent',
+        subject: `${safeTitle} [PUSH]`,
+        status: sent > 0 ? 'Sent' : 'Failed',
+        payload: {
+          type: data.type || 'parent_push',
+          title: safeTitle,
+          body: safeBody,
+          link: targetLink,
+          tokenCount: tokens.length,
+          sent,
+          failed,
+          transport: 'legacy_fcm'
+        }
+      });
+      return { sent, failed };
+    } catch (e) {
+      console.warn('Legacy FCM send error:', e.message);
+      return { sent: 0, reason: 'send_failed' };
+    }
+  }
+
   try {
     const resp = await firebaseMessaging.sendEachForMulticast({
       tokens,
@@ -2766,8 +2890,13 @@ async function notifyParentsTeacherJoinedSession(sessionId) {
 }
 
 async function sendPushToAdmins(title, body, data = {}) {
+  try {
+    await ensurePushTokenTables();
+  } catch (e) {
+    console.warn('Push schema ensure failed:', e.message);
+    return;
+  }
   const firebaseMessaging = getFirebaseAdminMessaging();
-  if (!firebaseMessaging) return;
   let tokens;
   try {
     const r = await pool.query(`SELECT fcm_token FROM admin_fcm_tokens`);
@@ -2782,6 +2911,60 @@ async function sendPushToAdmins(title, body, data = {}) {
   const safeTitle = String(title || APP_DISPLAY_NAME).slice(0, 200);
   const safeBody = String(body || '').slice(0, 240);
   const notificationTag = String(data.notificationTag || data.type || `${safeTitle}|${safeBody}|${targetLink}`).slice(0, 180);
+
+  if (!firebaseMessaging) {
+    const serverKey = process.env.FIREBASE_SERVER_KEY;
+    if (!serverKey) return;
+    try {
+      const messageData = Object.fromEntries(
+        Object.entries({ ...data, title: safeTitle, body: safeBody, url: targetLink, link: targetLink, click_action: targetLink, notificationTag })
+          .map(([k, v]) => [k, typeof v === 'string' ? v : JSON.stringify(v)])
+      );
+      const legacyResp = await axios.post('https://fcm.googleapis.com/fcm/send', {
+        registration_ids: tokens,
+        notification: { title: safeTitle, body: safeBody },
+        data: messageData,
+        webpush: { fcm_options: { link: targetLink } }
+      }, {
+        headers: {
+          Authorization: `key ${serverKey}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const results = Array.isArray(legacyResp?.data?.results) ? legacyResp.data.results : [];
+      results.forEach((x, i) => {
+        if (x && (x.error === 'NotRegistered' || x.error === 'InvalidRegistration')) {
+          pool.query('DELETE FROM admin_fcm_tokens WHERE fcm_token = $1', [tokens[i]]).catch(() => {});
+        }
+      });
+
+      const sent = Number(legacyResp?.data?.success || 0);
+      const failed = Number(legacyResp?.data?.failure || Math.max(tokens.length - sent, 0));
+      await logPushInEmailLog({
+        recipientName: 'Admins',
+        recipientEmail: 'admin-push-broadcast',
+        emailType: 'Push-Admin',
+        subject: `${safeTitle} [PUSH]`,
+        status: sent > 0 ? 'Sent' : 'Failed',
+        payload: {
+          type: data.type || 'admin_push',
+          title: safeTitle,
+          body: safeBody,
+          link: targetLink,
+          tokenCount: tokens.length,
+          sent,
+          failed,
+          transport: 'legacy_fcm'
+        }
+      });
+      return;
+    } catch (e) {
+      console.warn('Admin legacy FCM send error:', e.message);
+      return;
+    }
+  }
+
   try {
     const resp = await firebaseMessaging.sendEachForMulticast({
       tokens,
@@ -2994,6 +3177,7 @@ function getFirebaseAdminMessaging() {
 
 async function sendAdminPushNotification(title, body, data = {}) {
   try {
+    await ensurePushTokenTables();
     const result = await pool.query('SELECT fcm_token FROM admin_fcm_tokens');
     const tokens = result.rows.map(row => row.fcm_token).filter(Boolean);
     if (!tokens.length) return false;
@@ -13896,6 +14080,7 @@ app.post('/api/admin/push-token-status', async (req, res) => {
   }
 
   try {
+    await ensurePushTokenTables();
     const normalizedEmail = String(email || '').trim().toLowerCase();
     const filterEnabled = normalizedEmail.length > 0;
 
@@ -13957,6 +14142,34 @@ app.post('/api/admin/push-token-status', async (req, res) => {
   } catch (err) {
     console.error('Push token status error:', err.message);
     res.status(500).json({ error: 'Failed to fetch push token status' });
+  }
+});
+
+// Debug endpoint: send a test push notification to all admin tokens
+app.post('/api/admin/test-push', async (req, res) => {
+  const { pass, title, body } = req.body || {};
+  if (pass !== (process.env.ADMIN_PASSWORD || 'admin123')) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  try {
+    await ensurePushTokenTables();
+    const tokenCountResult = await pool.query('SELECT COUNT(*)::int AS count FROM admin_fcm_tokens');
+    const tokenCount = tokenCountResult.rows[0]?.count || 0;
+    const sent = await sendAdminPushNotification(
+      String(title || 'Fluent Feathers Admin Test'),
+      String(body || 'If you see this, admin push is working.'),
+      { type: 'admin_test_push', url: `${(process.env.APP_URL || '').replace(/\/$/, '') || 'https://fluent-feathers-academy-lms.onrender.com'}/admin.html` }
+    );
+    res.json({
+      success: true,
+      sent: !!sent,
+      token_count: tokenCount,
+      firebase_admin_configured: !!getFirebaseAdminMessaging(),
+      legacy_server_key_configured: !!process.env.FIREBASE_SERVER_KEY
+    });
+  } catch (err) {
+    console.error('Admin test push error:', err.message);
+    res.status(500).json({ error: 'Failed to send admin test push' });
   }
 });
 

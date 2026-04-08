@@ -7,12 +7,13 @@ self.addEventListener('push', event => {
     data = { body: event.data.text() };
   }
 
-  const title = (data.notification && data.notification.title) || data.title || 'Fluent Feathers Academy';
+  const payload = (data && typeof data.data === 'object' && data.data) ? data.data : data;
+  const title = (data.notification && data.notification.title) || payload.title || data.title || 'Fluent Feathers Academy';
   const options = {
-    body: (data.notification && data.notification.body) || data.body || '',
+    body: (data.notification && data.notification.body) || payload.body || data.body || '',
     icon: (data.notification && data.notification.icon) || '/app-icon.png',
     badge: (data.notification && data.notification.badge) || '/app-icon.png',
-    data: (data.notification && data.notification.data) || data.data || {}
+    data: (data.notification && data.notification.data) || payload || {}
   };
 
   event.waitUntil(self.registration.showNotification(title, options));
@@ -20,7 +21,8 @@ self.addEventListener('push', event => {
 
 self.addEventListener('notificationclick', event => {
   event.notification.close();
-  const clickAction = event.notification.data && event.notification.data.click_action;
+  const data = event.notification.data || {};
+  const clickAction = data.click_action || data.url || data.link;
   const url = clickAction || '/';
   event.waitUntil(clients.openWindow(url));
 });

@@ -4199,11 +4199,19 @@ I'm passionate about helping children develop confidence in communication!"></te
           return;
         }
         window.__ffAdminPushToken = token;
-        await fetch('/api/admin/register-fcm-token', {
+        const registerResp = await fetch('/api/admin/register-fcm-token', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ token })
         });
+        if (!registerResp.ok) {
+          let details = '';
+          try {
+            const data = await registerResp.json();
+            details = data && data.error ? ` - ${data.error}` : '';
+          } catch (_) {}
+          throw new Error(`Admin token registration failed (${registerResp.status})${details}`);
+        }
         window.__ffAdminPushOnMessageBound = window.__ffAdminPushOnMessageBound === true;
         window.__ffAdminLastForegroundNotification = window.__ffAdminLastForegroundNotification || { tag: '', ts: 0 };
         if (!window.__ffAdminPushOnMessageBound) {
