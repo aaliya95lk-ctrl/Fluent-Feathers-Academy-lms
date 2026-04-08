@@ -327,55 +327,23 @@ CREATE INDEX idx_parent_fcm_tokens_email ON parent_fcm_tokens(LOWER(parent_email
 CREATE INDEX idx_admin_fcm_tokens_updated_at ON admin_fcm_tokens(updated_at);
 
 -- ==================== ROW LEVEL SECURITY ====================
--- Enable RLS on all tables to prevent unauthorized direct access
--- The app connects via service_role key which bypasses RLS, so this is safe
-
-ALTER TABLE groups ENABLE ROW LEVEL SECURITY;
-ALTER TABLE group_timings ENABLE ROW LEVEL SECURITY;
-ALTER TABLE students ENABLE ROW LEVEL SECURITY;
-ALTER TABLE sessions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE session_attendance ENABLE ROW LEVEL SECURITY;
-ALTER TABLE materials ENABLE ROW LEVEL SECURITY;
-ALTER TABLE events ENABLE ROW LEVEL SECURITY;
-ALTER TABLE event_registrations ENABLE ROW LEVEL SECURITY;
-ALTER TABLE email_log ENABLE ROW LEVEL SECURITY;
-ALTER TABLE announcements ENABLE ROW LEVEL SECURITY;
-ALTER TABLE parent_credentials ENABLE ROW LEVEL SECURITY;
-ALTER TABLE class_feedback ENABLE ROW LEVEL SECURITY;
-ALTER TABLE student_badges ENABLE ROW LEVEL SECURITY;
-ALTER TABLE monthly_assessments ENABLE ROW LEVEL SECURITY;
-ALTER TABLE student_certificates ENABLE ROW LEVEL SECURITY;
-ALTER TABLE payment_history ENABLE ROW LEVEL SECURITY;
-ALTER TABLE payment_renewals ENABLE ROW LEVEL SECURITY;
-ALTER TABLE makeup_classes ENABLE ROW LEVEL SECURITY;
-ALTER TABLE class_points ENABLE ROW LEVEL SECURITY;
-ALTER TABLE birthday_cards ENABLE ROW LEVEL SECURITY;
-ALTER TABLE parent_fcm_tokens ENABLE ROW LEVEL SECURITY;
-ALTER TABLE admin_fcm_tokens ENABLE ROW LEVEL SECURITY;
-
--- Allow service_role full access (this is what your server uses)
-CREATE POLICY "Service role only" ON groups FOR ALL TO service_role USING (true) WITH CHECK (true);
-CREATE POLICY "Service role only" ON group_timings FOR ALL TO service_role USING (true) WITH CHECK (true);
-CREATE POLICY "Service role only" ON students FOR ALL TO service_role USING (true) WITH CHECK (true);
-CREATE POLICY "Service role only" ON sessions FOR ALL TO service_role USING (true) WITH CHECK (true);
-CREATE POLICY "Service role only" ON session_attendance FOR ALL TO service_role USING (true) WITH CHECK (true);
-CREATE POLICY "Service role only" ON materials FOR ALL TO service_role USING (true) WITH CHECK (true);
-CREATE POLICY "Service role only" ON events FOR ALL TO service_role USING (true) WITH CHECK (true);
-CREATE POLICY "Service role only" ON event_registrations FOR ALL TO service_role USING (true) WITH CHECK (true);
-CREATE POLICY "Service role only" ON email_log FOR ALL TO service_role USING (true) WITH CHECK (true);
-CREATE POLICY "Service role only" ON announcements FOR ALL TO service_role USING (true) WITH CHECK (true);
-CREATE POLICY "Service role only" ON parent_credentials FOR ALL TO service_role USING (true) WITH CHECK (true);
-CREATE POLICY "Service role only" ON class_feedback FOR ALL TO service_role USING (true) WITH CHECK (true);
-CREATE POLICY "Service role only" ON student_badges FOR ALL TO service_role USING (true) WITH CHECK (true);
-CREATE POLICY "Service role only" ON monthly_assessments FOR ALL TO service_role USING (true) WITH CHECK (true);
-CREATE POLICY "Service role only" ON student_certificates FOR ALL TO service_role USING (true) WITH CHECK (true);
-CREATE POLICY "Service role only" ON payment_history FOR ALL TO service_role USING (true) WITH CHECK (true);
-CREATE POLICY "Service role only" ON payment_renewals FOR ALL TO service_role USING (true) WITH CHECK (true);
-CREATE POLICY "Service role only" ON makeup_classes FOR ALL TO service_role USING (true) WITH CHECK (true);
-CREATE POLICY "Service role only" ON class_points FOR ALL TO service_role USING (true) WITH CHECK (true);
-CREATE POLICY "Service role only" ON birthday_cards FOR ALL TO service_role USING (true) WITH CHECK (true);
-CREATE POLICY "Service role only" ON parent_fcm_tokens FOR ALL TO service_role USING (true) WITH CHECK (true);
-CREATE POLICY "Service role only" ON admin_fcm_tokens FOR ALL TO service_role USING (true) WITH CHECK (true);
+-- Enable RLS on all current/future public tables and enforce one service_role policy per table.
+DO $$
+DECLARE
+  t record;
+BEGIN
+  FOR t IN
+    SELECT tablename
+    FROM pg_tables
+    WHERE schemaname = 'public'
+  LOOP
+    EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t.tablename);
+    EXECUTE format('DROP POLICY IF EXISTS "Allow all for service role" ON %I', t.tablename);
+    EXECUTE format('DROP POLICY IF EXISTS "Service role full access" ON %I', t.tablename);
+    EXECUTE format('DROP POLICY IF EXISTS "Service role only" ON %I', t.tablename);
+    EXECUTE format('CREATE POLICY "Service role only" ON %I FOR ALL TO service_role USING (true) WITH CHECK (true)', t.tablename);
+  END LOOP;
+END $$;
 
 -- ==================== DONE ====================
 -- Now you can import your backup data!

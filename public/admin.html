@@ -12,7 +12,8 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Fluent Feathers Academy">
   <link rel="icon" id="pwaFavicon" href="/logo.svg" type="image/svg+xml">
-  <link rel="apple-touch-icon" id="pwaAppleTouch" href="/logo.svg">
+  <link rel="icon" href="/logo.png" sizes="192x192" type="image/png">
+  <link rel="apple-touch-icon" id="pwaAppleTouch" href="/apple-touch-icon.png">
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging-compat.js"></script>
   <style>
@@ -4236,7 +4237,7 @@ I'm passionate about helping children develop confidence in communication!"></te
     function updateAdminNotifyButton() {
       const btn = document.getElementById('adminNotifyBtn');
       if (!btn) return;
-      if (adminPushSetupDone || Notification.permission === 'granted') {
+      if (adminPushSetupDone && window.__ffAdminPushToken) {
         btn.textContent = '✅ Notifications Enabled';
         btn.disabled = true;
         btn.style.opacity = '0.7';
@@ -4267,7 +4268,7 @@ I'm passionate about helping children develop confidence in communication!"></te
         const fav = document.getElementById('pwaFavicon');
         const apple = document.getElementById('pwaAppleTouch');
         if (fav && appConfig.logoUrl) fav.href = appConfig.logoUrl;
-        if (apple && appConfig.logoUrl) apple.href = appConfig.logoUrl;
+        if (apple) apple.href = '/apple-touch-icon.png';
         // Update storage status indicator
         const statusEl = document.getElementById('storageStatus');
         if (statusEl) {

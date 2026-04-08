@@ -10,8 +10,9 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Fluent Feathers Academy">
-  <link rel="icon" id="pwaFavicon" href="/logo.png" type="image/png">
-  <link rel="apple-touch-icon" id="pwaAppleTouch" href="/logo.png">
+  <link rel="icon" id="pwaFavicon" href="/logo.svg" type="image/svg+xml">
+  <link rel="icon" href="/logo.png" sizes="192x192" type="image/png">
+  <link rel="apple-touch-icon" id="pwaAppleTouch" href="/apple-touch-icon.png">
   <!-- PDF Generation Libraries -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -1483,7 +1484,7 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
     const fav = document.getElementById('pwaFavicon');
     const apple = document.getElementById('pwaAppleTouch');
     if (fav && appConfig.logoUrl) fav.href = appConfig.logoUrl;
-    if (apple && appConfig.logoUrl) apple.href = appConfig.logoUrl;
+    if (apple) apple.href = '/apple-touch-icon.png';
   } catch (e) {
     console.log('Using default config');
   }
@@ -1491,6 +1492,10 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
 
     // Initialize Firebase messaging for push notifications
     async function initializeFirebaseMessaging() {
+      if (!('Notification' in window) || !('serviceWorker' in navigator) || typeof firebase === 'undefined') {
+        console.log('Push notifications are not supported in this browser context');
+        return;
+      }
       if (!appConfig.firebase || !appConfig.firebaseVapidKey) {
         console.log('Firebase not configured, skipping push notifications');
         return;

@@ -783,13 +783,23 @@ app.get('/api/ping', (req, res) => {
 // Endpoint to get logo URL and storage status for frontend
 app.get('/api/config', (req, res) => {
   try {
+    const firebaseWebConfig = getFirebaseWebConfig();
+    const firebaseAdminConfigured = !!(
+      process.env.FIREBASE_SERVICE_ACCOUNT ||
+      process.env.FIREBASE_SERVICE_ACCOUNT_PATH ||
+      process.env.GOOGLE_APPLICATION_CREDENTIALS ||
+      process.env.FIREBASE_SERVER_KEY
+    );
     res.json({
       logoUrl: process.env.LOGO_URL || '/logo.png',
       storageType: useCloudinary ? 'cloudinary' : 'local',
       cloudinaryConfigured: useCloudinary,
       cloudName: useCloudinary ? cloudName : null,
-      firebase: getFirebaseWebConfig(),
-      firebaseVapidKey: process.env.FIREBASE_VAPID_KEY || null
+      firebase: firebaseWebConfig,
+      firebaseVapidKey: process.env.FIREBASE_VAPID_KEY || null,
+      firebaseConfigured: !!firebaseWebConfig,
+      pushConfigured: !!(firebaseWebConfig && process.env.FIREBASE_VAPID_KEY),
+      adminPushConfigured: firebaseAdminConfigured
     });
   } catch (err) {
     res.status(500).json({ error: 'Failed to load config' });
@@ -2159,19 +2169,24 @@ async function runMigrations() {
       console.log('Migration 45 note:', err.message);
     }
 
-    // Migration 46: Harden RLS policies and cover tables missed by earlier migration
+    // Migration 46: Harden RLS policies across all public tables
     try {
-      const tables = ['groups', 'group_timings', 'students', 'sessions', 'session_attendance', 'materials', 'events', 'event_registrations', 'email_log', 'announcements', 'parent_credentials', 'class_feedback', 'student_badges', 'monthly_assessments', 'student_certificates', 'payment_history', 'payment_renewals', 'makeup_classes', 'demo_leads', 'weekly_challenges', 'student_challenges', 'session_materials', 'admin_settings', 'expenses', 'resource_library', 'class_points'];
-      for (const table of tables) {
+      const { rows: publicTables } = await client.query(`
+        SELECT tablename
+        FROM pg_tables
+        WHERE schemaname = 'public'
+      `);
+      for (const { tablename } of publicTables) {
         try {
-          await client.query(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY`);
-          await client.query(`DROP POLICY IF EXISTS "Allow all for service role" ON ${table}`);
-          await client.query(`DROP POLICY IF EXISTS "Service role full access" ON ${table}`);
-          await client.query(`DROP POLICY IF EXISTS "Service role only" ON ${table}`);
-          await client.query(`CREATE POLICY "Service role only" ON ${table} FOR ALL TO service_role USING (true) WITH CHECK (true)`);
+          const safeTable = `"${tablename.replace(/"/g, '""')}"`;
+          await client.query(`ALTER TABLE ${safeTable} ENABLE ROW LEVEL SECURITY`);
+          await client.query(`DROP POLICY IF EXISTS "Allow all for service role" ON ${safeTable}`);
+          await client.query(`DROP POLICY IF EXISTS "Service role full access" ON ${safeTable}`);
+          await client.query(`DROP POLICY IF EXISTS "Service role only" ON ${safeTable}`);
+          await client.query(`CREATE POLICY "Service role only" ON ${safeTable} FOR ALL TO service_role USING (true) WITH CHECK (true)`);
         } catch (e) { /* table may not exist yet */ }
       }
-      console.log('✅ Migration 46: Hardened RLS policies for Supabase Security Advisor');
+      console.log(`✅ Migration 46: Hardened RLS policies for ${publicTables.length} public table(s)`);
     } catch (err) {
       console.log('Migration 46 note:', err.message);
     }
@@ -2475,7 +2490,8 @@ function addInstallAppLinksToPortalEmails(html) {
 }
 
 async function sendPushToParentByEmail(parentEmail, title, body, data = {}) {
-  if (!firebaseAdmin) return { sent: 0, reason: 'firebase_disabled' };
+  const firebaseMessaging = getFirebaseAdminMessaging();
+  if (!firebaseMessaging) return { sent: 0, reason: 'firebase_disabled' };
   const norm = String(parentEmail || '').trim().toLowerCase();
   if (!norm) return { sent: 0, reason: 'invalid_email' };
   let tokens;
@@ -2496,7 +2512,7 @@ async function sendPushToParentByEmail(parentEmail, title, body, data = {}) {
   const safeBody = String(body || '').slice(0, 240);
   const notificationTag = String(data.notificationTag || data.type || `${safeTitle}|${safeBody}|${targetLink}`).slice(0, 180);
   try {
-    const resp = await firebaseAdmin.messaging().sendEachForMulticast({
+    const resp = await firebaseMessaging.sendEachForMulticast({
       tokens,
       // Keep web push data-only so the service worker is the single notification renderer.
       data: { ...data, title: safeTitle, body: safeBody, url: targetLink, link: targetLink, click_action: targetLink, notificationTag },
@@ -2643,7 +2659,8 @@ async function notifyParentsTeacherJoinedSession(sessionId) {
 }
 
 async function sendPushToAdmins(title, body, data = {}) {
-  if (!firebaseAdmin) return;
+  const firebaseMessaging = getFirebaseAdminMessaging();
+  if (!firebaseMessaging) return;
   let tokens;
   try {
     const r = await pool.query(`SELECT fcm_token FROM admin_fcm_tokens`);
@@ -2659,7 +2676,7 @@ async function sendPushToAdmins(title, body, data = {}) {
   const safeBody = String(body || '').slice(0, 240);
   const notificationTag = String(data.notificationTag || data.type || `${safeTitle}|${safeBody}|${targetLink}`).slice(0, 180);
   try {
-    const resp = await firebaseAdmin.messaging().sendEachForMulticast({
+    const resp = await firebaseMessaging.sendEachForMulticast({
       tokens,
       // Keep web push data-only so the service worker is the single notification renderer.
       data: { ...data, title: safeTitle, body: safeBody, url: targetLink, link: targetLink, click_action: targetLink, notificationTag },
