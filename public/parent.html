@@ -1489,6 +1489,24 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
   }
 }
 
+    async function registerParentPushToken(email) {
+      try {
+        const token = window.__ffParentPushToken;
+        const normalizedEmail = String(email || '').trim().toLowerCase();
+        if (!token || !normalizedEmail) return false;
+        await fetch('/api/parent/register-fcm-token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token, email: normalizedEmail })
+        });
+        sessionStorage.setItem('parentEmail', normalizedEmail);
+        return true;
+      } catch (err) {
+        console.warn('Parent push token registration failed:', err);
+        return false;
+      }
+    }
+
     // Initialize Firebase messaging for push notifications
     async function initializeFirebaseMessaging() {
       if (!('Notification' in window) || !('serviceWorker' in navigator) || typeof firebase === 'undefined') {
@@ -1533,15 +1551,11 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
         // Store token globally
         window.__ffParentPushToken = token;
 
-        // Register token with server
-        const parentEmail = sessionStorage.getItem('parentEmail');
-        if (parentEmail) {
-          await fetch('/api/parent/register-fcm-token', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ token, email: parentEmail })
-          });
-        }
+        // Register token with server if we already know the parent email
+        const parentEmail = sessionStorage.getItem('parentEmail')
+          || (currentStudent && currentStudent.parent_email)
+          || '';
+        if (parentEmail) await registerParentPushToken(parentEmail);
 
         // Handle foreground messages
         window.__ffParentPushOnMessageBound = window.__ffParentPushOnMessageBound === true;
@@ -1997,9 +2011,17 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
       document.getElementById('loginSection').style.display = 'none';
       document.getElementById('dashboardSection').style.display = 'block';
 
+      const parentEmailInput = document.getElementById('parentEmail')?.value?.trim() || '';
+      const parentEmailFromData = (students && students[0] && students[0].parent_email) ? String(students[0].parent_email).trim() : '';
+      const parentEmail = (parentEmailInput || parentEmailFromData).toLowerCase();
+      if (parentEmail) {
+        sessionStorage.setItem('parentEmail', parentEmail);
+        registerParentPushToken(parentEmail).catch(() => {});
+      }
+
       // Store session in localStorage for persistent login (unless restoring from storage)
       if (!skipSave) {
-        const parentEmail = document.getElementById('parentEmail').value.trim();
+        const parentEmail = parentEmailInput || parentEmailFromData;
         localStorage.setItem('parentSession', JSON.stringify({
           email: parentEmail,
           students: students,

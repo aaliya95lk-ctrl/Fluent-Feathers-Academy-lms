@@ -2543,6 +2543,25 @@ function addInstallAppLinksToPortalEmails(html) {
   });
 }
 
+async function logPushInEmailLog({ recipientName, recipientEmail, emailType, subject, status, payload }) {
+  try {
+    await pool.query(
+      `INSERT INTO email_log (recipient_name, recipient_email, email_type, subject, status, email_body)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [
+        String(recipientName || ''),
+        String(recipientEmail || ''),
+        String(emailType || 'Push-Notification'),
+        String(subject || 'Push Notification'),
+        String(status || 'Sent'),
+        typeof payload === 'string' ? payload : JSON.stringify(payload || {})
+      ]
+    );
+  } catch (err) {
+    console.warn('Push log insert failed:', err.message);
+  }
+}
+
 async function sendPushToParentByEmail(parentEmail, title, body, data = {}) {
   const firebaseMessaging = getFirebaseAdminMessaging();
   if (!firebaseMessaging) return { sent: 0, reason: 'firebase_disabled' };
@@ -2579,9 +2598,43 @@ async function sendPushToParentByEmail(parentEmail, title, body, data = {}) {
         pool.query('DELETE FROM parent_fcm_tokens WHERE fcm_token = $1', [tokens[i]]).catch(() => {});
       }
     });
-    return { sent: resp.successCount || 0, failed: resp.failureCount || 0 };
+    const sent = resp.successCount || 0;
+    const failed = resp.failureCount || 0;
+    await logPushInEmailLog({
+      recipientName: data.parentName || 'Parent',
+      recipientEmail: norm,
+      emailType: 'Push-Parent',
+      subject: `${safeTitle} [PUSH]`,
+      status: sent > 0 ? 'Sent' : 'Failed',
+      payload: {
+        type: data.type || 'parent_push',
+        title: safeTitle,
+        body: safeBody,
+        link: targetLink,
+        tokenCount: tokens.length,
+        sent,
+        failed
+      }
+    });
+    return { sent, failed };
   } catch (e) {
     console.warn('FCM send error:', e.message);
+    await logPushInEmailLog({
+      recipientName: data.parentName || 'Parent',
+      recipientEmail: norm,
+      emailType: 'Push-Parent',
+      subject: `${safeTitle} [PUSH]`,
+      status: 'Failed',
+      payload: {
+        type: data.type || 'parent_push',
+        title: safeTitle,
+        body: safeBody,
+        link: targetLink,
+        tokenCount: tokens.length,
+        reason: 'send_failed',
+        error: String(e.message || '')
+      }
+    });
     return { sent: 0, reason: 'send_failed' };
   }
 }
@@ -2743,8 +2796,42 @@ async function sendPushToAdmins(title, body, data = {}) {
         pool.query('DELETE FROM admin_fcm_tokens WHERE fcm_token = $1', [tokens[i]]).catch(() => {});
       }
     });
+    const sent = resp.successCount || 0;
+    const failed = resp.failureCount || 0;
+    await logPushInEmailLog({
+      recipientName: 'Admins',
+      recipientEmail: 'admin-push-broadcast',
+      emailType: 'Push-Admin',
+      subject: `${safeTitle} [PUSH]`,
+      status: sent > 0 ? 'Sent' : 'Failed',
+      payload: {
+        type: data.type || 'admin_push',
+        title: safeTitle,
+        body: safeBody,
+        link: targetLink,
+        tokenCount: tokens.length,
+        sent,
+        failed
+      }
+    });
   } catch (e) {
     console.warn('Admin FCM send error:', e.message);
+    await logPushInEmailLog({
+      recipientName: 'Admins',
+      recipientEmail: 'admin-push-broadcast',
+      emailType: 'Push-Admin',
+      subject: `${safeTitle} [PUSH]`,
+      status: 'Failed',
+      payload: {
+        type: data.type || 'admin_push',
+        title: safeTitle,
+        body: safeBody,
+        link: targetLink,
+        tokenCount: tokens.length,
+        reason: 'send_failed',
+        error: String(e.message || '')
+      }
+    });
   }
 }
 
@@ -2817,6 +2904,7 @@ async function sendEmail(to, subject, html, recipientName, emailType, options = 
           .replaceAll('Homework Corrected', 'Classwork Corrected')
           .replaceAll("'s Homework Reviewed", "'s Classwork Reviewed")
       : subject;
+  let finalHtml = html;
   try {
     const apiKey = process.env.BREVO_API_KEY;
     if (!apiKey) {
@@ -2832,7 +2920,6 @@ async function sendEmail(to, subject, html, recipientName, emailType, options = 
         </a>
       </div>
     `;
-    let finalHtml = html;
     if (typeof finalHtml === 'string' && !finalHtml.includes(websiteLink)) {
       if (finalHtml.includes('</body>')) {
         finalHtml = finalHtml.replace('</body>', `${websiteFooter}\n</body>`);
@@ -2852,6 +2939,10 @@ async function sendEmail(to, subject, html, recipientName, emailType, options = 
   } catch (e) {
     console.error('Email Error:', e.message);
     await pool.query(`INSERT INTO email_log (recipient_name, recipient_email, email_type, subject, status, email_body) VALUES ($1, $2, $3, $4, 'Failed', $5)`, [recipientName || '', to, emailType, effectiveSubject, finalHtml || html || '']);
+    // Do not block push fallback on email provider failures.
+    const pushTitleFallback = String(effectiveSubject || subject || '').replace(/\s*\[[^\]]+\]\s*$/g, '').trim() || 'Fluent Feathers';
+    const pushBodyFallback = stripHtmlSnippet(finalHtml || html || '') || `Update for ${recipientName || 'Parent'}`;
+    sendPushToParentByEmail(to, pushTitleFallback, pushBodyFallback, { emailType: emailType || '', fallback: 'email_failed' }).catch(() => {});
     return false;
   }
 }
@@ -2932,6 +3023,21 @@ async function sendAdminPushNotification(title, body, data = {}) {
           await pool.query('DELETE FROM admin_fcm_tokens WHERE fcm_token = ANY($1)', [invalidTokens]);
         }
       }
+      await logPushInEmailLog({
+        recipientName: 'Admins',
+        recipientEmail: 'admin-push-broadcast',
+        emailType: 'Push-Admin',
+        subject: `${String(title || 'Admin Notification').slice(0, 200)} [PUSH]`,
+        status: (response.successCount || 0) > 0 ? 'Sent' : 'Failed',
+        payload: {
+          type: data.type || 'admin_notification',
+          title: String(title || ''),
+          body: String(body || ''),
+          tokenCount: tokens.length,
+          sent: response.successCount || 0,
+          failed: response.failureCount || 0
+        }
+      });
       return true;
     }
 
@@ -2946,6 +3052,20 @@ async function sendAdminPushNotification(title, body, data = {}) {
         headers: {
           Authorization: `key ${serverKey}`,
           'Content-Type': 'application/json'
+        }
+      });
+      await logPushInEmailLog({
+        recipientName: 'Admins',
+        recipientEmail: 'admin-push-broadcast',
+        emailType: 'Push-Admin',
+        subject: `${String(title || 'Admin Notification').slice(0, 200)} [PUSH]`,
+        status: 'Sent',
+        payload: {
+          type: data.type || 'admin_notification',
+          title: String(title || ''),
+          body: String(body || ''),
+          tokenCount: tokens.length,
+          transport: 'legacy_fcm'
         }
       });
       return true;
@@ -4939,8 +5059,9 @@ async function checkAndSendReminders() {
           const sentCheck = await pool.query(
             `SELECT id FROM email_log
              WHERE recipient_email = $1
-               AND email_type IN ('Reminder-5hrs', 'Reminder-5hrs-Group', 'Reminder-5hrs-Demo')
-               AND subject LIKE $2`,
+                AND email_type IN ('Reminder-5hrs', 'Reminder-5hrs-Group', 'Reminder-5hrs-Demo')
+                AND status = 'Sent'
+                AND subject LIKE $2`,
             [session.parent_email, `%[SID:${sidCheck}]%`]
           );
 
@@ -4968,14 +5089,18 @@ async function checkAndSendReminders() {
 
             const subjectPrefix = session.is_demo ? `🎯 Demo Class Reminder` : session.is_group ? `⏰ Group Class Reminder (${session.group_name})` : '⏰ Class Reminder';
             const sidLabel = session.is_demo ? `DEMO:${session.id}` : session.id;
-            await sendEmail(
+            const sent = await sendEmail(
               session.parent_email,
               `${subjectPrefix} - Ready for today's class in 5 hours [SID:${sidLabel}]`,
               reminderEmailHTML,
               session.parent_name,
               emailType5hr
             );
-            console.log(`✅ Sent 5-hour ${sessionTypeLabel} reminder to ${session.parent_email} for Session #${session.session_number} (ID:${session.id})`);
+            if (sent) {
+              console.log(`✅ Sent 5-hour ${sessionTypeLabel} reminder to ${session.parent_email} for Session #${session.session_number} (ID:${session.id})`);
+            } else {
+              console.warn(`⚠️ Failed to send 5-hour ${sessionTypeLabel} reminder to ${session.parent_email} for Session #${session.session_number} (ID:${session.id})`);
+            }
           } else {
             console.log(`⏭️ 5-hour reminder already sent for ${sessionTypeLabel} Session #${session.session_number} (ID:${session.id})`);
           }
@@ -4990,8 +5115,9 @@ async function checkAndSendReminders() {
           const sentCheck = await pool.query(
             `SELECT id FROM email_log
              WHERE recipient_email = $1
-               AND email_type IN ('Reminder-1hr', 'Reminder-1hr-Group', 'Reminder-1hr-Demo')
-               AND subject LIKE $2`,
+                AND email_type IN ('Reminder-1hr', 'Reminder-1hr-Group', 'Reminder-1hr-Demo')
+                AND status = 'Sent'
+                AND subject LIKE $2`,
             [session.parent_email, `%[SID:${sidCheck1hr}]%`]
           );
 
@@ -5019,14 +5145,18 @@ async function checkAndSendReminders() {
 
             const subjectPrefix1hr = session.is_demo ? `🎯 Demo Class Reminder` : session.is_group ? `⏰ Group Class Reminder (${session.group_name})` : '⏰ Class Reminder';
             const sidLabel1hr = session.is_demo ? `DEMO:${session.id}` : session.id;
-            await sendEmail(
+            const sent = await sendEmail(
               session.parent_email,
               `${subjectPrefix1hr} - Ready for today's class in 1 hour [SID:${sidLabel1hr}]`,
               reminderEmailHTML,
               session.parent_name,
               emailType1hr
             );
-            console.log(`✅ Sent 1-hour ${sessionTypeLabel} reminder to ${session.parent_email} for Session #${session.session_number} (ID:${session.id})`);
+            if (sent) {
+              console.log(`✅ Sent 1-hour ${sessionTypeLabel} reminder to ${session.parent_email} for Session #${session.session_number} (ID:${session.id})`);
+            } else {
+              console.warn(`⚠️ Failed to send 1-hour ${sessionTypeLabel} reminder to ${session.parent_email} for Session #${session.session_number} (ID:${session.id})`);
+            }
           } else {
             console.log(`⏭️ 1-hour reminder already sent for ${sessionTypeLabel} Session #${session.session_number} (ID:${session.id})`);
           }
@@ -5093,6 +5223,7 @@ async function checkAndSendEventReminders() {
               `SELECT id FROM email_log
                WHERE recipient_email = $1
                  AND email_type = 'Event-Reminder-30min'
+                 AND status = 'Sent'
                  AND subject LIKE $2`,
               [email, `%[EID:${event.id}]%`]
             );
@@ -5118,14 +5249,18 @@ async function checkAndSendEventReminders() {
               classLink: event.class_link
             });
 
-            await sendEmail(
+            const sent = await sendEmail(
               email,
               `⏰ Starting Soon: ${event.event_name} - Join in 30 minutes! [EID:${event.id}]`,
               emailHtml,
               reg.display_parent_name || '',
               'Event-Reminder-30min'
             );
-            console.log(`✅ Sent event reminder to ${email} for "${event.event_name}"`);
+            if (sent) {
+              console.log(`✅ Sent event reminder to ${email} for "${event.event_name}"`);
+            } else {
+              console.warn(`⚠️ Failed to send event reminder to ${email} for "${event.event_name}"`);
+            }
           }
         }
       } catch (eventErr) {
@@ -13705,6 +13840,78 @@ app.post('/api/admin/trigger-reminders', async (req, res) => {
   } catch (err) {
     console.error('Error in manual reminder trigger:', err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// Debug endpoint: inspect push token readiness for parents/admins
+app.post('/api/admin/push-token-status', async (req, res) => {
+  const { pass, email } = req.body || {};
+  if (pass !== (process.env.ADMIN_PASSWORD || 'admin123')) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  try {
+    const normalizedEmail = String(email || '').trim().toLowerCase();
+    const filterEnabled = normalizedEmail.length > 0;
+
+    const parentTokenSummary = await pool.query(
+      `
+      SELECT
+        COUNT(*)::int AS total_tokens,
+        COUNT(DISTINCT LOWER(parent_email))::int AS unique_parent_emails,
+        COUNT(*) FILTER (WHERE updated_at >= NOW() - INTERVAL '30 days')::int AS tokens_updated_last_30d,
+        MAX(updated_at) AS latest_parent_token_update
+      FROM parent_fcm_tokens
+      WHERE ($1 = '' OR LOWER(parent_email) = $1)
+      `,
+      [normalizedEmail]
+    );
+
+    const perParentRows = await pool.query(
+      `
+      SELECT
+        LOWER(parent_email) AS parent_email,
+        COUNT(*)::int AS token_count,
+        MAX(updated_at) AS latest_token_update
+      FROM parent_fcm_tokens
+      WHERE ($1 = '' OR LOWER(parent_email) = $1)
+      GROUP BY LOWER(parent_email)
+      ORDER BY latest_token_update DESC NULLS LAST, parent_email ASC
+      `,
+      [normalizedEmail]
+    );
+
+    const adminTokenSummary = await pool.query(
+      `
+      SELECT
+        COUNT(*)::int AS total_tokens,
+        COUNT(*) FILTER (WHERE updated_at >= NOW() - INTERVAL '30 days')::int AS tokens_updated_last_30d,
+        MAX(updated_at) AS latest_admin_token_update
+      FROM admin_fcm_tokens
+      `
+    );
+
+    res.json({
+      success: true,
+      filter: {
+        email: filterEnabled ? normalizedEmail : null
+      },
+      parent_tokens: parentTokenSummary.rows[0] || {
+        total_tokens: 0,
+        unique_parent_emails: 0,
+        tokens_updated_last_30d: 0,
+        latest_parent_token_update: null
+      },
+      per_parent: perParentRows.rows || [],
+      admin_tokens: adminTokenSummary.rows[0] || {
+        total_tokens: 0,
+        tokens_updated_last_30d: 0,
+        latest_admin_token_update: null
+      }
+    });
+  } catch (err) {
+    console.error('Push token status error:', err.message);
+    res.status(500).json({ error: 'Failed to fetch push token status' });
   }
 });
 
