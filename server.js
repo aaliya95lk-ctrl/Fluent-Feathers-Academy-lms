@@ -9368,21 +9368,23 @@ app.post('/api/sessions/:sessionId/group-cancel-student', async (req, res) => {
 
 app.post('/api/parent/cancel-class', async (req, res) => {
   const id = req.adminStudentId || req.body.student_id;
+  const client = await pool.connect();
   try {
     // Check if student is a summer camp student
-    const studentCheck = await pool.query('SELECT is_summer_camp FROM students WHERE id = $1', [id]);
+    const studentCheck = await client.query('SELECT is_summer_camp FROM students WHERE id = $1', [id]);
     if (studentCheck.rows.length > 0 && studentCheck.rows[0].is_summer_camp) {
       return res.status(400).json({ error: 'Summer camp students cannot cancel classes. Recordings will be provided for missed sessions.' });
     }
 
     // Try private session first
-    let session = (await pool.query('SELECT * FROM sessions WHERE id = $1 AND student_id = $2', [req.body.session_id, id])).rows[0];
+    let session = (await client.query('SELECT * FROM sessions WHERE id = $1 AND student_id = $2', [req.body.session_id, id])).rows[0];
     let isGroup = false;
+    let prevAttendance = null;
 
     // If not found, check if it's a group session the student is enrolled in
     if (!session) {
-      const groupCheck = await pool.query(`
-        SELECT s.*, sa.id as attendance_id
+      const groupCheck = await client.query(`
+        SELECT s.*, sa.id as attendance_id, sa.attendance as prev_attendance
         FROM sessions s
         JOIN session_attendance sa ON sa.session_id = s.id AND sa.student_id = $2
         WHERE s.id = $1 AND s.session_type = 'Group'
@@ -9390,6 +9392,7 @@ app.post('/api/parent/cancel-class', async (req, res) => {
       if (groupCheck.rows.length > 0) {
         session = groupCheck.rows[0];
         isGroup = true;
+        prevAttendance = groupCheck.rows[0].prev_attendance || 'Pending';
       }
     }
 
@@ -9402,26 +9405,65 @@ app.post('/api/parent/cancel-class', async (req, res) => {
     }
 
     // Get student details for email
-    const studentResult = await pool.query('SELECT * FROM students WHERE id = $1', [id]);
+    const studentResult = await client.query('SELECT * FROM students WHERE id = $1', [id]);
     const student = studentResult.rows[0];
+
+    await client.query('BEGIN');
 
     if (isGroup) {
       // For group sessions: mark this student's attendance as Excused, don't cancel the whole session
-      await pool.query(
+      if (prevAttendance === 'Excused') {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'This class is already cancelled for this student.' });
+      }
+
+      await client.query(
         'UPDATE session_attendance SET attendance = $1 WHERE session_id = $2 AND student_id = $3',
         ['Excused', session.id, id]
       );
+
+      // If class was previously counted as completed, reverse completion count.
+      if (prevAttendance === 'Present') {
+        await client.query(
+          'UPDATE students SET completed_sessions = GREATEST(completed_sessions - 1, 0) WHERE id = $1',
+          [id]
+        );
+      }
+
+      // Decrement remaining only when transitioning from Pending/unmarked.
+      if (!prevAttendance || prevAttendance === 'Pending') {
+        await client.query(
+          `UPDATE students SET remaining_sessions = GREATEST(remaining_sessions - 1, 0), renewal_reminder_sent = false WHERE id = $1`,
+          [id]
+        );
+      }
     } else {
       // For private sessions: cancel the entire session and decrement remaining count
-      await pool.query('UPDATE sessions SET status = $1, cancelled_by = $2 WHERE id = $3', ['Cancelled by Parent', 'Parent', session.id]);
-      await pool.query(
+      if (session.status === 'Cancelled by Parent' || session.status === 'Cancelled') {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'This class is already cancelled.' });
+      }
+
+      await client.query('UPDATE sessions SET status = $1, cancelled_by = $2 WHERE id = $3', ['Cancelled by Parent', 'Parent', session.id]);
+      await client.query(
         `UPDATE students SET remaining_sessions = GREATEST(remaining_sessions - 1, 0), renewal_reminder_sent = false WHERE id = $1`,
         [id]
       );
     }
 
-    // Give makeup credit in both cases
-    await pool.query(`INSERT INTO makeup_classes (student_id, original_session_id, reason, credit_date, status, added_by) VALUES ($1, $2, $3, CURRENT_DATE, 'Available', 'parent')`, [id, session.id, req.body.reason || 'Parent cancelled']);
+    // Give makeup credit in both cases (idempotent for the same session)
+    const existingCredit = await client.query(
+      'SELECT id FROM makeup_classes WHERE student_id = $1 AND original_session_id = $2',
+      [id, session.id]
+    );
+    if (existingCredit.rows.length === 0) {
+      await client.query(
+        `INSERT INTO makeup_classes (student_id, original_session_id, reason, credit_date, status, added_by) VALUES ($1, $2, $3, CURRENT_DATE, 'Available', 'parent')`,
+        [id, session.id, req.body.reason || 'Parent cancelled']
+      );
+    }
+
+    await client.query('COMMIT');
 
     // Send cancellation confirmation email to parent
     if (student && student.parent_email) {
@@ -9454,7 +9496,10 @@ app.post('/api/parent/cancel-class', async (req, res) => {
 
     res.json({ message: 'Class cancelled! Makeup credit added.' });
   } catch (err) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
     res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
   }
 });
 
