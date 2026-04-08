@@ -10,8 +10,8 @@ self.addEventListener('push', event => {
   const title = (data.notification && data.notification.title) || data.title || 'Fluent Feathers Academy';
   const options = {
     body: (data.notification && data.notification.body) || data.body || '',
-    icon: (data.notification && data.notification.icon) || '/icon-192.png',
-    badge: (data.notification && data.notification.badge) || '/apple-touch-icon.png',
+    icon: (data.notification && data.notification.icon) || '/app-icon.png',
+    badge: (data.notification && data.notification.badge) || '/app-icon.png',
     data: (data.notification && data.notification.data) || data.data || {}
   };
 

@@ -19,6 +19,14 @@ const app = express();
 
 const PORT = process.env.PORT || 3000;
 
+function getConfiguredLogoPath() {
+  return String(process.env.LOGO_URL || '/logo.png').trim() || '/logo.png';
+}
+
+function isAbsoluteHttpUrl(value) {
+  return /^https?:\/\//i.test(String(value || ''));
+}
+
 // ==================== CONFIG ====================
 const ADMIN_SECRET = process.env.ADMIN_SECRET || 'super_secret_change_this_in_production';
 const DEFAULT_CLASS = process.env.DEFAULT_CLASS_LINK || 'https://us04web.zoom.us/j/7288533155?pwd=Nng5N2l0aU12L0FQK245c0VVVHJBUT09';
@@ -391,6 +399,52 @@ app.use((req, res, next) => {
   }
   next();
 });
+app.get('/app-icon.png', async (req, res) => {
+  try {
+    const logoPath = getConfiguredLogoPath();
+    if (isAbsoluteHttpUrl(logoPath)) {
+      const response = await axios.get(logoPath, { responseType: 'arraybuffer', timeout: 15000 });
+      res.set('Content-Type', response.headers['content-type'] || 'image/png');
+      res.set('Cache-Control', 'public, max-age=300');
+      return res.send(Buffer.from(response.data));
+    }
+
+    const normalizedPath = logoPath.startsWith('/') ? logoPath.slice(1) : logoPath;
+    const absolutePath = path.join(__dirname, 'public', normalizedPath);
+    if (fs.existsSync(absolutePath)) {
+      return res.sendFile(absolutePath);
+    }
+
+    const fallbackPath = path.join(__dirname, 'public', 'logo.png');
+    if (fs.existsSync(fallbackPath)) {
+      return res.sendFile(fallbackPath);
+    }
+
+    return res.status(404).send('App icon not found');
+  } catch (err) {
+    console.warn('App icon fetch failed:', err.message);
+    return res.status(502).send('App icon unavailable');
+  }
+});
+
+app.get('/manifest.webmanifest', (req, res) => {
+  res.type('application/manifest+json');
+  res.send(JSON.stringify({
+    name: 'Fluent Feathers Academy LMS',
+    short_name: 'Fluent Feathers',
+    description: 'Learning Management System for Fluent Feathers Academy',
+    start_url: '/',
+    display: 'standalone',
+    background_color: '#B05D9E',
+    theme_color: '#B05D9E',
+    orientation: 'portrait-primary',
+    icons: [
+      { src: '/app-icon.png', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
+      { src: '/app-icon.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
+    ]
+  }));
+});
+
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
@@ -791,7 +845,7 @@ app.get('/api/config', (req, res) => {
       process.env.FIREBASE_SERVER_KEY
     );
     res.json({
-      logoUrl: process.env.LOGO_URL || '/logo.png',
+      logoUrl: '/app-icon.png',
       storageType: useCloudinary ? 'cloudinary' : 'local',
       cloudinaryConfigured: useCloudinary,
       cloudName: useCloudinary ? cloudName : null,
