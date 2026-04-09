@@ -8948,6 +8948,40 @@ async function saveEditedPayment() {
     }
 
     let emailLogPage = 1;
+    function isPushLogEntry(log) {
+      const emailType = String(log?.email_type || '').toLowerCase();
+      const recipientEmail = String(log?.recipient_email || '').toLowerCase();
+      const subject = String(log?.subject || '').toLowerCase();
+      return emailType.startsWith('push-')
+        || recipientEmail.includes('admin-push')
+        || recipientEmail.includes('group-parent-push')
+        || subject.includes('[push]');
+    }
+
+    function renderEmailLogTypeBadge(log) {
+      const emailType = String(log?.email_type || '');
+      const isPush = isPushLogEntry(log);
+      const isGroup = emailType.includes('-Group');
+      const displayType = isGroup ? emailType.replace('-Group', '') : emailType;
+      const badgeStyle = isPush
+        ? 'background:#ecfeff;color:#0f766e;border:1px solid #99f6e4;'
+        : isGroup
+          ? 'background:#eef2ff;color:#4338ca;border:1px solid #c7d2fe;'
+          : 'background:#f8fafc;color:#475569;border:1px solid #e2e8f0;';
+      const suffix = isPush ? ' App Push' : (isGroup ? ' 👥' : '');
+      return `<span class="email-badge" style="${badgeStyle}">${displayType}${suffix}</span>`;
+    }
+
+    function renderEmailLogRecipient(log) {
+      const isPush = isPushLogEntry(log);
+      const recipientName = String(log?.recipient_name || '');
+      const recipientEmail = String(log?.recipient_email || '');
+      const channelLabel = isPush
+        ? `<span style="display:inline-block;margin-top:4px;padding:2px 8px;border-radius:999px;background:#ecfeff;color:#0f766e;font-size:10px;font-weight:700;letter-spacing:0.02em;">APP PUSH</span>`
+        : '';
+      return `${recipientName}<br><span style="font-size:11px;color:#718096;">${recipientEmail}</span>${channelLabel}`;
+    }
+
     function loadEmailLogs(page) {
       if (page) emailLogPage = page;
       fetch(`/api/email-logs?page=${emailLogPage}&limit=50`)
@@ -8957,16 +8991,11 @@ async function saveEditedPayment() {
           const total = data.total || logs.length;
           const totalPages = Math.ceil(total / (data.limit || 50));
           document.getElementById('emailLogsBody').innerHTML=logs.map((l, idx)=>{
-            const isGroup = l.email_type && l.email_type.includes('-Group');
-            const displayType = isGroup ? l.email_type.replace('-Group', '') : l.email_type;
-            const badgeClass = isGroup ? 'email-badge-group' : 'email-badge-default';
-            const typeBadge = isGroup
-              ? `<span class="email-badge ${badgeClass}">${displayType} 👥</span>`
-              : `<span class="email-badge ${badgeClass}">${displayType}</span>`;
+            const typeBadge = renderEmailLogTypeBadge(l);
             const statusClass = l.status === 'Sent' ? 'status-active' : 'status-inactive';
             const hasBody = l.email_body && l.email_body.length > 0;
             const expandBtn = hasBody ? `<span onclick="var el=document.getElementById('emailBody${idx}'); el.style.display=el.style.display==='none'?'table-row':'none'; this.textContent=el.style.display==='none'?'▸':'▾';" style="cursor:pointer; margin-right:6px; font-size:14px;">▸</span>` : '';
-            return `<tr><td>${new Date(l.sent_at).toLocaleString()}</td><td>${l.recipient_name}<br><span style="font-size:11px;color:#718096;">${l.recipient_email}</span></td><td>${typeBadge}</td><td style="max-width:300px;">${expandBtn}${l.subject}</td><td><span class="${statusClass}">${l.status}</span></td></tr>` +
+            return `<tr><td>${new Date(l.sent_at).toLocaleString()}</td><td>${renderEmailLogRecipient(l)}</td><td>${typeBadge}</td><td style="max-width:300px;">${expandBtn}${l.subject}</td><td><span class="${statusClass}">${l.status}</span></td></tr>` +
               (hasBody ? `<tr id="emailBody${idx}" style="display:none;"><td colspan="5" style="padding:0;"><div style="max-height:400px;overflow:auto;border:1px solid #e2e8f0;border-radius:8px;margin:5px 10px 15px;background:white;">${l.email_body}</div></td></tr>` : '');
           }).join('');
           // Render pagination controls
@@ -8974,7 +9003,7 @@ async function saveEditedPayment() {
           if (paginationEl && totalPages > 1) {
             let paginationHtml = `<div style="display:flex;justify-content:center;align-items:center;gap:10px;padding:15px;">`;
             paginationHtml += `<button onclick="loadEmailLogs(${emailLogPage - 1})" ${emailLogPage <= 1 ? 'disabled' : ''} style="padding:6px 14px;border:1px solid #e2e8f0;border-radius:6px;background:white;cursor:pointer;">Prev</button>`;
-            paginationHtml += `<span style="color:#718096;">Page ${emailLogPage} of ${totalPages} (${total} emails)</span>`;
+            paginationHtml += `<span style="color:#718096;">Page ${emailLogPage} of ${totalPages} (${total} entries)</span>`;
             paginationHtml += `<button onclick="loadEmailLogs(${emailLogPage + 1})" ${emailLogPage >= totalPages ? 'disabled' : ''} style="padding:6px 14px;border:1px solid #e2e8f0;border-radius:6px;background:white;cursor:pointer;">Next</button>`;
             paginationHtml += `</div>`;
             paginationEl.innerHTML = paginationHtml;

@@ -595,6 +595,21 @@ self.addEventListener('notificationclick', (event) => {
   res.send(js);
 });
 
+function getAppBaseUrl() {
+  return process.env.APP_URL || 'https://fluent-feathers-academy-lms.onrender.com';
+}
+
+function getJoinClassUrl(sessionId, options = {}) {
+  const params = new URLSearchParams();
+  if (options.isDemo || options.sessionKind === 'demo') {
+    params.set('did', String(sessionId));
+    params.set('demo', '1');
+  } else {
+    params.set('sid', String(sessionId));
+  }
+  return `${getAppBaseUrl()}/join-class?${params.toString()}`;
+}
+
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
@@ -638,15 +653,141 @@ app.get('/b/:code', async (req, res) => {
 });
 
 // ==================== JOIN CLASS TIME-GATE ====================
+function buildUtcInstant(dateValue, timeValue) {
+  if (!dateValue || !timeValue) return null;
+  const dateStr = dateValue instanceof Date
+    ? dateValue.toISOString().split('T')[0]
+    : String(dateValue).split('T')[0];
+  const rawTime = String(timeValue).trim();
+  const timeStr = rawTime.length === 5 ? `${rawTime}:00` : rawTime.substring(0, 8);
+  const instant = new Date(`${dateStr}T${timeStr}Z`);
+  return Number.isNaN(instant.getTime()) ? null : instant;
+}
+
+function pickJoinTarget(candidates, now) {
+  const phaseWeight = { active: 0, upcoming: 1, ended: 2 };
+  const ranked = (candidates || [])
+    .filter(Boolean)
+    .map((candidate) => {
+      const msUntilStart = candidate.start.getTime() - now.getTime();
+      const msUntilEnd = candidate.end.getTime() - now.getTime();
+      let phase = 'ended';
+      if (msUntilStart <= 5 * 60 * 1000 && msUntilEnd >= 0) phase = 'active';
+      else if (msUntilStart > 5 * 60 * 1000) phase = 'upcoming';
+      return { ...candidate, msUntilStart, msUntilEnd, phase, absStartDiff: Math.abs(msUntilStart) };
+    })
+    .sort((a, b) => {
+      const phaseDiff = phaseWeight[a.phase] - phaseWeight[b.phase];
+      if (phaseDiff !== 0) return phaseDiff;
+      return a.absStartDiff - b.absStartDiff;
+    });
+  return ranked[0] || null;
+}
+
 // Email buttons point here. Redirects to Zoom only within 5 mins before to class-end.
 // Outside that window shows a friendly block page.
 app.get('/join-class', async (req, res) => {
   const sid = parseInt(req.query.sid, 10);
-  if (!sid || isNaN(sid)) {
+  const did = parseInt(req.query.did, 10);
+  const preferDemo = req.query.demo === '1' || (!!did && !Number.isNaN(did));
+  const lookupId = (!Number.isNaN(did) && did) ? did : sid;
+  if (!lookupId || isNaN(lookupId)) {
     return res.status(400).send(joinClassErrorPage('Invalid link', 'This join link is not valid. Please use the Join button in your Parent Portal.'));
   }
 
   try {
+    const currentTime = new Date();
+    const candidates = [];
+
+    if (!Number.isNaN(sid) && sid > 0) {
+      const sessionResult = await executeQuery(`
+        SELECT s.id, s.session_date, s.session_time, s.status,
+               COALESCE(s.class_link, st.class_link) AS class_link,
+               COALESCE(st.duration, g.duration, '40 mins') AS duration,
+               COALESCE(st.name, g.group_name) AS student_name
+        FROM sessions s
+        LEFT JOIN students st ON s.student_id = st.id
+        LEFT JOIN groups g ON s.group_id = g.id
+        WHERE s.id = $1
+        LIMIT 1
+      `, [sid]);
+
+      if (sessionResult.rows.length > 0) {
+        const row = sessionResult.rows[0];
+        const durationMatch = String(row.duration || '').match(/(\d+)/);
+        const durationMins = durationMatch ? parseInt(durationMatch[1], 10) : 40;
+        const start = buildUtcInstant(row.session_date, row.session_time);
+        if (start) {
+          candidates.push({
+            kind: 'session',
+            studentName: row.student_name,
+            classLink: row.class_link || DEFAULT_CLASS,
+            joinQuery: `?sid=${encodeURIComponent(String(row.id || sid))}`,
+            start,
+            end: new Date(start.getTime() + durationMins * 60 * 1000)
+          });
+        }
+      }
+    }
+
+    const demoLookupId = (!Number.isNaN(did) && did > 0)
+      ? did
+      : ((preferDemo && !Number.isNaN(sid) && sid > 0) ? sid : null);
+
+    if (demoLookupId) {
+      const demoResult = await executeQuery(`
+        SELECT id, demo_date AS session_date, demo_time AS session_time,
+               child_name AS student_name, status
+        FROM demo_leads
+        WHERE id = $1
+        LIMIT 1
+      `, [demoLookupId]);
+
+      if (demoResult.rows.length > 0) {
+        const demoRow = demoResult.rows[0];
+        const start = buildUtcInstant(demoRow.session_date, demoRow.session_time);
+        if (start) {
+          candidates.push({
+            kind: 'demo',
+            studentName: demoRow.student_name,
+            classLink: DEFAULT_CLASS,
+            joinQuery: `?did=${encodeURIComponent(String(demoRow.id))}&demo=1`,
+            start,
+            end: new Date(start.getTime() + 60 * 60 * 1000)
+          });
+        }
+      }
+    }
+
+    if (candidates.length === 0) {
+      return res.status(404).send(joinClassErrorPage('Session Not Found', 'This session could not be found. Please check your Parent Portal for the correct join link.'));
+    }
+
+    const target = pickJoinTarget(candidates, currentTime);
+    if (!target) {
+      return res.status(404).send(joinClassErrorPage('Session Not Found', 'This session could not be found. Please check your Parent Portal for the correct join link.'));
+    }
+
+    if (target.phase === 'active') {
+      return res.redirect(target.classLink || DEFAULT_CLASS);
+    }
+
+    if (target.phase === 'upcoming') {
+      const secondsRemaining = Math.max(1, Math.ceil((target.msUntilStart - 5 * 60 * 1000) / 1000));
+      const minsRemaining = Math.ceil(secondsRemaining / 60);
+      const hoursRemaining = Math.floor(minsRemaining / 60);
+      const minsLeft = minsRemaining % 60;
+      const waitMsg = minsRemaining < 60
+        ? `${minsRemaining} minute${minsRemaining !== 1 ? 's' : ''}`
+        : `${hoursRemaining}h ${minsLeft}m`;
+      return res.send(joinClassTooEarlyPage(waitMsg, target.studentName, target.joinQuery, secondsRemaining));
+    }
+
+    const endedMessage = target.kind === 'demo'
+      ? 'This demo class has already ended.'
+      : 'This session has already ended. Please check your Parent Portal for upcoming sessions.';
+    return res.send(joinClassErrorPage('Class Has Ended', endedMessage));
+
     const result = await executeQuery(`
       SELECT s.session_date, s.session_time, s.status,
              COALESCE(s.class_link, st.class_link) AS class_link,
@@ -739,8 +880,8 @@ app.get('/join-class', async (req, res) => {
   }
 });
 
-function joinClassTooEarlyPage(waitTime, studentName, sid, secondsRemaining) {
-  const joinUrl = `/join-class?sid=${sid}`;
+function joinClassTooEarlyPage(waitTime, studentName, joinQuery, secondsRemaining) {
+  const joinUrl = `/join-class${joinQuery || ''}`;
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -2784,6 +2925,27 @@ function toFcmDataPayload(input = {}) {
   );
 }
 
+function buildWebpushConfig(targetLink, notificationTag, title, body) {
+  const baseUrl = getAppBaseUrl().replace(/\/$/, '');
+  const iconUrl = `${baseUrl}/app-icon.png`;
+  return {
+    headers: {
+      Urgency: 'high',
+      TTL: '86400'
+    },
+    notification: {
+      title,
+      body,
+      icon: iconUrl,
+      badge: iconUrl,
+      tag: notificationTag
+    },
+    fcmOptions: {
+      link: targetLink
+    }
+  };
+}
+
 async function sendPushToParentByEmail(parentEmail, title, body, data = {}) {
   try {
     await ensurePushTokenTables();
@@ -2811,6 +2973,7 @@ async function sendPushToParentByEmail(parentEmail, title, body, data = {}) {
   const safeTitle = String(title || APP_DISPLAY_NAME).slice(0, 200);
   const safeBody = String(body || '').slice(0, 240);
   const notificationTag = String(data.notificationTag || data.type || `${safeTitle}|${safeBody}|${targetLink}`).slice(0, 180);
+  const webpushConfig = buildWebpushConfig(targetLink, notificationTag, safeTitle, safeBody);
 
   if (!firebaseMessaging) {
     const serverKey = process.env.FIREBASE_SERVER_KEY;
@@ -2824,7 +2987,11 @@ async function sendPushToParentByEmail(parentEmail, title, body, data = {}) {
         registration_ids: tokens,
         notification: { title: safeTitle, body: safeBody },
         data: messageData,
-        webpush: { fcm_options: { link: targetLink } }
+        webpush: {
+          headers: webpushConfig.headers,
+          notification: webpushConfig.notification,
+          fcm_options: { link: targetLink }
+        }
       }, {
         headers: {
           Authorization: `key ${serverKey}`,
@@ -2879,9 +3046,7 @@ async function sendPushToParentByEmail(parentEmail, title, body, data = {}) {
       tokens,
       notification: { title: safeTitle, body: safeBody },
       data: messageData,
-      webpush: {
-        fcmOptions: { link: targetLink }
-      }
+      webpush: webpushConfig
     });
     resp.responses.forEach((x, i) => {
       if (!x.success && x.error && (x.error.code === 'messaging/registration-token-not-registered' || x.error.code === 'messaging/invalid-registration-token')) {
@@ -3077,6 +3242,7 @@ async function sendPushToAdmins(title, body, data = {}) {
   const safeTitle = String(title || APP_DISPLAY_NAME).slice(0, 200);
   const safeBody = String(body || '').slice(0, 240);
   const notificationTag = String(data.notificationTag || data.type || `${safeTitle}|${safeBody}|${targetLink}`).slice(0, 180);
+  const webpushConfig = buildWebpushConfig(targetLink, notificationTag, safeTitle, safeBody);
 
   if (!firebaseMessaging) {
     const serverKey = process.env.FIREBASE_SERVER_KEY;
@@ -3090,7 +3256,11 @@ async function sendPushToAdmins(title, body, data = {}) {
         registration_ids: tokens,
         notification: { title: safeTitle, body: safeBody },
         data: messageData,
-        webpush: { fcm_options: { link: targetLink } }
+        webpush: {
+          headers: webpushConfig.headers,
+          notification: webpushConfig.notification,
+          fcm_options: { link: targetLink }
+        }
       }, {
         headers: {
           Authorization: `key ${serverKey}`,
@@ -3145,9 +3315,7 @@ async function sendPushToAdmins(title, body, data = {}) {
       tokens,
       notification: { title: safeTitle, body: safeBody },
       data: messageData,
-      webpush: {
-        fcmOptions: { link: targetLink }
-      }
+      webpush: webpushConfig
     });
     resp.responses.forEach((x, i) => {
       if (!x.success && x.error && (x.error.code === 'messaging/registration-token-not-registered' || x.error.code === 'messaging/invalid-registration-token')) {
@@ -3257,10 +3425,9 @@ async function sendClassReminderPush(session, hoursBeforeClass) {
   const parentEmail = String(session?.parent_email || '').trim().toLowerCase();
   if (!parentEmail) return { sent: 0, reason: 'missing_parent_email' };
 
-  const appUrl = (process.env.APP_URL || 'https://fluent-feathers-academy-lms.onrender.com').replace(/\/$/, '');
-  const joinUrl = `${appUrl}/join-class?sid=${session.id}`;
   const isDemo = !!session.is_demo;
   const isGroup = !!session.is_group;
+  const joinUrl = getJoinClassUrl(session.id, { isDemo });
   const hourLabel = `${hoursBeforeClass} ${hoursBeforeClass === 1 ? 'hour' : 'hours'}`;
   const title = isDemo
     ? `Demo class starts in ${hourLabel}`
@@ -3418,7 +3585,8 @@ async function sendAdminPushNotification(title, body, data = {}) {
 
     const appUrl = (process.env.APP_URL || process.env.PARENT_PORTAL_URL || 'https://fluent-feathers-academy-lms.onrender.com').replace(/\/$/, '');
     const targetLink = String(data.url || data.link || `${appUrl}/admin.html`);
-    const webpush = { fcmOptions: { link: targetLink } };
+    const notificationTag = String(data.notificationTag || data.type || `${String(title || '')}|${String(body || '')}|${targetLink}`).slice(0, 180);
+    const webpush = buildWebpushConfig(targetLink, notificationTag, String(title || APP_DISPLAY_NAME).slice(0, 200), String(body || '').slice(0, 240));
     const messageData = Object.fromEntries(
       Object.entries({
         ...data,
@@ -3427,7 +3595,8 @@ async function sendAdminPushNotification(title, body, data = {}) {
         type: data.type || 'admin_notification',
         url: targetLink,
         link: targetLink,
-        click_action: targetLink
+        click_action: targetLink,
+        notificationTag
       }).map(([k, v]) => [k, typeof v === 'string' ? v : JSON.stringify(v)])
     );
 
@@ -3474,7 +3643,11 @@ async function sendAdminPushNotification(title, body, data = {}) {
         registration_ids: tokens,
         notification: { title, body },
         data: messageData,
-        webpush: { fcm_options: { link: appUrl } }
+        webpush: {
+          headers: webpush.headers,
+          notification: webpush.notification,
+          fcm_options: { link: targetLink }
+        }
       }, {
         headers: {
           Authorization: `key ${serverKey}`,
@@ -5503,7 +5676,7 @@ async function checkAndSendReminders() {
             console.log(`📍 Using parent timezone: ${parentTimezone} for ${session.student_name}`);
             const localTime = formatUTCToLocal(session.session_date, session.session_time, parentTimezone);
             console.log(`📧 Converted time: ${localTime.date} ${localTime.time} (${localTime.day})`);
-            const joinGateUrl5 = `${process.env.APP_URL || 'https://fluent-feathers-academy-lms.onrender.com'}/join-class?sid=${session.id}`;
+            const joinGateUrl5 = getJoinClassUrl(session.id, { isDemo: session.is_demo });
             const reminderEmailHTML = getClassReminderEmail({
               studentName: session.student_name,
               localDate: localTime.date,
@@ -5569,7 +5742,7 @@ async function checkAndSendReminders() {
             console.log(`📍 Using parent timezone: ${parentTimezone} for ${session.student_name}`);
             const localTime = formatUTCToLocal(session.session_date, session.session_time, parentTimezone);
             console.log(`📧 Converted time: ${localTime.date} ${localTime.time} (${localTime.day})`);
-            const joinGateUrl1 = `${process.env.APP_URL || 'https://fluent-feathers-academy-lms.onrender.com'}/join-class?sid=${session.id}`;
+            const joinGateUrl1 = getJoinClassUrl(session.id, { isDemo: session.is_demo });
             const reminderEmailHTML = getClassReminderEmail({
               studentName: session.student_name,
               localDate: localTime.date,
