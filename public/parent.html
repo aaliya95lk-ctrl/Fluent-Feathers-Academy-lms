@@ -1559,8 +1559,9 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
           return false;
         }
 
-        // Register service worker
-        const reg = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+        // Register service worker and force an update check so installed PWAs pick up fixes without reinstalling.
+        const reg = await navigator.serviceWorker.register('/firebase-messaging-sw.js?v=20260409', { updateViaCache: 'none' });
+        await reg.update().catch(() => {});
 
         // Initialize Firebase if not already done
         if (!firebase.apps.length) {

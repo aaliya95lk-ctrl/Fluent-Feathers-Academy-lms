@@ -3102,6 +3102,36 @@ async function notifyAdminsStudentSubmission({
   }
 }
 
+async function sendClassReminderPush(session, hoursBeforeClass) {
+  const parentEmail = String(session?.parent_email || '').trim().toLowerCase();
+  if (!parentEmail) return { sent: 0, reason: 'missing_parent_email' };
+
+  const appUrl = (process.env.APP_URL || 'https://fluent-feathers-academy-lms.onrender.com').replace(/\/$/, '');
+  const joinUrl = `${appUrl}/join-class?sid=${session.id}`;
+  const isDemo = !!session.is_demo;
+  const isGroup = !!session.is_group;
+  const hourLabel = `${hoursBeforeClass} ${hoursBeforeClass === 1 ? 'hour' : 'hours'}`;
+  const title = isDemo
+    ? `Demo class starts in ${hourLabel}`
+    : isGroup
+      ? `Group class starts in ${hourLabel}`
+      : `Class starts in ${hourLabel}`;
+  const body = isDemo
+    ? `Reminder: ${session.student_name || 'Your child'}'s demo class starts in ${hourLabel}.`
+    : isGroup
+      ? `Reminder: ${session.group_name || 'Your group class'} starts in ${hourLabel}.`
+      : `Reminder: ${session.student_name || 'Your child'}'s class starts in ${hourLabel}.`;
+
+  return sendPushToParentByEmail(parentEmail, title, body, {
+    type: `class_reminder_${hoursBeforeClass}hr`,
+    sessionId: String(session.id),
+    sessionKind: isDemo ? 'demo' : (isGroup ? 'group' : 'private'),
+    hoursBeforeClass: String(hoursBeforeClass),
+    url: joinUrl,
+    notificationTag: `class-reminder-${hoursBeforeClass}hr-${session.id}-${parentEmail}`
+  });
+}
+
 async function sendEmail(to, subject, html, recipientName, emailType, options = {}) {
   const normalizedEmailType = String(emailType || '').trim();
   const effectiveSubject =
@@ -5315,8 +5345,15 @@ async function checkAndSendReminders() {
               `${subjectPrefix} - Ready for today's class in 5 hours [SID:${sidLabel}]`,
               reminderEmailHTML,
               session.parent_name,
-              emailType5hr
+              emailType5hr,
+              { skipPush: true }
             );
+            const pushResult = await sendClassReminderPush(session, 5);
+            if ((pushResult?.sent || 0) > 0) {
+              console.log(`✅ Sent 5-hour ${sessionTypeLabel} push reminder to ${session.parent_email} for Session #${session.session_number} (ID:${session.id})`);
+            } else {
+              console.warn(`⚠️ 5-hour ${sessionTypeLabel} push reminder skipped/failed for ${session.parent_email} (reason: ${pushResult?.reason || 'unknown'})`);
+            }
             if (sent) {
               console.log(`✅ Sent 5-hour ${sessionTypeLabel} reminder to ${session.parent_email} for Session #${session.session_number} (ID:${session.id})`);
             } else {
@@ -5371,8 +5408,15 @@ async function checkAndSendReminders() {
               `${subjectPrefix1hr} - Ready for today's class in 1 hour [SID:${sidLabel1hr}]`,
               reminderEmailHTML,
               session.parent_name,
-              emailType1hr
+              emailType1hr,
+              { skipPush: true }
             );
+            const pushResult = await sendClassReminderPush(session, 1);
+            if ((pushResult?.sent || 0) > 0) {
+              console.log(`✅ Sent 1-hour ${sessionTypeLabel} push reminder to ${session.parent_email} for Session #${session.session_number} (ID:${session.id})`);
+            } else {
+              console.warn(`⚠️ 1-hour ${sessionTypeLabel} push reminder skipped/failed for ${session.parent_email} (reason: ${pushResult?.reason || 'unknown'})`);
+            }
             if (sent) {
               console.log(`✅ Sent 1-hour ${sessionTypeLabel} reminder to ${session.parent_email} for Session #${session.session_number} (ID:${session.id})`);
             } else {
@@ -8642,6 +8686,15 @@ app.post('/api/upload/homework/:studentId', handleUpload('file'), async (req, re
     if (count === 5) await awardBadge(req.params.studentId, '5_homework', '📚 5 Homework Superstar', 'Submitted 5 homework assignments!');
     if (count === 10) await awardBadge(req.params.studentId, '10_homework', '🎓 10 Homework Champion', 'Submitted 10 homework assignments!');
     if (count === 25) await awardBadge(req.params.studentId, '25_homework', '🏅 25 Homework Master', 'Submitted 25 homework assignments!');
+
+    notifyAdminsStudentSubmission({
+      studentId: req.params.studentId,
+      submissionType: 'Homework',
+      sessionId: req.body.sessionId || null,
+      fileName: req.file.originalname || ''
+    }).catch((notifyErr) => {
+      console.warn('Homework admin push trigger failed:', notifyErr.message);
+    });
 
     res.json({ message: 'Homework uploaded successfully!' });
   } catch (err) {

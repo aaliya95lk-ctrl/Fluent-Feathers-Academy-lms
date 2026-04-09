@@ -4185,7 +4185,8 @@ I'm passionate about helping children develop confidence in communication!"></te
           }
         }
 
-        const reg = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+        const reg = await navigator.serviceWorker.register('/firebase-messaging-sw.js?v=20260409', { updateViaCache: 'none' });
+        await reg.update().catch(() => {});
         if (!firebase.apps.length) {
           firebase.initializeApp(appConfig.firebase);
         }
