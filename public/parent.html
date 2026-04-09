@@ -1447,6 +1447,7 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
     let selectedRating = 0;
     let checkedFeedbackSessions = new Set();
     let appConfig = { logoUrl: '/app-icon.png' };
+    const PARENT_PUSH_PROMPT_KEY = 'ff_parent_push_prompted_v1';
     const PORTAL_AUTO_REFRESH_MS = 5 * 60 * 1000;
     let portalAutoRefreshTimerId = null;
 
@@ -1493,7 +1494,11 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
       try {
         const token = window.__ffParentPushToken;
         const normalizedEmail = String(email || '').trim().toLowerCase();
-        if (!token || !normalizedEmail) return false;
+        if (!normalizedEmail) return false;
+        if (!token) {
+          window.__ffParentPendingPushEmail = normalizedEmail;
+          return false;
+        }
         const resp = await fetch('/api/parent/register-fcm-token', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1515,26 +1520,43 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
       }
     }
 
+    async function promptEnableParentPushIfNeeded() {
+      try {
+        if (!('Notification' in window) || !('serviceWorker' in navigator) || typeof firebase === 'undefined') return;
+        if (!appConfig.firebase || !appConfig.firebaseVapidKey) return;
+        if (Notification.permission !== 'default') return;
+        if (localStorage.getItem(PARENT_PUSH_PROMPT_KEY) === '1') return;
+
+        localStorage.setItem(PARENT_PUSH_PROMPT_KEY, '1');
+        const shouldEnable = window.confirm('Enable app notifications for class updates? Click OK, then allow notifications in the browser prompt.');
+        if (!shouldEnable) return;
+        await initializeFirebaseMessaging({ requestPermission: true });
+      } catch (err) {
+        console.warn('Push permission prompt failed:', err);
+      }
+    }
+
     // Initialize Firebase messaging for push notifications
-    async function initializeFirebaseMessaging() {
+    async function initializeFirebaseMessaging(options = {}) {
+      const requestPermission = !!options.requestPermission;
       if (!('Notification' in window) || !('serviceWorker' in navigator) || typeof firebase === 'undefined') {
         console.log('Push notifications are not supported in this browser context');
-        return;
+        return false;
       }
       if (!appConfig.firebase || !appConfig.firebaseVapidKey) {
         console.log('Firebase not configured, skipping push notifications');
-        return;
+        return false;
       }
 
       try {
         // Request notification permission
         let perm = Notification.permission;
-        if (perm === 'default') {
+        if (perm === 'default' && requestPermission) {
           perm = await Notification.requestPermission();
         }
         if (perm !== 'granted') {
           console.log('Notification permission not granted');
-          return;
+          return false;
         }
 
         // Register service worker
@@ -1562,6 +1584,7 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
         // Register token with server if we already know the parent email
         const parentEmail = sessionStorage.getItem('parentEmail')
           || (currentStudent && currentStudent.parent_email)
+          || window.__ffParentPendingPushEmail
           || '';
         if (parentEmail) await registerParentPushToken(parentEmail);
 
@@ -1597,8 +1620,10 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
         }
 
         console.log('Firebase messaging initialized for parent');
+        return true;
       } catch (err) {
         console.warn('Firebase messaging initialization failed:', err);
+        return false;
       }
     }
 
@@ -1784,6 +1809,7 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
           document.getElementById('loginSection').style.display = 'none';
           document.getElementById('dashboardSection').style.display = 'block';
           showDashboard();
+          promptEnableParentPushIfNeeded().catch(() => {});
         })
         .catch(() => {
           sessionStorage.removeItem('adminParentToken');
@@ -2026,6 +2052,7 @@ function setPortalDbLoading(isLoading, message = 'Loading classes from database.
         sessionStorage.setItem('parentEmail', parentEmail);
         registerParentPushToken(parentEmail).catch(() => {});
       }
+      promptEnableParentPushIfNeeded().catch(() => {});
 
       // Store session in localStorage for persistent login (unless restoring from storage)
       if (!skipSave) {

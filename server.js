@@ -2627,6 +2627,12 @@ async function logPushInEmailLog({ recipientName, recipientEmail, emailType, sub
   }
 }
 
+function toFcmDataPayload(input = {}) {
+  return Object.fromEntries(
+    Object.entries(input).map(([k, v]) => [k, typeof v === 'string' ? v : JSON.stringify(v)])
+  );
+}
+
 async function sendPushToParentByEmail(parentEmail, title, body, data = {}) {
   try {
     await ensurePushTokenTables();
@@ -2709,10 +2715,19 @@ async function sendPushToParentByEmail(parentEmail, title, body, data = {}) {
   }
 
   try {
+    const messageData = toFcmDataPayload({
+      ...data,
+      title: safeTitle,
+      body: safeBody,
+      url: targetLink,
+      link: targetLink,
+      click_action: targetLink,
+      notificationTag
+    });
     const resp = await firebaseMessaging.sendEachForMulticast({
       tokens,
       // Keep web push data-only so the service worker is the single notification renderer.
-      data: { ...data, title: safeTitle, body: safeBody, url: targetLink, link: targetLink, click_action: targetLink, notificationTag },
+      data: messageData,
       webpush: {
         fcmOptions: { link: targetLink }
       }
@@ -2966,10 +2981,19 @@ async function sendPushToAdmins(title, body, data = {}) {
   }
 
   try {
+    const messageData = toFcmDataPayload({
+      ...data,
+      title: safeTitle,
+      body: safeBody,
+      url: targetLink,
+      link: targetLink,
+      click_action: targetLink,
+      notificationTag
+    });
     const resp = await firebaseMessaging.sendEachForMulticast({
       tokens,
       // Keep web push data-only so the service worker is the single notification renderer.
-      data: { ...data, title: safeTitle, body: safeBody, url: targetLink, link: targetLink, click_action: targetLink, notificationTag },
+      data: messageData,
       webpush: {
         fcmOptions: { link: targetLink }
       }
@@ -3133,15 +3157,19 @@ async function sendEmail(to, subject, html, recipientName, emailType, options = 
 function getFirebaseWebConfig() {
   if (process.env.FIREBASE_CONFIG) {
     try {
-      return JSON.parse(process.env.FIREBASE_CONFIG);
+      const cfg = JSON.parse(process.env.FIREBASE_CONFIG);
+      if (cfg && !cfg.authDomain && cfg.projectId) {
+        cfg.authDomain = `${cfg.projectId}.firebaseapp.com`;
+      }
+      return cfg;
     } catch (err) {
       console.warn('Invalid FIREBASE_CONFIG JSON:', err.message);
     }
   }
-  if (process.env.FIREBASE_API_KEY && process.env.FIREBASE_AUTH_DOMAIN && process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_MESSAGING_SENDER_ID && process.env.FIREBASE_APP_ID) {
+  if (process.env.FIREBASE_API_KEY && process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_MESSAGING_SENDER_ID && process.env.FIREBASE_APP_ID) {
     return {
       apiKey: process.env.FIREBASE_API_KEY,
-      authDomain: process.env.FIREBASE_AUTH_DOMAIN,
+      authDomain: process.env.FIREBASE_AUTH_DOMAIN || `${process.env.FIREBASE_PROJECT_ID}.firebaseapp.com`,
       projectId: process.env.FIREBASE_PROJECT_ID,
       messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
       appId: process.env.FIREBASE_APP_ID,
@@ -3182,10 +3210,19 @@ async function sendAdminPushNotification(title, body, data = {}) {
     const tokens = result.rows.map(row => row.fcm_token).filter(Boolean);
     if (!tokens.length) return false;
 
-    const appUrl = process.env.APP_URL || process.env.PARENT_PORTAL_URL || '/';
-    const webpush = { fcmOptions: { link: appUrl } };
+    const appUrl = (process.env.APP_URL || process.env.PARENT_PORTAL_URL || 'https://fluent-feathers-academy-lms.onrender.com').replace(/\/$/, '');
+    const targetLink = String(data.url || data.link || `${appUrl}/admin.html`);
+    const webpush = { fcmOptions: { link: targetLink } };
     const messageData = Object.fromEntries(
-      Object.entries({ ...data, title, body, type: data.type || 'admin_notification' }).map(([k, v]) => [k, typeof v === 'string' ? v : JSON.stringify(v)])
+      Object.entries({
+        ...data,
+        title,
+        body,
+        type: data.type || 'admin_notification',
+        url: targetLink,
+        link: targetLink,
+        click_action: targetLink
+      }).map(([k, v]) => [k, typeof v === 'string' ? v : JSON.stringify(v)])
     );
 
     const firebaseMessaging = getFirebaseAdminMessaging();
