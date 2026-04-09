@@ -445,6 +445,156 @@ app.get('/manifest.webmanifest', (req, res) => {
   }));
 });
 
+app.get('/firebase-messaging-sw.js', (req, res) => {
+  const firebaseCfg = getFirebaseWebConfig();
+  const proto = req.get('x-forwarded-proto') || req.protocol || 'https';
+  const host = req.get('host') || '';
+  const baseUrl = (process.env.APP_URL || `${proto}://${host}`).replace(/\/$/, '');
+  const logoPath = getConfiguredLogoPath();
+  const logoAbs = isAbsoluteHttpUrl(logoPath)
+    ? logoPath
+    : `${baseUrl}${logoPath.startsWith('/') ? '' : '/'}${logoPath}`;
+
+  let js = `
+self.addEventListener('install', (event) => event.waitUntil(self.skipWaiting()));
+self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()));
+self.addEventListener('push', (event) => {
+  if (!event.data) return;
+  event.waitUntil((async () => {
+    let payload = {};
+    try {
+      payload = event.data.json();
+    } catch (_) {
+      payload = { body: event.data.text() };
+    }
+    const data = (payload && typeof payload.data === 'object' && payload.data) ? payload.data : payload;
+    const title = (payload.notification && payload.notification.title) || data.title || 'Fluent Feathers Academy';
+    const body = (payload.notification && payload.notification.body) || data.body || '';
+    const tag = data.notificationTag || data.type || [title, body].filter(Boolean).join('|').slice(0, 180);
+    const clickAction = data.click_action || data.url || data.link || '/';
+    await self.registration.showNotification(title, {
+      body,
+      icon: ${JSON.stringify(logoAbs)},
+      badge: ${JSON.stringify(logoAbs)},
+      tag,
+      data: { ...data, click_action: clickAction, url: clickAction, link: clickAction, notificationTag: tag }
+    });
+  })());
+});
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const data = event.notification.data || {};
+  const targetUrl = data.click_action || data.url || data.link || '/';
+  event.waitUntil((async () => {
+    const windowClients = await clients.matchAll({ type: 'window', includeUncontrolled: true });
+    for (const client of windowClients) {
+      if ('focus' in client) {
+        return client.focus();
+      }
+    }
+    return clients.openWindow(targetUrl);
+  })());
+});
+`;
+
+  if (firebaseCfg) {
+    js = `
+importScripts('https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging-compat.js');
+firebase.initializeApp(${JSON.stringify(firebaseCfg)});
+const messaging = firebase.messaging();
+const recentNotifications = new Map();
+function normalizePayloadValue(value) {
+  if (typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  if (!trimmed) return trimmed;
+  if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+    try { return JSON.parse(trimmed); } catch (_) {}
+  }
+  return value;
+}
+function normalizeObject(input) {
+  if (!input || typeof input !== 'object') return {};
+  return Object.fromEntries(Object.entries(input).map(([key, value]) => [key, normalizePayloadValue(value)]));
+}
+function shouldSuppressDuplicate(tag) {
+  if (!tag) return false;
+  const now = Date.now();
+  const lastSeen = recentNotifications.get(tag) || 0;
+  recentNotifications.set(tag, now);
+  for (const [key, ts] of recentNotifications.entries()) {
+    if (now - ts > 30000) recentNotifications.delete(key);
+  }
+  return now - lastSeen < 10000;
+}
+function parseIncomingPayload(rawPayload) {
+  const root = normalizeObject(rawPayload || {});
+  const data = normalizeObject(root.data);
+  const notification = normalizeObject(root.notification);
+  const merged = { ...root, ...data };
+  const title = notification.title || merged.title || 'Fluent Feathers Academy';
+  const body = notification.body || merged.body || '';
+  const tag = merged.notificationTag || merged.type || [title, body].filter(Boolean).join('|').slice(0, 180);
+  const clickAction = merged.click_action || merged.url || merged.link || '/';
+  return {
+    title,
+    options: {
+      body,
+      icon: ${JSON.stringify(logoAbs)},
+      badge: ${JSON.stringify(logoAbs)},
+      tag,
+      renotify: false,
+      data: { ...merged, click_action: clickAction, url: clickAction, link: clickAction, notificationTag: tag }
+    }
+  };
+}
+function showNotificationFromPayload(rawPayload) {
+  const parsed = parseIncomingPayload(rawPayload);
+  if (!parsed.title || shouldSuppressDuplicate(parsed.options.tag)) return Promise.resolve();
+  return self.registration.showNotification(parsed.title, parsed.options);
+}
+self.addEventListener('install', (event) => event.waitUntil(self.skipWaiting()));
+self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()));
+messaging.onBackgroundMessage((payload) => {
+  showNotificationFromPayload(payload);
+});
+self.addEventListener('push', (event) => {
+  if (!event.data) return;
+  event.waitUntil((async () => {
+    let payload = {};
+    try {
+      payload = event.data.json();
+    } catch (_) {
+      payload = { body: event.data.text() };
+    }
+    await showNotificationFromPayload(payload);
+  })());
+});
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const data = normalizeObject(event.notification.data || {});
+  const targetUrl = data.click_action || data.url || data.link || '/';
+  event.waitUntil((async () => {
+    const windowClients = await clients.matchAll({ type: 'window', includeUncontrolled: true });
+    for (const client of windowClients) {
+      if ('focus' in client) {
+        return client.focus();
+      }
+    }
+    return clients.openWindow(targetUrl);
+  })());
+});
+`;
+  }
+
+  res.type('application/javascript');
+  res.setHeader('Service-Worker-Allowed', '/');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.send(js);
+});
+
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
@@ -527,7 +677,8 @@ app.get('/join-class', async (req, res) => {
       const demoDateStr = demoRow.session_date instanceof Date
         ? demoRow.session_date.toISOString().split('T')[0]
         : String(demoRow.session_date).split('T')[0];
-      const demoStart = new Date(demoDateStr + 'T' + demoRow.session_time);
+      // Demo dates/times are stored in UTC, same as normal sessions.
+      const demoStart = new Date(demoDateStr + 'T' + demoRow.session_time + 'Z');
       const demoEnd = new Date(demoStart.getTime() + 60 * 60 * 1000);
       const nowDemo = new Date();
       const minsUntilDemo = (demoStart - nowDemo) / (1000 * 60);
