@@ -2726,7 +2726,7 @@ async function sendPushToParentByEmail(parentEmail, title, body, data = {}) {
     });
     const resp = await firebaseMessaging.sendEachForMulticast({
       tokens,
-      // Keep web push data-only so the service worker is the single notification renderer.
+      notification: { title: safeTitle, body: safeBody },
       data: messageData,
       webpush: {
         fcmOptions: { link: targetLink }
@@ -2992,7 +2992,7 @@ async function sendPushToAdmins(title, body, data = {}) {
     });
     const resp = await firebaseMessaging.sendEachForMulticast({
       tokens,
-      // Keep web push data-only so the service worker is the single notification renderer.
+      notification: { title: safeTitle, body: safeBody },
       data: messageData,
       webpush: {
         fcmOptions: { link: targetLink }
