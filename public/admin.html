@@ -2272,6 +2272,8 @@
       <div class="section">
         <h2>📊 Assessment & Certificate</h2>
         <form id="monthlyAssessmentForm">
+          <input type="hidden" id="assessmentEditId" value="">
+          <div id="assessmentEditBanner" style="display:none; margin-bottom: 16px; padding: 12px 14px; border-radius: 8px; background: #fff7ed; border: 1px solid #fdba74; color: #9a3412; font-size: 13px; font-weight: 600;"></div>
           <!-- Assessment Type Selection -->
           <div class="form-row" style="margin-bottom: 20px;">
             <div class="form-group">
@@ -2729,7 +2731,10 @@
               <label style="margin: 0;">Send Report Card & Certificate via Email</label>
             </div>
           </div>
-          <button type="submit" class="btn btn-primary">Generate & Send Report Card</button>
+          <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+            <button type="submit" id="assessmentSubmitBtn" class="btn btn-primary">Generate & Send Report Card</button>
+            <button type="button" id="assessmentCancelEditBtn" onclick="resetAssessmentFormState()" class="btn" style="display:none; background:#718096; color:white;">Cancel Edit</button>
+          </div>
         </form>
       </div>
       <div class="section">
@@ -11785,6 +11790,37 @@ async function saveEditedPayment() {
       if (ySel) ySel.value = String(now.getFullYear());
     })();
 
+    let editingAssessmentId = null;
+    const ASSESSMENT_SKILL_IDS = [
+      'letter_sounds', 'blending', 'segmenting', 'sight_words', 'phonemic_awareness', 'decoding',
+      'reading_fluency', 'reading_comprehension', 'reading_expression', 'story_understanding',
+      'speaking', 'pronunciation', 'confidence', 'listening', 'conversation', 'sentence_formation',
+      'grammar', 'tenses', 'punctuation', 'parts_of_speech', 'vocabulary', 'spelling', 'word_meanings',
+      'synonyms_antonyms', 'spelling_accuracy', 'word_formation', 'dictation', 'spelling_patterns',
+      'word_recall', 'tricky_words', 'letter_formation', 'letter_sizing', 'writing_neatness',
+      'cursive_writing', 'writing_speed', 'pencil_grip', 'writing', 'story_writing', 'essay_writing',
+      'handwriting', 'public_speaking', 'presentation', 'storytelling', 'debate', 'stage_presence'
+    ];
+    const ASSESSMENT_SKILL_NAMES = {
+      'letter_sounds':'Letter Sounds Recognition','blending':'Blending Sounds','segmenting':'Segmenting Words',
+      'sight_words':'Sight Words','phonemic_awareness':'Phonemic Awareness','decoding':'Decoding Skills',
+      'reading_fluency':'Reading Fluency','reading_comprehension':'Reading Comprehension',
+      'reading_expression':'Reading with Expression','story_understanding':'Story Understanding',
+      'speaking':'Speaking & Communication','pronunciation':'Pronunciation','confidence':'Confidence Building',
+      'listening':'Active Listening','conversation':'Conversation Skills','sentence_formation':'Sentence Formation',
+      'grammar':'Grammar & Structure','tenses':'Tenses','punctuation':'Punctuation','parts_of_speech':'Parts of Speech',
+      'vocabulary':'Vocabulary Enhancement','spelling':'Spelling Mastery','word_meanings':'Word Meanings',
+      'synonyms_antonyms':'Synonyms & Antonyms','spelling_accuracy':'Spelling Accuracy',
+      'word_formation':'Word Formation','dictation':'Dictation Skills','spelling_patterns':'Spelling Patterns & Rules',
+      'word_recall':'Word Recall & Memory','tricky_words':'Tricky Words','letter_formation':'Letter Formation',
+      'letter_sizing':'Letter Sizing & Spacing','writing_neatness':'Neatness & Presentation',
+      'cursive_writing':'Cursive Writing','writing_speed':'Writing Speed','pencil_grip':'Pencil Grip & Posture',
+      'writing':'Creative Writing','story_writing':'Story Writing','essay_writing':'Essay Writing',
+      'handwriting':'Handwriting','public_speaking':'Public Speaking','presentation':'Presentation Skills',
+      'storytelling':'Storytelling','debate':'Debate Skills','stage_presence':'Stage Presence'
+    };
+    const ASSESSMENT_SKILL_NAME_TO_ID = Object.fromEntries(Object.entries(ASSESSMENT_SKILL_NAMES).map(([k, v]) => [v, k]));
+
     // ── Smart chip inserter ───────────────────────────────────────────────
     function addChip(text) {
       const ta = document.getElementById('performanceSummary');
@@ -11919,6 +11955,47 @@ async function saveEditedPayment() {
       }
     }
 
+    function setAssessmentSkillsFromNames(skillNamesList) {
+      ASSESSMENT_SKILL_IDS.forEach(id => {
+        const el = document.getElementById('skill_' + id);
+        if (el) el.checked = false;
+      });
+      (skillNamesList || []).forEach(name => {
+        const id = ASSESSMENT_SKILL_NAME_TO_ID[name];
+        const el = id ? document.getElementById('skill_' + id) : null;
+        if (el) el.checked = true;
+      });
+      updateSkillRatings();
+    }
+
+    function resetAssessmentFormState() {
+      editingAssessmentId = null;
+      const form = document.getElementById('monthlyAssessmentForm');
+      if (form) form.reset();
+      document.getElementById('assessmentEditId').value = '';
+      document.getElementById('assessmentEditBanner').style.display = 'none';
+      document.getElementById('assessmentEditBanner').textContent = '';
+      document.getElementById('assessmentCancelEditBtn').style.display = 'none';
+      document.getElementById('assessmentSubmitBtn').textContent = 'Generate & Send Report Card';
+      document.getElementById('sendAssessmentEmail').checked = true;
+      document.getElementById('typeMonthly').checked = true;
+      document.getElementById('typeMonthly').dispatchEvent(new Event('change'));
+      ASSESSMENT_SKILL_IDS.forEach(id => {
+        const el = document.getElementById('skill_' + id);
+        if (el) el.checked = false;
+      });
+      document.getElementById('performanceSummary').value = '';
+      document.getElementById('areasOfImprovement').value = '';
+      document.getElementById('teacherComments').value = '';
+      document.getElementById('certificateTitle').value = '';
+      document.getElementById('customCertificateTitle').value = '';
+      document.getElementById('customTitleGroup').style.display = 'none';
+      document.getElementById('aiAssessNotes').value = '';
+      document.getElementById('aiDraftPreview').style.display = 'none';
+      updateSkillRatings();
+      updateMonthlyAssessmentWindow();
+    }
+
     // ── Auto-prefill from last month when student is selected ────────────
     document.getElementById('assessmentStudent').addEventListener('change', async function() {
       const studentId = this.value;
@@ -11929,42 +12006,9 @@ async function saveEditedPayment() {
         if (!assessments || assessments.length === 0) return;
         const last = assessments[0]; // already ordered DESC by year,month
         // Pre-fill skills
-        const skillIds = ['letter_sounds','blending','segmenting','sight_words','phonemic_awareness','decoding',
-          'reading_fluency','reading_comprehension','reading_expression','story_understanding',
-          'speaking','pronunciation','confidence','listening','conversation','sentence_formation',
-          'grammar','tenses','punctuation','parts_of_speech','vocabulary','spelling','word_meanings',
-          'synonyms_antonyms','spelling_accuracy','word_formation','dictation','spelling_patterns',
-          'word_recall','tricky_words','letter_formation','letter_sizing','writing_neatness',
-          'cursive_writing','writing_speed','pencil_grip','writing','story_writing','essay_writing',
-          'handwriting','public_speaking','presentation','storytelling','debate','stage_presence'];
-        const skillNames = {
-          'letter_sounds':'Letter Sounds Recognition','blending':'Blending Sounds','segmenting':'Segmenting Words',
-          'sight_words':'Sight Words','phonemic_awareness':'Phonemic Awareness','decoding':'Decoding Skills',
-          'reading_fluency':'Reading Fluency','reading_comprehension':'Reading Comprehension',
-          'reading_expression':'Reading with Expression','story_understanding':'Story Understanding',
-          'speaking':'Speaking & Communication','pronunciation':'Pronunciation','confidence':'Confidence Building',
-          'listening':'Active Listening','conversation':'Conversation Skills','sentence_formation':'Sentence Formation',
-          'grammar':'Grammar & Structure','tenses':'Tenses','punctuation':'Punctuation','parts_of_speech':'Parts of Speech',
-          'vocabulary':'Vocabulary Enhancement','spelling':'Spelling Mastery','word_meanings':'Word Meanings',
-          'synonyms_antonyms':'Synonyms & Antonyms','spelling_accuracy':'Spelling Accuracy',
-          'word_formation':'Word Formation','dictation':'Dictation Skills','spelling_patterns':'Spelling Patterns & Rules',
-          'word_recall':'Word Recall & Memory','tricky_words':'Tricky Words','letter_formation':'Letter Formation',
-          'letter_sizing':'Letter Sizing & Spacing','writing_neatness':'Neatness & Presentation',
-          'cursive_writing':'Cursive Writing','writing_speed':'Writing Speed','pencil_grip':'Pencil Grip & Posture',
-          'writing':'Creative Writing','story_writing':'Story Writing','essay_writing':'Essay Writing',
-          'handwriting':'Handwriting','public_speaking':'Public Speaking','presentation':'Presentation Skills',
-          'storytelling':'Storytelling','debate':'Debate Skills','stage_presence':'Stage Presence'
-        };
-        const nameToId = Object.fromEntries(Object.entries(skillNames).map(([k,v])=>[v,k]));
         let previousSkills = [];
         try { previousSkills = last.skills ? JSON.parse(last.skills) : []; } catch(e) {}
-        // Clear all, then re-check what was previously covered
-        skillIds.forEach(id => { const el = document.getElementById('skill_' + id); if (el) el.checked = false; });
-        previousSkills.forEach(name => {
-          const id = nameToId[name];
-          if (id) { const el = document.getElementById('skill_' + id); if (el) el.checked = true; }
-        });
-        updateSkillRatings();
+        setAssessmentSkillsFromNames(previousSkills);
         // Pre-fill star ratings from last assessment
         if (last.skill_ratings) {
           let prevRatings = {};
@@ -12022,6 +12066,7 @@ async function saveEditedPayment() {
               ${!isDeferred && s.status !== 'completed' ? `<button onclick="deferStudent(${s.id},'${s.name.replace(/'/g,"\\'")}',${_dashMonth},${_dashYear})" style="background:#718096;color:white;border:none;border-radius:6px;padding:5px 10px;font-size:11px;font-weight:600;cursor:pointer;">⏭️ Defer</button>` : ''}
               ${isDeferred ? `<span style="font-size:11px;color:#718096;">Deferred to next month</span>` : ''}
               ${s.assessment_id && !isDeferred ? `<button onclick="viewAssessment(${s.assessment_id})" style="background:#e2e8f0;color:#4a5568;border:none;border-radius:6px;padding:5px 10px;font-size:11px;font-weight:600;cursor:pointer;">👁 View</button>` : ''}
+              ${s.assessment_id && !isDeferred ? `<button onclick="editAssessment(${s.assessment_id})" style="background:#f59e0b;color:white;border:none;border-radius:6px;padding:5px 10px;font-size:11px;font-weight:600;cursor:pointer;">✏️ Edit</button>` : ''}
             </div>
           </div>`;
         }).join('');
@@ -12043,7 +12088,7 @@ async function saveEditedPayment() {
 
     function updateMonthlyAssessmentWindow() {
       const info = document.getElementById('assessmentWindowInfo');
-      const submitBtn = document.querySelector('#monthlyAssessmentForm button[type="submit"]');
+      const submitBtn = document.getElementById('assessmentSubmitBtn');
       const monthSelect = document.getElementById('assessmentMonth');
       const yearInput = document.getElementById('assessmentYear');
       const assessmentType = document.querySelector('input[name="assessmentType"]:checked')?.value || 'monthly';
@@ -12056,6 +12101,15 @@ async function saveEditedPayment() {
       if (assessmentType === 'demo') {
         if (info) {
           info.textContent = 'Demo assessments can be filled anytime. Monthly assessments are only allowed from the 1st to the 10th of the next month for the previous month.';
+          info.style.color = '#2f855a';
+        }
+        if (submitBtn) submitBtn.disabled = false;
+        return;
+      }
+
+      if (editingAssessmentId) {
+        if (info) {
+          info.textContent = 'Editing an existing monthly assessment. Corrections to month, year, and feedback can be saved anytime.';
           info.style.color = '#2f855a';
         }
         if (submitBtn) submitBtn.disabled = false;
@@ -12094,6 +12148,61 @@ async function saveEditedPayment() {
       updateMonthlyAssessmentWindow();
     }
 
+    async function editAssessment(id) {
+      try {
+        const res = await fetch(`/api/assessments/${id}`);
+        const a = await res.json();
+        if (!res.ok || !a?.id) throw new Error(a.error || 'Assessment not found');
+
+        editingAssessmentId = a.id;
+        document.getElementById('assessmentEditId').value = String(a.id);
+        document.getElementById('assessmentEditBanner').style.display = 'block';
+        document.getElementById('assessmentEditBanner').textContent = `Editing assessment for ${a.student_name || a.demo_child_name || 'student'}. Save to update the existing record.`;
+        document.getElementById('assessmentCancelEditBtn').style.display = 'inline-flex';
+        document.getElementById('assessmentSubmitBtn').textContent = a.assessment_type === 'demo' ? 'Update Demo Report' : 'Update Assessment';
+        document.getElementById('sendAssessmentEmail').checked = false;
+
+        if (a.assessment_type === 'demo') {
+          document.getElementById('typeDemo').checked = true;
+          document.getElementById('typeDemo').dispatchEvent(new Event('change'));
+          await loadAssessmentDemoLeads();
+          document.getElementById('assessmentDemoLead').value = a.demo_lead_id ? String(a.demo_lead_id) : '';
+          document.getElementById('assessmentDemoLead').dispatchEvent(new Event('change'));
+        } else {
+          document.getElementById('typeMonthly').checked = true;
+          document.getElementById('typeMonthly').dispatchEvent(new Event('change'));
+          document.getElementById('assessmentStudent').value = a.student_id ? String(a.student_id) : '';
+          document.getElementById('assessmentMonth').value = a.month ? String(a.month) : '';
+          document.getElementById('assessmentYear').value = a.year ? String(a.year) : '';
+        }
+
+        let skills = [];
+        try { skills = a.skills ? JSON.parse(a.skills) : []; } catch (_) {}
+        setAssessmentSkillsFromNames(skills);
+
+        let ratings = {};
+        try { ratings = a.skill_ratings ? (typeof a.skill_ratings === 'string' ? JSON.parse(a.skill_ratings) : a.skill_ratings) : {}; } catch (_) {}
+        Object.entries(ratings || {}).forEach(([cat, val]) => setStarRating(cat, val));
+
+        const certSelect = document.getElementById('certificateTitle');
+        const customInput = document.getElementById('customCertificateTitle');
+        const customGroup = document.getElementById('customTitleGroup');
+        const certValue = a.certificate_title || '';
+        const knownCert = Array.from(certSelect.options).some(opt => opt.value === certValue);
+        certSelect.value = knownCert ? certValue : (certValue ? 'Custom' : '');
+        customInput.value = knownCert ? '' : certValue;
+        customGroup.style.display = certSelect.value === 'Custom' ? 'block' : 'none';
+
+        document.getElementById('performanceSummary').value = a.performance_summary || '';
+        document.getElementById('areasOfImprovement').value = a.areas_of_improvement || '';
+        document.getElementById('teacherComments').value = a.teacher_comments || '';
+        document.getElementById('monthlyAssessmentForm').scrollIntoView({ behavior:'smooth', block:'start' });
+        updateMonthlyAssessmentWindow();
+      } catch (err) {
+        alert('Error loading assessment for edit: ' + err.message);
+      }
+    }
+
     async function deferStudent(studentId, studentName, month, year) {
       if (!confirm(`Defer ${studentName}'s assessment to next month?`)) return;
       try {
@@ -12126,8 +12235,11 @@ async function saveEditedPayment() {
         document.getElementById('assessmentDemoLead').required = isDemo;
 
         // Update button text
-        const submitBtn = document.querySelector('#monthlyAssessmentForm button[type="submit"]');
+        const submitBtn = document.getElementById('assessmentSubmitBtn');
         submitBtn.textContent = isDemo ? 'Generate & Send Demo Report' : 'Generate & Send Report Card';
+        if (editingAssessmentId) {
+          submitBtn.textContent = isDemo ? 'Update Demo Report' : 'Update Assessment';
+        }
 
         // Update styling
         document.getElementById('typeMonthlyLabel').style.borderColor = isDemo ? '#e2e8f0' : '#B05D9E';
@@ -12197,6 +12309,7 @@ async function saveEditedPayment() {
             <td>${new Date(a.created_at).toLocaleDateString()}</td>
             <td>
               <button onclick="viewAssessment(${a.id})" class="btn btn-sm" style="background:#B05D9E;color:white;">View</button>
+              <button onclick="editAssessment(${a.id})" class="btn btn-sm" style="background:#f59e0b;color:white;">Edit</button>
               ${a.certificate_title ? `<button onclick="window.open('/${isDemo ? 'demo-certificate' : 'monthly-certificate'}.html?id=${a.id}', '_blank')" class="btn btn-sm" style="background:#f59e0b;color:white;">🏆 Certificate</button>` : ''}
               <button onclick="deleteAssessment(${a.id})" class="btn btn-danger btn-sm">Delete</button>
             </td>
@@ -12244,89 +12357,14 @@ async function saveEditedPayment() {
 
     document.getElementById('monthlyAssessmentForm').addEventListener('submit', async (e) => {
       e.preventDefault();
+      const assessmentId = editingAssessmentId || parseInt(document.getElementById('assessmentEditId').value, 10) || null;
+      const isEditing = !!assessmentId;
 
       // Collect checked skills
       const skills = [];
-      const skillIds = [
-        // Phonics
-        'letter_sounds', 'blending', 'segmenting', 'sight_words', 'phonemic_awareness', 'decoding',
-        // Reading
-        'reading_fluency', 'reading_comprehension', 'reading_expression', 'story_understanding',
-        // Spoken English
-        'speaking', 'pronunciation', 'confidence', 'listening', 'conversation', 'sentence_formation',
-        // Grammar
-        'grammar', 'tenses', 'punctuation', 'parts_of_speech',
-        // Vocabulary
-        'vocabulary', 'spelling', 'word_meanings', 'synonyms_antonyms',
-        // Spellings
-        'spelling_accuracy', 'word_formation', 'dictation', 'spelling_patterns', 'word_recall', 'tricky_words',
-        // Handwriting
-        'letter_formation', 'letter_sizing', 'writing_neatness', 'cursive_writing', 'writing_speed', 'pencil_grip',
-        // Creative Writing
-        'writing', 'story_writing', 'essay_writing', 'handwriting',
-        // Public Speaking
-        'public_speaking', 'presentation', 'storytelling', 'debate', 'stage_presence'
-      ];
-      const skillNames = {
-        // Phonics
-        'letter_sounds': 'Letter Sounds Recognition',
-        'blending': 'Blending Sounds',
-        'segmenting': 'Segmenting Words',
-        'sight_words': 'Sight Words',
-        'phonemic_awareness': 'Phonemic Awareness',
-        'decoding': 'Decoding Skills',
-        // Reading
-        'reading_fluency': 'Reading Fluency',
-        'reading_comprehension': 'Reading Comprehension',
-        'reading_expression': 'Reading with Expression',
-        'story_understanding': 'Story Understanding',
-        // Spoken English
-        'speaking': 'Speaking & Communication',
-        'pronunciation': 'Pronunciation',
-        'confidence': 'Confidence Building',
-        'listening': 'Active Listening',
-        'conversation': 'Conversation Skills',
-        'sentence_formation': 'Sentence Formation',
-        // Grammar
-        'grammar': 'Grammar & Structure',
-        'tenses': 'Tenses',
-        'punctuation': 'Punctuation',
-        'parts_of_speech': 'Parts of Speech',
-        // Vocabulary
-        'vocabulary': 'Vocabulary Enhancement',
-        'spelling': 'Spelling Mastery',
-        'word_meanings': 'Word Meanings',
-        'synonyms_antonyms': 'Synonyms & Antonyms',
-        // Spellings
-        'spelling_accuracy': 'Spelling Accuracy',
-        'word_formation': 'Word Formation',
-        'dictation': 'Dictation Skills',
-        'spelling_patterns': 'Spelling Patterns & Rules',
-        'word_recall': 'Word Recall & Memory',
-        'tricky_words': 'Tricky Words',
-        // Handwriting
-        'letter_formation': 'Letter Formation',
-        'letter_sizing': 'Letter Sizing & Spacing',
-        'writing_neatness': 'Neatness & Presentation',
-        'cursive_writing': 'Cursive Writing',
-        'writing_speed': 'Writing Speed',
-        'pencil_grip': 'Pencil Grip & Posture',
-        // Creative Writing
-        'writing': 'Creative Writing',
-        'story_writing': 'Story Writing',
-        'essay_writing': 'Essay Writing',
-        'handwriting': 'Handwriting',
-        // Public Speaking
-        'public_speaking': 'Public Speaking',
-        'presentation': 'Presentation Skills',
-        'storytelling': 'Storytelling',
-        'debate': 'Debate Skills',
-        'stage_presence': 'Stage Presence'
-      };
-
-      skillIds.forEach(skill => {
+      ASSESSMENT_SKILL_IDS.forEach(skill => {
         if (document.getElementById(`skill_${skill}`).checked) {
-          skills.push(skillNames[skill]);
+          skills.push(ASSESSMENT_SKILL_NAMES[skill]);
         }
       });
 
@@ -12347,10 +12385,10 @@ async function saveEditedPayment() {
         const selectedMonth = parseInt(document.getElementById('assessmentMonth').value, 10);
         const selectedYear = parseInt(document.getElementById('assessmentYear').value, 10);
 
-        if (!isMonthlyAssessmentWindowOpen()) {
+        if (!isEditing && !isMonthlyAssessmentWindowOpen()) {
           return alert('Monthly assessments can only be created between the 1st and 10th of the next month for the previous month.');
         }
-        if (selectedMonth !== allowedMonth || selectedYear !== allowedYear) {
+        if (!isEditing && (selectedMonth !== allowedMonth || selectedYear !== allowedYear)) {
           return alert(`Please fill the monthly assessment for ${monthNames[allowedMonth - 1]} ${allowedYear} when using this window.`);
         }
       }
@@ -12379,28 +12417,22 @@ async function saveEditedPayment() {
       }
 
       try {
-        const res = await fetch('/api/assessments', {
-          method: 'POST',
+        const res = await fetch(isEditing ? `/api/assessments/${assessmentId}` : '/api/assessments', {
+          method: isEditing ? 'PUT' : 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify(data)
         });
 
         if (res.ok) {
           const typeLabel = isDemo ? 'Demo' : 'Monthly';
-          alert(`✅ ${typeLabel} assessment created! ${sendEmail ? 'Report sent to parent.' : ''}`);
-          e.target.reset();
-          // Reset form to monthly view
-          document.getElementById('typeMonthly').checked = true;
-          document.getElementById('monthlyFields').style.display = 'flex';
-          document.getElementById('demoFields').style.display = 'none';
-          document.getElementById('typeMonthlyLabel').style.borderColor = '#B05D9E';
-          document.getElementById('typeMonthlyLabel').style.background = '#fdf2f8';
-          document.getElementById('typeDemoLabel').style.borderColor = '#e2e8f0';
-          document.getElementById('typeDemoLabel').style.background = 'white';
+          alert(`✅ ${typeLabel} assessment ${isEditing ? 'updated' : 'created'}! ${sendEmail ? 'Report sent to parent.' : ''}`);
+          resetAssessmentFormState();
           loadAssessments();
+          loadAssessmentDashboard();
+          loadDueAssessments();
         } else {
           const result = await res.json();
-          alert('❌ Failed to create assessment: ' + (result.error || 'Unknown error'));
+          alert(`❌ Failed to ${isEditing ? 'update' : 'create'} assessment: ` + (result.error || 'Unknown error'));
         }
       } catch (err) {
         alert('❌ Error: ' + err.message);

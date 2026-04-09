@@ -3132,6 +3132,31 @@ async function sendClassReminderPush(session, hoursBeforeClass) {
   });
 }
 
+async function sendAdminDemoReminderPush(session, hoursBeforeClass) {
+  if (!session?.is_demo || !session?.id) return;
+
+  const hourLabel = `${hoursBeforeClass} ${hoursBeforeClass === 1 ? 'hour' : 'hours'}`;
+  const title = `Demo class starts in ${hourLabel}`;
+  const body = [
+    `${session.student_name || 'Student'} demo class starts in ${hourLabel}`,
+    session.parent_name ? `Parent: ${session.parent_name}` : '',
+    session.parent_email ? `Email: ${session.parent_email}` : ''
+  ].filter(Boolean).join(' - ');
+  const appUrl = (process.env.APP_URL || 'https://fluent-feathers-academy-lms.onrender.com').replace(/\/$/, '');
+
+  await sendPushToAdmins(title, body, {
+    type: `admin_demo_reminder_${hoursBeforeClass}hr`,
+    notificationType: 'demo-reminder',
+    sessionId: String(session.id),
+    hoursBeforeClass: String(hoursBeforeClass),
+    studentName: String(session.student_name || ''),
+    parentName: String(session.parent_name || ''),
+    parentEmail: String(session.parent_email || ''),
+    url: `${appUrl}/admin.html`,
+    notificationTag: `admin-demo-reminder-${hoursBeforeClass}hr-${session.id}`
+  });
+}
+
 async function sendEmail(to, subject, html, recipientName, emailType, options = {}) {
   const normalizedEmailType = String(emailType || '').trim();
   const effectiveSubject =
@@ -5349,6 +5374,9 @@ async function checkAndSendReminders() {
               { skipPush: true }
             );
             const pushResult = await sendClassReminderPush(session, 5);
+            if (session.is_demo) {
+              await sendAdminDemoReminderPush(session, 5);
+            }
             if ((pushResult?.sent || 0) > 0) {
               console.log(`✅ Sent 5-hour ${sessionTypeLabel} push reminder to ${session.parent_email} for Session #${session.session_number} (ID:${session.id})`);
             } else {
@@ -5412,6 +5440,9 @@ async function checkAndSendReminders() {
               { skipPush: true }
             );
             const pushResult = await sendClassReminderPush(session, 1);
+            if (session.is_demo) {
+              await sendAdminDemoReminderPush(session, 1);
+            }
             if ((pushResult?.sent || 0) > 0) {
               console.log(`✅ Sent 1-hour ${sessionTypeLabel} push reminder to ${session.parent_email} for Session #${session.session_number} (ID:${session.id})`);
             } else {
@@ -14158,6 +14189,139 @@ app.post('/api/admin/trigger-reminders', async (req, res) => {
     res.json({ success: true, message: 'Reminder check completed. Check server logs for details.' });
   } catch (err) {
     console.error('Error in manual reminder trigger:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/assessments/:id', async (req, res) => {
+  const { assessment_type, student_id, demo_lead_id, month, year, skills, skill_ratings, certificate_title, performance_summary, areas_of_improvement, teacher_comments, send_email } = req.body;
+
+  try {
+    const existingResult = await pool.query('SELECT * FROM monthly_assessments WHERE id = $1', [req.params.id]);
+    const existing = existingResult.rows[0];
+    if (!existing) {
+      return res.status(404).json({ error: 'Assessment not found' });
+    }
+
+    const isDemo = assessment_type === 'demo';
+    let result;
+
+    if (isDemo) {
+      result = await pool.query(`
+        UPDATE monthly_assessments
+        SET demo_lead_id = $1,
+            student_id = NULL,
+            assessment_type = 'demo',
+            month = NULL,
+            year = NULL,
+            skills = $2,
+            skill_ratings = $3,
+            certificate_title = $4,
+            performance_summary = $5,
+            areas_of_improvement = $6,
+            teacher_comments = $7,
+            deferred = FALSE
+        WHERE id = $8
+        RETURNING *
+      `, [
+        demo_lead_id,
+        skills,
+        skill_ratings ? JSON.stringify(skill_ratings) : null,
+        certificate_title,
+        performance_summary,
+        areas_of_improvement || '',
+        teacher_comments || '',
+        req.params.id
+      ]);
+
+      if (send_email) {
+        const lead = await pool.query('SELECT child_name, child_grade, parent_email, parent_name, demo_date FROM demo_leads WHERE id = $1', [demo_lead_id]);
+        if (lead.rows[0] && lead.rows[0].parent_email) {
+          let skillsArray = [];
+          try { if (skills) skillsArray = JSON.parse(skills); } catch (e) { console.error('Invalid skills JSON:', e.message); }
+          const demoEmailHTML = getDemoAssessmentEmail({
+            assessmentId: result.rows[0].id,
+            childName: lead.rows[0].child_name,
+            childGrade: lead.rows[0].child_grade,
+            demoDate: lead.rows[0].demo_date,
+            skills: skillsArray,
+            certificateTitle: certificate_title,
+            performanceSummary: performance_summary,
+            areasOfImprovement: areas_of_improvement,
+            teacherComments: teacher_comments
+          });
+
+          await sendEmail(
+            lead.rows[0].parent_email,
+            `🎯 Demo Class Assessment Report - ${lead.rows[0].child_name}`,
+            demoEmailHTML,
+            lead.rows[0].parent_name,
+            'Demo Assessment'
+          );
+        }
+      }
+    } else {
+      result = await pool.query(`
+        UPDATE monthly_assessments
+        SET student_id = $1,
+            demo_lead_id = NULL,
+            assessment_type = 'monthly',
+            month = $2,
+            year = $3,
+            skills = $4,
+            skill_ratings = $5,
+            certificate_title = $6,
+            performance_summary = $7,
+            areas_of_improvement = $8,
+            teacher_comments = $9,
+            deferred = FALSE
+        WHERE id = $10
+        RETURNING *
+      `, [
+        student_id,
+        month,
+        year,
+        skills,
+        skill_ratings ? JSON.stringify(skill_ratings) : null,
+        certificate_title,
+        performance_summary,
+        areas_of_improvement || '',
+        teacher_comments || '',
+        req.params.id
+      ]);
+
+      if (send_email) {
+        const student = await pool.query('SELECT name, parent_email, parent_name FROM students WHERE id = $1', [student_id]);
+        if (student.rows[0]) {
+          let skillsArray = [];
+          try { if (skills) skillsArray = JSON.parse(skills); } catch (e) { console.error('Invalid skills JSON:', e.message); }
+          const reportCardEmailHTML = getMonthlyReportCardEmail({
+            assessmentId: result.rows[0].id,
+            studentName: student.rows[0].name,
+            month: month,
+            year: year,
+            skills: skillsArray,
+            certificateTitle: certificate_title,
+            performanceSummary: performance_summary,
+            areasOfImprovement: areas_of_improvement,
+            teacherComments: teacher_comments
+          });
+
+          const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+          await sendEmail(
+            student.rows[0].parent_email,
+            `📊 Monthly Progress Report - ${monthNames[month - 1]} ${year}`,
+            reportCardEmailHTML,
+            student.rows[0].parent_name,
+            'Report Card'
+          );
+        }
+      }
+    }
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Assessment update error:', err);
     res.status(500).json({ error: err.message });
   }
 });
