@@ -548,6 +548,11 @@ function parseIncomingPayload(rawPayload) {
     }
   };
 }
+function hasDisplayableNotification(rawPayload) {
+  const root = normalizeObject(rawPayload || {});
+  const notification = normalizeObject(root.notification);
+  return !!(notification && (notification.title || notification.body));
+}
 function showNotificationFromPayload(rawPayload) {
   const parsed = parseIncomingPayload(rawPayload);
   if (!parsed.title || shouldSuppressDuplicate(parsed.options.tag)) return Promise.resolve();
@@ -556,6 +561,7 @@ function showNotificationFromPayload(rawPayload) {
 self.addEventListener('install', (event) => event.waitUntil(self.skipWaiting()));
 self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()));
 messaging.onBackgroundMessage((payload) => {
+  if (hasDisplayableNotification(payload)) return;
   showNotificationFromPayload(payload);
 });
 self.addEventListener('push', (event) => {
@@ -567,6 +573,7 @@ self.addEventListener('push', (event) => {
     } catch (_) {
       payload = { body: event.data.text() };
     }
+    if (hasDisplayableNotification(payload)) return;
     await showNotificationFromPayload(payload);
   })());
 });

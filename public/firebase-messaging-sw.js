@@ -89,6 +89,12 @@ function parseIncomingPayload(rawPayload) {
   };
 }
 
+function hasDisplayableNotification(rawPayload) {
+  const root = normalizeObject(rawPayload || {});
+  const notification = normalizeObject(root.notification);
+  return !!(notification && (notification.title || notification.body));
+}
+
 function showNotificationFromPayload(rawPayload) {
   const { title, options } = parseIncomingPayload(rawPayload);
   if (!title || shouldSuppressDuplicate(options.tag)) {
@@ -111,6 +117,7 @@ self.addEventListener('activate', (event) => {
 ensureFirebaseMessaging().then((instance) => {
   if (!instance) return;
   instance.onBackgroundMessage((payload) => {
+    if (hasDisplayableNotification(payload)) return;
     showNotificationFromPayload(payload);
   });
 }).catch(() => {});
@@ -124,6 +131,7 @@ self.addEventListener('push', (event) => {
     } catch (_) {
       payload = { body: event.data.text() };
     }
+    if (hasDisplayableNotification(payload)) return;
     await showNotificationFromPayload(payload);
   })());
 });
