@@ -5654,6 +5654,7 @@ async function checkAndSendReminders() {
         if (hoursDiff > 4.5 && hoursDiff <= 5.5) {
           const emailType5hr = session.is_demo ? 'Reminder-5hrs-Demo' : session.is_group ? 'Reminder-5hrs-Group' : 'Reminder-5hrs';
           const sidCheck = session.is_demo ? `DEMO:${session.id}` : session.id;
+          const scheduleKey5hr = String(session.full_datetime || '');
           console.log(`⏰ ${sessionTypeLabel} Session #${session.session_number} (ID:${session.id}) is within 5-hour window, checking if reminder already sent...`);
           // Check if 5-hour reminder already sent for this SPECIFIC session using unique session ID
           const sentCheck = await pool.query(
@@ -5661,8 +5662,9 @@ async function checkAndSendReminders() {
              WHERE recipient_email = $1
                 AND email_type IN ('Reminder-5hrs', 'Reminder-5hrs-Group', 'Reminder-5hrs-Demo')
                 AND status = 'Sent'
-                AND subject LIKE $2`,
-            [session.parent_email, `%[SID:${sidCheck}]%`]
+                AND subject LIKE $2
+                AND subject LIKE $3`,
+            [session.parent_email, `%[SID:${sidCheck}]%`, `%[UTC:${scheduleKey5hr}]%`]
           );
 
           if (sentCheck.rows.length === 0) {
@@ -5691,7 +5693,7 @@ async function checkAndSendReminders() {
             const sidLabel = session.is_demo ? `DEMO:${session.id}` : session.id;
             const sent = await sendEmail(
               session.parent_email,
-              `${subjectPrefix} - Ready for today's class in 5 hours [SID:${sidLabel}]`,
+              `${subjectPrefix} - Ready for today's class in 5 hours [SID:${sidLabel}] [UTC:${scheduleKey5hr}]`,
               reminderEmailHTML,
               session.parent_name,
               emailType5hr,
@@ -5720,6 +5722,7 @@ async function checkAndSendReminders() {
         if (hoursDiff > 0.5 && hoursDiff <= 1.5) {
           const emailType1hr = session.is_demo ? 'Reminder-1hr-Demo' : session.is_group ? 'Reminder-1hr-Group' : 'Reminder-1hr';
           const sidCheck1hr = session.is_demo ? `DEMO:${session.id}` : session.id;
+          const scheduleKey1hr = String(session.full_datetime || '');
           console.log(`⏰ ${sessionTypeLabel} Session #${session.session_number} (ID:${session.id}) is within 1-hour window, checking if reminder already sent...`);
           // Check if 1-hour reminder already sent for this SPECIFIC session using unique session ID
           const sentCheck = await pool.query(
@@ -5727,8 +5730,9 @@ async function checkAndSendReminders() {
              WHERE recipient_email = $1
                 AND email_type IN ('Reminder-1hr', 'Reminder-1hr-Group', 'Reminder-1hr-Demo')
                 AND status = 'Sent'
-                AND subject LIKE $2`,
-            [session.parent_email, `%[SID:${sidCheck1hr}]%`]
+                AND subject LIKE $2
+                AND subject LIKE $3`,
+            [session.parent_email, `%[SID:${sidCheck1hr}]%`, `%[UTC:${scheduleKey1hr}]%`]
           );
 
           if (sentCheck.rows.length === 0) {
@@ -5757,7 +5761,7 @@ async function checkAndSendReminders() {
             const sidLabel1hr = session.is_demo ? `DEMO:${session.id}` : session.id;
             const sent = await sendEmail(
               session.parent_email,
-              `${subjectPrefix1hr} - Ready for today's class in 1 hour [SID:${sidLabel1hr}]`,
+              `${subjectPrefix1hr} - Ready for today's class in 1 hour [SID:${sidLabel1hr}] [UTC:${scheduleKey1hr}]`,
               reminderEmailHTML,
               session.parent_name,
               emailType1hr,
